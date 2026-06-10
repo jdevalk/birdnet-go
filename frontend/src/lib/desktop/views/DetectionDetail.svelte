@@ -28,6 +28,7 @@
   import { buildAppUrl, getCurrentPathWithQuery } from '$lib/utils/urlHelpers';
   import { loggers } from '$lib/utils/logger';
   import ReanalyzeModal from '$lib/desktop/components/modals/ReanalyzeModal.svelte';
+  import SourceBadge from '$lib/desktop/features/dashboard/components/SourceBadge.svelte';
   import {
     Download,
     Camera,
@@ -265,7 +266,7 @@
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') return;
-      // Attribution is non-critical — fail silently
+      // Attribution is non-critical - fail silently
     } finally {
       attributionController = null;
     }
@@ -574,6 +575,13 @@
           {/if}
         </div>
       </div>
+
+      <!-- Audio Source -->
+      {#if det.source}
+        <div class="meta-section">
+          <SourceBadge detection={det} variant="inline" />
+        </div>
+      {/if}
 
       <!-- Weather -->
       {#if det.weather}
@@ -1037,7 +1045,7 @@
     }
   }
 
-  /* Metadata card — vertical stacked sections */
+  /* Metadata card - vertical stacked sections */
   .hero-metadata-card {
     display: flex;
     flex-direction: column;
@@ -1060,7 +1068,7 @@
     border-top: 1px solid var(--border-100);
   }
 
-  /* Date — prominent visual anchor for the time section */
+  /* Date - prominent visual anchor for the time section */
   .meta-date {
     font-size: 1rem;
     font-weight: 600;
@@ -1068,7 +1076,7 @@
     letter-spacing: -0.01em;
   }
 
-  /* Time + time-of-day badge — inline, secondary */
+  /* Time + time-of-day badge - inline, secondary */
   .meta-time-row {
     display: flex;
     align-items: center;
@@ -1100,7 +1108,7 @@
     opacity: 1;
   }
 
-  /* Species thumbnail — 4:3 to match avicommons 320×240 source images */
+  /* Species thumbnail - 4:3 to match avicommons 320×240 source images */
   .hero-thumbnail {
     position: relative;
     width: 100%;
@@ -1121,7 +1129,7 @@
     }
   }
 
-  /* Photo credit — bottom-right corner of thumbnail */
+  /* Photo credit - bottom-right corner of thumbnail */
   .thumbnail-credit {
     position: absolute;
     right: 0;
@@ -1201,7 +1209,7 @@
     letter-spacing: 0.01em;
   }
 
-  /* Time of day badge — theme-safe via alpha transparency */
+  /* Time of day badge - theme-safe via alpha transparency */
   .time-of-day-badge {
     display: inline-flex;
     align-items: center;
@@ -1233,7 +1241,7 @@
     background: oklch(78% 0.12 30deg / 0.4);
   }
 
-  /* Weather in metadata card — consistent typographic scale */
+  /* Weather in metadata card - consistent typographic scale */
   .hero-weather :global(.wd-container) {
     flex-direction: column;
     align-items: flex-start;

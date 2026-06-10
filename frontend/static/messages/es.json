@@ -486,7 +486,8 @@
       "confidenceMax": "Porcentaje máximo de confianza",
       "verifiedStatus": "Estado verificado",
       "lockedStatus": "Estado bloqueado",
-      "timeOfDay": "Hora del día"
+      "timeOfDay": "Hora del día",
+      "source": "Fuente de audio"
     },
     "advancedFilters": "Filtros avanzados",
     "showAdvancedFilters": "Mostrar filtros avanzados",
@@ -508,6 +509,9 @@
       "sunrise": "Amanecer +/- 30min",
       "sunset": "Atardecer +/- 30min"
     },
+    "sourceOptions": {
+      "any": "Todas las fuentes"
+    },
     "sortOptions": {
       "dateDesc": "Fecha (Más reciente primero)",
       "dateAsc": "Fecha (Más antiguo primero)",
@@ -519,6 +523,7 @@
       "timeOfDay": "Hora del día",
       "species": "Especie",
       "confidence": "Confianza",
+      "source": "Fuente",
       "status": "Estado",
       "actions": "Acciones"
     },
@@ -1641,6 +1646,7 @@
         "dateTime": "Fecha y hora",
         "species": "Especie",
         "confidence": "Confianza",
+        "source": "Fuente",
         "timeOfDay": "Hora del día"
       },
       "noRecentDetections": "No se encontraron detecciones recientes",
@@ -4564,7 +4570,8 @@
         "invalidUrl": "Formato de URL no válido. Introduzca una URL completa como rtsp://host:puerto/ruta",
         "unsupportedScheme": "Esquema de URL no compatible \"{scheme}\". Use rtsp, rtsps, http, https, rtmp o udp",
         "blockedDestination": "Este destino está bloqueado por razones de seguridad",
-        "connectionFailed": "No se pudo conectar al stream. Compruebe que la URL es correcta y que el stream es accesible"
+        "connectionFailed": "No se pudo conectar al stream. Compruebe que la URL es correcta y que el stream es accesible",
+        "noAudioTrack": "El stream no tiene pista de audio. Solo se pueden usar streams que contengan audio"
       }
     },
     "debug": {

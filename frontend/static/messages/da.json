@@ -486,7 +486,8 @@
       "confidenceMax": "Maksimum sikkerhedsprocent",
       "verifiedStatus": "Bekræftelsesstatus",
       "lockedStatus": "Låsestatus",
-      "timeOfDay": "Tidspunkt på dagen"
+      "timeOfDay": "Tidspunkt på dagen",
+      "source": "Lydkilde"
     },
     "advancedFilters": "Avancerede filtre",
     "showAdvancedFilters": "Vis avancerede filtre",
@@ -508,6 +509,9 @@
       "sunrise": "Solopgang +/- 30 min",
       "sunset": "Solnedgang +/- 30 min"
     },
+    "sourceOptions": {
+      "any": "Alle kilder"
+    },
     "sortOptions": {
       "dateDesc": "Dato (nyeste først)",
       "dateAsc": "Dato (ældste først)",
@@ -519,6 +523,7 @@
       "timeOfDay": "Tidspunkt på dagen",
       "species": "Art",
       "confidence": "Sikkerhed",
+      "source": "Kilde",
       "status": "Status",
       "actions": "Handlinger"
     },
@@ -1641,6 +1646,7 @@
         "dateTime": "Dato & tid",
         "species": "Art",
         "confidence": "Sikkerhed",
+        "source": "Kilde",
         "timeOfDay": "Tid på dagen"
       },
       "noRecentDetections": "Ingen seneste registreringer fundet",
@@ -4564,7 +4570,8 @@
         "invalidUrl": "Ugyldigt URL-format. Indtast en fuld URL som rtsp://host:port/sti",
         "unsupportedScheme": "Ikke-understøttet URL-skema \"{scheme}\". Brug rtsp, rtsps, http, https, rtmp eller udp",
         "blockedDestination": "Denne destination er blokeret af sikkerhedsmæssige årsager",
-        "connectionFailed": "Kunne ikke oprette forbindelse til streamen. Kontrollér, at URL'en er korrekt, og at streamen er tilgængelig"
+        "connectionFailed": "Kunne ikke oprette forbindelse til streamen. Kontrollér, at URL'en er korrekt, og at streamen er tilgængelig",
+        "noAudioTrack": "Streamen har ikke noget lydspor. Kun streams, der indeholder lyd, kan bruges"
       }
     },
     "debug": {

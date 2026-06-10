@@ -486,7 +486,8 @@
       "confidenceMax": "Maksymalny procent pewności",
       "verifiedStatus": "Status Weryfikacji",
       "lockedStatus": "Status Blokady",
-      "timeOfDay": "Pora Dnia"
+      "timeOfDay": "Pora Dnia",
+      "source": "Źródło dźwięku"
     },
     "advancedFilters": "Zaawansowane Filtry",
     "showAdvancedFilters": "Pokaż Zaawansowane Filtry",
@@ -508,6 +509,9 @@
       "sunrise": "Wschód Słońca +/- 30min",
       "sunset": "Zachód Słońca +/- 30min"
     },
+    "sourceOptions": {
+      "any": "Wszystkie źródła"
+    },
     "sortOptions": {
       "dateDesc": "Data (Najnowsze Najpierw)",
       "dateAsc": "Data (Najstarsze Najpierw)",
@@ -519,6 +523,7 @@
       "timeOfDay": "Pora Dnia",
       "species": "Gatunek",
       "confidence": "Pewność",
+      "source": "Źródło",
       "status": "Status",
       "actions": "Akcje"
     },
@@ -1641,6 +1646,7 @@
         "dateTime": "Data i Czas",
         "species": "Gatunek",
         "confidence": "Pewność",
+        "source": "Źródło",
         "timeOfDay": "Pora Dnia"
       },
       "noRecentDetections": "Nie znaleziono ostatnich detekcji",
@@ -4564,7 +4570,8 @@
         "invalidUrl": "Nieprawidłowy format URL. Wprowadź pełny URL, np. rtsp://host:port/ścieżka",
         "unsupportedScheme": "Nieobsługiwany schemat URL \"{scheme}\". Użyj rtsp, rtsps, http, https, rtmp lub udp",
         "blockedDestination": "Ten cel jest zablokowany ze względów bezpieczeństwa",
-        "connectionFailed": "Nie udało się połączyć ze strumieniem. Sprawdź, czy URL jest poprawny i strumień jest dostępny"
+        "connectionFailed": "Nie udało się połączyć ze strumieniem. Sprawdź, czy URL jest poprawny i strumień jest dostępny",
+        "noAudioTrack": "Strumień nie zawiera ścieżki dźwiękowej. Można używać tylko strumieni zawierających dźwięk"
       }
     },
     "debug": {

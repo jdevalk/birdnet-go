@@ -486,7 +486,8 @@
       "confidenceMax": "Maximum megbízhatósági százalék",
       "verifiedStatus": "Ellenőrzött állapot",
       "lockedStatus": "Zárolt állapot",
-      "timeOfDay": "Napszak"
+      "timeOfDay": "Napszak",
+      "source": "Hangforrás"
     },
     "advancedFilters": "Speciális szűrők",
     "showAdvancedFilters": "Speciális szűrők megjelenítése",
@@ -508,6 +509,9 @@
       "sunrise": "Napkelte +/- 30 perc",
       "sunset": "Napnyugta +/- 30 perc"
     },
+    "sourceOptions": {
+      "any": "Összes forrás"
+    },
     "sortOptions": {
       "dateDesc": "Dátum (Legújabb elöl)",
       "dateAsc": "Dátum (Legrégebbi elöl)",
@@ -519,6 +523,7 @@
       "timeOfDay": "Napszak",
       "species": "Faj",
       "confidence": "Megbízhatóság",
+      "source": "Forrás",
       "status": "Állapot",
       "actions": "Műveletek"
     },
@@ -1641,6 +1646,7 @@
         "dateTime": "Dátum és idő",
         "species": "Faj",
         "confidence": "Megbízhatóság",
+        "source": "Forrás",
         "timeOfDay": "Napszak"
       },
       "noRecentDetections": "Nem található legutóbbi detektálás",
@@ -4564,7 +4570,8 @@
         "invalidUrl": "Érvénytelen URL-formátum. Adjon meg egy teljes URL-t, pl. rtsp://host:port/útvonal",
         "unsupportedScheme": "Nem támogatott URL-séma: \"{scheme}\". Használjon rtsp, rtsps, http, https, rtmp vagy udp sémát",
         "blockedDestination": "Ez a cél biztonsági okokból le van tiltva",
-        "connectionFailed": "Nem sikerült csatlakozni a streamhez. Ellenőrizze, hogy az URL helyes-e és a stream elérhető-e"
+        "connectionFailed": "Nem sikerült csatlakozni a streamhez. Ellenőrizze, hogy az URL helyes-e és a stream elérhető-e",
+        "noAudioTrack": "A stream nem tartalmaz hangsávot. Csak hangot tartalmazó streamek használhatók"
       }
     },
     "debug": {

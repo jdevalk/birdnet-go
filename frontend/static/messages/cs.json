@@ -486,7 +486,8 @@
       "confidenceMax": "Maximální procento spolehlivosti",
       "verifiedStatus": "Stav ověření",
       "lockedStatus": "Stav uzamčení",
-      "timeOfDay": "Denní doba"
+      "timeOfDay": "Denní doba",
+      "source": "Zdroj zvuku"
     },
     "advancedFilters": "Pokročilé filtry",
     "showAdvancedFilters": "Zobrazit pokročilé filtry",
@@ -508,6 +509,9 @@
       "sunrise": "Východ slunce +/- 30 min",
       "sunset": "Západ slunce +/- 30 min"
     },
+    "sourceOptions": {
+      "any": "Všechny zdroje"
+    },
     "sortOptions": {
       "dateDesc": "Datum (od nejnovějších)",
       "dateAsc": "Datum (od nejstarších)",
@@ -519,6 +523,7 @@
       "timeOfDay": "Denní doba",
       "species": "Druh",
       "confidence": "Spolehlivost",
+      "source": "Zdroj",
       "status": "Stav",
       "actions": "Akce"
     },
@@ -1641,6 +1646,7 @@
         "dateTime": "Datum a čas",
         "species": "Druh",
         "confidence": "Spolehlivost",
+        "source": "Zdroj",
         "timeOfDay": "Denní doba"
       },
       "noRecentDetections": "Nebyly nalezeny žádné nedávné detekce",
@@ -4564,7 +4570,8 @@
         "invalidUrl": "Neplatný formát URL. Zadejte úplnou URL, např. rtsp://host:port/cesta",
         "unsupportedScheme": "Nepodporované schéma URL \"{scheme}\". Použijte rtsp, rtsps, http, https, rtmp nebo udp",
         "blockedDestination": "Tento cíl je z bezpečnostních důvodů blokován",
-        "connectionFailed": "Nelze se připojit ke streamu. Zkontrolujte, zda je URL správná a stream je dostupný"
+        "connectionFailed": "Nelze se připojit ke streamu. Zkontrolujte, zda je URL správná a stream je dostupný",
+        "noAudioTrack": "Stream neobsahuje žádnou zvukovou stopu. Lze použít pouze streamy obsahující zvuk"
       }
     },
     "debug": {
