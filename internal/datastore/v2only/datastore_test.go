@@ -1315,6 +1315,79 @@ func TestGetTopBirdsData_SpeciesCode(t *testing.T) {
 	assert.Empty(t, codeByScientific["Passer domesticus"], "species not in taxonomy should have empty code")
 }
 
+// TestV2OnlyDatastore_GetBatchHourlyOccurrences_ScientificName is a regression
+// test: the batch hourly query is keyed strictly on scientific
+// name. One label carries an embedded common name that differs from the
+// scientific name (Turdus merula -> "Common Blackbird"); the other is
+// scientific-only like a BattyBirdNET bat label. Before the fix, the query
+// reverse-mapped the localized common name to a scientific name and keyed the
+// result by the input string, so querying by the common name returned the count
+// and scientific-only labels were dropped. The negative assertion (querying by
+// the localized common name now returns zero) is the discriminator that fails on
+// the pre-fix code.
+func TestV2OnlyDatastore_GetBatchHourlyOccurrences_ScientificName(t *testing.T) {
+	ds, cleanup := setupTestDatastoreWithLabels(t, []string{
+		"Turdus merula_Common Blackbird",
+		"Barbastella barbastellus", // scientific-only, like a BattyBirdNET label
+	})
+	defer cleanup()
+
+	const date = "2024-01-15"
+	saveTestNote(t, ds, date, "08:20:00", "Turdus merula", 0.8)
+	saveTestNote(t, ds, date, "23:15:00", "Barbastella barbastellus", 0.9)
+
+	// Querying by scientific name returns the counts keyed by scientific name,
+	// including the scientific-only bat label. Assert the daily total per species
+	// rather than a specific hour index: the query buckets hours using SQLite's
+	// OS-local timezone, which may differ from the test datastore's configured UTC.
+	counts, err := ds.GetBatchHourlyOccurrences(t.Context(), date,
+		[]string{"Turdus merula", "Barbastella barbastellus"}, 0.0)
+	require.NoError(t, err)
+
+	blackbird, ok := counts["Turdus merula"]
+	require.True(t, ok, "result must be keyed by scientific name")
+	assert.Equal(t, 1, hourlyTotal(&blackbird), "blackbird must be counted under its scientific name")
+
+	bat, ok := counts["Barbastella barbastellus"]
+	require.True(t, ok, "result must be keyed by scientific name")
+	assert.Equal(t, 1, hourlyTotal(&bat), "scientific-only bat label must be counted under its scientific name")
+
+	// The localized common name is no longer an accepted key. Pre-fix, the batch
+	// query reverse-mapped "Common Blackbird" -> "Turdus merula" and returned the
+	// blackbird's count under the common-name key; the fixed query returns zero.
+	byCommon, err := ds.GetBatchHourlyOccurrences(t.Context(), date, []string{"Common Blackbird"}, 0.0)
+	require.NoError(t, err)
+	common, ok := byCommon["Common Blackbird"]
+	require.True(t, ok)
+	assert.Equal(t, 0, hourlyTotal(&common),
+		"localized common name must not resolve to detections")
+}
+
+// TestV2OnlyDatastore_GetBatchHourlyOccurrences_CancelledContext verifies that a cancelled
+// request context surfaces as an error rather than silently returning zeroed counts. Before
+// the #984 fix the per-species label lookup logged a warning and continued on error, so a
+// cancelled context produced an all-zero result with a nil error (HTTP 200 with wrong data).
+func TestV2OnlyDatastore_GetBatchHourlyOccurrences_CancelledContext(t *testing.T) {
+	ds, cleanup := setupTestDatastoreWithLabels(t, []string{"Turdus merula_Common Blackbird"})
+	defer cleanup()
+	saveTestNote(t, ds, "2024-01-15", "08:20:00", "Turdus merula", 0.8)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	_, err := ds.GetBatchHourlyOccurrences(ctx, "2024-01-15", []string{"Turdus merula"}, 0.0)
+	require.ErrorIs(t, err, context.Canceled, "cancelled context must surface as context.Canceled, not silently zeroed counts")
+}
+
+// hourlyTotal sums a 24-hour occurrence array.
+func hourlyTotal(hours *[24]int) int {
+	total := 0
+	for _, c := range hours {
+		total += c
+	}
+	return total
+}
+
 // TestGetSpeciesSummaryData_NoDateFilter verifies that species summary returns
 // data when no date filter is provided. Regression test for issue #2191.
 func TestGetSpeciesSummaryData_NoDateFilter(t *testing.T) {
@@ -1342,7 +1415,7 @@ func TestGetSpeciesSummaryData_NoDateFilter(t *testing.T) {
 	}
 	require.NoError(t, ds.Save(note, nil))
 
-	// Query with no date filter — this was returning empty before the fix
+	// Query with no date filter; this was returning empty before the fix
 	summaries, err := ds.GetSpeciesSummaryData(t.Context(), "", "")
 	require.NoError(t, err)
 	require.NotEmpty(t, summaries, "summary should return data when no date filter is provided")
@@ -1474,4 +1547,49 @@ func TestV2OnlyDatastore_UpdateNameMaps_ConcurrentAccess(t *testing.T) {
 	})
 
 	wg.Wait()
+}
+
+// batchFakeResolver misses ResolveLocal (the cold-path branch) and resolves only via the
+// batch seam, like the real resolver does for out-of-working-set bats.
+type batchFakeResolver struct{ batch map[string]string }
+
+func (b *batchFakeResolver) Resolve(string, string) string      { return "" }
+func (b *batchFakeResolver) ResolveLocal(string) (string, bool) { return "", false }
+func (b *batchFakeResolver) ResolveLocalizedBatch(names []string) map[string]string {
+	out := make(map[string]string, len(names))
+	for _, n := range names {
+		if v, ok := b.batch[n]; ok {
+			out[n] = v
+		}
+	}
+	return out
+}
+
+func TestBuildNameMaps_SecondaryModelScientificOnlyLabelIsReverseSearchable(t *testing.T) {
+	t.Parallel()
+
+	r := &batchFakeResolver{batch: map[string]string{"Barbastella barbastellus": "mopsilepakko"}}
+	nm := buildNameMaps([]string{"Barbastella barbastellus"}, r)
+
+	// Reverse exact map is NFC-folded, lowercased.
+	assert.Equal(t, "Barbastella barbastellus", nm.species["mopsilepakko"])
+	// Forward + substring maps present too.
+	assert.Equal(t, "mopsilepakko", nm.common["Barbastella barbastellus"])
+	assert.Equal(t, "mopsilepakko", nm.commonFolded["Barbastella barbastellus"])
+}
+
+func TestBuildNameMaps_AmbiguousCommonNameDeletedNotLastWriterWins(t *testing.T) {
+	t.Parallel()
+
+	// Two scientific names sharing one common name must not silently route to an
+	// arbitrary winner; the ambiguous reverse key is dropped.
+	nm := buildNameMaps([]string{"Strix aluco_Owl", "Bubo bubo_Owl"}, nil)
+	_, ok := nm.species["owl"]
+	assert.False(t, ok, "ambiguous common name must be deleted from the exact reverse map")
+
+	// The forward display maps must still contain both species so their common names
+	// are shown correctly in the UI. Ambiguity handling must only drop the reverse
+	// lookup key, not the forward display names.
+	assert.Equal(t, "Owl", nm.common["Strix aluco"], "forward map must retain common name for Strix aluco")
+	assert.Equal(t, "Owl", nm.common["Bubo bubo"], "forward map must retain common name for Bubo bubo")
 }
