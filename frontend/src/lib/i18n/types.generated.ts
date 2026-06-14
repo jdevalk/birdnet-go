@@ -133,6 +133,7 @@ export type TranslationKey =
   | 'common.aria.visitEbirdLink'
   | 'common.aria.learnEbirdTaxonomyLink'
   | 'common.aria.resizeHandle'
+  | 'common.aria.imageCredit' // params: name
   | 'common.labels.confidence'
   | 'common.labels.github'
   | 'common.values.yes'
@@ -637,6 +638,20 @@ export type TranslationKey =
   | 'detections.titles.allDetections' // params: date
   | 'detections.detail.species'
   | 'detections.detail.observation'
+  | 'detections.detail.aria.downloadAudioClip' // params: name
+  | 'detections.detail.aria.audioRecordingFor' // params: name
+  | 'detections.detail.aria.scientificName'
+  | 'detections.detail.aria.classificationBadges'
+  | 'detections.detail.aria.confidence' // params: confidence
+  | 'detections.detail.aria.metadata'
+  | 'detections.detail.aria.weatherConditions'
+  | 'detections.detail.aria.comments'
+  | 'detections.detail.aria.commentText'
+  | 'detections.detail.aria.commentTimestamp'
+  | 'detections.detail.aria.mainRegion'
+  | 'detections.detail.aria.tabsHeading'
+  | 'detections.detail.aria.tabList'
+  | 'detections.detail.aria.speciesHeadingSuffix'
   | 'detections.headers.dateTime'
   | 'detections.headers.weather'
   | 'detections.headers.source'
@@ -1340,6 +1355,12 @@ export type TranslationKey =
   | 'analytics.advanced.aria.loadingTrends'
   | 'analytics.advanced.aria.loadingDiversity'
   | 'analytics.errors.loadFailed'
+  | 'analytics.timeOfDayPeriods.night0to4'
+  | 'analytics.timeOfDayPeriods.dawn5to8'
+  | 'analytics.timeOfDayPeriods.morning9to11'
+  | 'analytics.timeOfDayPeriods.afternoon12to16'
+  | 'analytics.timeOfDayPeriods.evening17to19'
+  | 'analytics.timeOfDayPeriods.night20to23'
   | 'settings.title'
   | 'settings.loading'
   | 'settings.sections.analysis'
@@ -3230,6 +3251,9 @@ export type TranslationKey =
   | 'components.tls.removeCertificate'
   | 'components.tls.fileReadError'
   | 'components.tls.loading'
+  | 'components.birdThumbnail.viewDetections' // params: name
+  | 'components.birdThumbnail.largeView' // params: name
+  | 'components.birdThumbnail.clickToView'
   | 'connectivity.offline'
   | 'detection.actions.back'
   | 'detection.actions.review'
@@ -3627,6 +3651,7 @@ export type TranslationParams = {
   'common.validation.minValue': { min: string | number };
   'common.validation.maxValue': { max: string | number };
   'common.aria.dateSelected': { date: string | number };
+  'common.aria.imageCredit': { name: string | number };
   'common.review.modalTitle': { species: string | number };
   'common.review.form.commentCount': { chars: string | number };
   'notifications.timeAgo.minutesAgo': { minutes: string | number };
@@ -3734,6 +3759,9 @@ export type TranslationParams = {
   'detections.titles.species': { species: string | number; date: string | number };
   'detections.titles.search': { query: string | number };
   'detections.titles.allDetections': { date: string | number };
+  'detections.detail.aria.downloadAudioClip': { name: string | number };
+  'detections.detail.aria.audioRecordingFor': { name: string | number };
+  'detections.detail.aria.confidence': { confidence: string | number };
   'detections.pagination.showing': {
     from: string | number;
     to: string | number;
@@ -3918,6 +3946,8 @@ export type TranslationParams = {
     start: string | number;
     end: string | number;
   };
+  'components.birdThumbnail.viewDetections': { name: string | number };
+  'components.birdThumbnail.largeView': { name: string | number };
   'quietHours.indicator.tooltip': { count: string | number };
   'errors.detection.invalidDate': { paramName: string | number };
   'errors.backup.insufficientSpace': { needed: string | number; available: string | number };

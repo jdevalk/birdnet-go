@@ -28,6 +28,7 @@
   import { buildAppUrl, getCurrentPathWithQuery } from '$lib/utils/urlHelpers';
   import { loggers } from '$lib/utils/logger';
   import ReanalyzeModal from '$lib/desktop/components/modals/ReanalyzeModal.svelte';
+  import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
   import SourceBadge from '$lib/desktop/features/dashboard/components/SourceBadge.svelte';
   import {
     Download,
@@ -437,6 +438,7 @@
 <!-- Snippets for better organization -->
 
 {#snippet heroSection(det: Detection)}
+  {@const displayName = localizeSpeciesName(det.scientificName, det.commonName)}
   <section class="detection-hero-grid" aria-labelledby="species-heading">
     <!-- Identity Card -->
     <div class="hero-card hero-identity-card">
@@ -448,13 +450,16 @@
             src={buildAppUrl(
               `/api/v2/media/species-image?name=${encodeURIComponent(det.scientificName)}`
             )}
-            alt={det.commonName}
+            alt={displayName}
             class="w-full h-full object-contain"
             onerror={handleBirdImageError}
             loading="eager"
           />
           {#if imageAttribution?.authorName}
-            <div class="thumbnail-credit" aria-label="Image credit: {imageAttribution.authorName}">
+            <div
+              class="thumbnail-credit"
+              aria-label={t('common.aria.imageCredit', { name: imageAttribution.authorName })}
+            >
               <Camera size={10} class="credit-icon" />
               <span class="credit-text">{imageAttribution.authorName}</span>
               {#if imageAttribution.licenseName}
@@ -477,19 +482,26 @@
         <!-- Species identity -->
         <div class="hero-species">
           <h1 id="species-heading" class="species-display-name">
-            {det.commonName}
-            <span class="sr-only">detection details</span>
+            {displayName}
+            <span class="sr-only">{t('detections.detail.aria.speciesHeadingSuffix')}</span>
           </h1>
-          <p class="species-scientific-name" aria-label="Scientific name">
-            {det.scientificName}
+          <p class="species-scientific-name">
+            <span class="sr-only"
+              >{t('detections.detail.aria.scientificName')}:
+            </span>{det.scientificName}
           </p>
-          <div class="mt-3" aria-label="Species classification badges">
+          <div class="mt-3" aria-label={t('detections.detail.aria.classificationBadges')}>
             <VerificationBadges detection={det} size="sm" />
           </div>
         </div>
 
         <!-- Confidence -->
-        <div class="hero-confidence" aria-label="Detection confidence {det.confidence}%">
+        <div
+          class="hero-confidence"
+          aria-label={t('detections.detail.aria.confidence', {
+            confidence: Math.round((det.confidence ?? 0) * 100),
+          })}
+        >
           <ConfidenceCircle confidence={det.confidence} size="xl" />
         </div>
       </div>
@@ -538,7 +550,12 @@
                   <div class="taxonomy-subspecies-item">
                     <span class="italic">{subspecies.scientific_name}</span>
                     {#if subspecies.common_name}
-                      <span class="taxonomy-subspecies-common">{subspecies.common_name}</span>
+                      <span class="taxonomy-subspecies-common"
+                        >{localizeSpeciesName(
+                          subspecies.scientific_name,
+                          subspecies.common_name
+                        )}</span
+                      >
                     {/if}
                   </div>
                 {/each}
@@ -550,7 +567,11 @@
     {/if}
 
     <!-- Metadata Card -->
-    <div class="hero-card hero-metadata-card" role="region" aria-label="Detection metadata">
+    <div
+      class="hero-card hero-metadata-card"
+      role="region"
+      aria-label={t('detections.detail.aria.metadata')}
+    >
       <h3 class="section-heading">{t('detections.detail.observation')}</h3>
       <!-- Date & Time -->
       <div class="meta-section">
@@ -585,7 +606,10 @@
 
       <!-- Weather -->
       {#if det.weather}
-        <div class="meta-section hero-weather" aria-label="Weather conditions at time of detection">
+        <div
+          class="meta-section hero-weather"
+          aria-label={t('detections.detail.aria.weatherConditions')}
+        >
           <WeatherDetails
             weatherIcon={det.weather.weatherIcon}
             weatherDescription={det.weather.description}
@@ -606,7 +630,7 @@
             href={buildAppUrl(`/api/v2/media/audio/${det.clipName}`)}
             download
             class="meta-download"
-            aria-label="Download audio clip for {det.commonName} detection"
+            aria-label={t('detections.detail.aria.downloadAudioClip', { name: displayName })}
           >
             <Download class="w-4 h-4" />
             <span>{t('media.audio.download')}</span>
@@ -710,15 +734,18 @@
   <section aria-labelledby="notes-heading">
     <h3 id="notes-heading" class="section-heading">{t('detections.notes.title')}</h3>
     {#if det.comments && det.comments.length > 0}
-      <div class="space-y-3" role="list" aria-label="Detection comments">
+      <div class="space-y-3" role="list" aria-label={t('detections.detail.aria.comments')}>
         {#each det.comments as comment (comment.id ?? comment.createdAt)}
           <article class="content-panel" role="listitem">
-            <p class="text-sm leading-relaxed" aria-label="Comment text">{comment.entry}</p>
-            <p
-              class="text-xs text-[var(--color-base-content)]/40 mt-2"
-              aria-label="Comment timestamp"
-            >
-              {formatLocalDateTime(new Date(comment.createdAt))}
+            <p class="text-sm leading-relaxed">
+              <span class="sr-only"
+                >{t('detections.detail.aria.commentText')}:
+              </span>{comment.entry}
+            </p>
+            <p class="text-xs text-[var(--color-base-content)]/40 mt-2">
+              <span class="sr-only"
+                >{t('detections.detail.aria.commentTimestamp')}:
+              </span>{formatLocalDateTime(new Date(comment.createdAt))}
             </p>
           </article>
         {/each}
@@ -735,13 +762,15 @@
 {/snippet}
 
 <!-- Main component -->
-<main class="col-span-12 detection-detail" aria-label="Detection details">
+<main class="col-span-12 detection-detail" aria-label={t('detections.detail.aria.mainRegion')}>
   <!-- Loading state with live region -->
   <div role="status" aria-live="polite" class="sr-only">
     {#if isLoadingDetection}
       {t('detections.aria.loading')}
     {:else if detection}
-      {t('detections.aria.loaded', { species: detection.commonName })}
+      {t('detections.aria.loaded', {
+        species: localizeSpeciesName(detection.scientificName, detection.commonName),
+      })}
     {:else if detectionError}
       {t('detections.aria.error', { error: detectionError })}
     {/if}
@@ -824,7 +853,12 @@
         {:else}
           <div class="mb-3"></div>
         {/if}
-        <div role="region" aria-label="Audio recording and spectrogram for {detection.commonName}">
+        <div
+          role="region"
+          aria-label={t('detections.detail.aria.audioRecordingFor', {
+            name: localizeSpeciesName(detection.scientificName, detection.commonName),
+          })}
+        >
           <div class="detail-audio-container">
             <AudioPlayer
               audioUrl={buildAppUrl(`/api/v2/audio/${detection.id}`)}
@@ -845,10 +879,10 @@
     <!-- Tabbed Content -->
     <section class="surface-card" aria-labelledby="tabs-heading">
       <div class="p-5 md:p-6">
-        <h2 id="tabs-heading" class="sr-only">Detection information tabs</h2>
+        <h2 id="tabs-heading" class="sr-only">{t('detections.detail.aria.tabsHeading')}</h2>
 
         <!-- Tab Navigation -->
-        <div class="tab-nav" role="tablist" aria-label="Detection details tabs">
+        <div class="tab-nav" role="tablist" aria-label={t('detections.detail.aria.tabList')}>
           {#each ['overview', 'history', 'notes'] as tab (tab)}
             <button
               id="tab-{tab}"

@@ -62,9 +62,7 @@ const (
 	maxHour = 23
 	// saveTransactionTimeout is the maximum duration for a Save transaction.
 	// This prevents indefinite lock holding during slow I/O operations.
-	saveTransactionTimeout  = 30 * time.Second
-	sqliteDetectionDateExpr = "date(d.detected_at, 'unixepoch', 'localtime')"
-	mysqlDetectionDateExpr  = "DATE(FROM_UNIXTIME(d.detected_at))"
+	saveTransactionTimeout = 30 * time.Second
 )
 
 // parseHour validates and parses an hour string to an integer.
@@ -1097,7 +1095,7 @@ func (ds *Datastore) GetAllNotes() ([]datastore.Note, error) {
 }
 
 // GetTopBirdsData retrieves top birds data for a date.
-func (ds *Datastore) GetTopBirdsData(selectedDate string, minConfidenceNormalized float64, limit int) ([]datastore.Note, error) {
+func (ds *Datastore) GetTopBirdsData(ctx context.Context, selectedDate string, minConfidenceNormalized float64, limit int) ([]datastore.Note, error) {
 	t, err := time.ParseInLocation("2006-01-02", selectedDate, ds.timezone)
 	if err != nil {
 		return nil, err
@@ -1128,7 +1126,7 @@ func (ds *Datastore) GetTopBirdsData(selectedDate string, minConfidenceNormalize
 	// Excludes detections marked as false_positive.
 	prefix := ds.manager.TablePrefix()
 	db := ds.manager.DB()
-	err = db.Table(prefix+"detections d").
+	err = db.WithContext(ctx).Table(prefix+"detections d").
 		Select(`
 			l.scientific_name,
 			COUNT(d.id) as count,
@@ -1245,7 +1243,7 @@ func (ds *Datastore) GetBatchHourlyOccurrences(ctx context.Context, date string,
 	}
 
 	// Fetch per-label hourly counts in one batched query (chunked internally).
-	hourlyByLabel, err := ds.detection.GetBatchHourlyOccurrences(ctx, flatLabelIDs, startOfDay, endOfDay, minConfidence)
+	hourlyByLabel, err := ds.detection.GetBatchHourlyOccurrences(ctx, flatLabelIDs, startOfDay, endOfDay, ds.zoneOffsetSeconds(startOfDay), minConfidence)
 	if err != nil {
 		return nil, errors.New(err).
 			Component("datastore").
@@ -2352,6 +2350,71 @@ func (ds *Datastore) parseDateRange(startDate, endDate string) (start, end int64
 	return start, end, nil
 }
 
+// unixTimeOrZero converts a Unix epoch (seconds) to a time.Time in loc, returning the
+// zero value for a non-positive epoch. A zero/negative epoch means "no detection time"
+// rather than the 1970 epoch origin, so the API layer (formatTimeIfNotZero) renders it
+// as an empty timestamp instead of 1970-01-01.
+func unixTimeOrZero(epoch int64, loc *time.Location) time.Time {
+	if epoch <= 0 {
+		return time.Time{}
+	}
+	if loc == nil {
+		loc = time.Local
+	}
+	return time.Unix(epoch, 0).In(loc)
+}
+
+// zoneOffsetSeconds returns the configured timezone's UTC offset in seconds in effect at
+// the given epoch. SQL hour bucketing adds this offset to detected_at so detections group
+// by wall-clock hour in ds.timezone rather than the database/OS-local zone. Anchoring the
+// offset to the queried epoch (rather than "now") keeps it correct for historical days.
+//
+// For an open-ended range parseDateRange yields start==0; anchoring to the 1970 epoch would
+// pick an arbitrary historical offset, so non-positive epochs fall back to the current offset
+// (the best single choice for an all-time range). The single-offset approach is still a DST
+// approximation on multi-day ranges; see repository.GetTimezoneOffsetAt for that limitation.
+func (ds *Datastore) zoneOffsetSeconds(epoch int64) int {
+	ref := time.Unix(epoch, 0)
+	if epoch <= 0 {
+		ref = time.Now()
+	}
+	return repository.GetTimezoneOffsetAt(ds.timezone, ref)
+}
+
+// dateRangeOffsetAnchor returns the epoch to anchor the timezone offset to for a date-bucketed
+// query over [start, end) (epochs from parseDateRange: start==0 means open-start, end==MaxInt64
+// means open-end). It prefers the start boundary, falls back to the end boundary for a left-open
+// range, and only as a last resort returns 0 (which zoneOffsetSeconds maps to the current offset)
+// for a fully open range. Anchoring to a query boundary rather than "now" keeps an end-only
+// historical query bucketing the same way regardless of when it runs.
+func dateRangeOffsetAnchor(start, end int64) int64 {
+	switch {
+	case start > 0:
+		return start
+	case end > 0 && end != math.MaxInt64:
+		return end
+	default:
+		return 0
+	}
+}
+
+// detectionDateExpr returns a SQL expression for the wall-clock calendar date (YYYY-MM-DD) of
+// d.detected_at in the configured timezone. offsetSeconds is added to the epoch before the date
+// is taken, so the result buckets by date in ds.timezone and is independent of the database
+// session / OS-local zone (the same offset-arithmetic approach as the hour bucketing). The
+// MySQL form uses DATE_ADD on a literal date with an integer day count so it does not depend on
+// the session time_zone; DATE(FROM_UNIXTIME(...)) would apply that zone on top of the offset and
+// double-count. Integer DIV avoids floating-point rounding at exact day boundaries.
+//
+// SQLite: date(d.detected_at + offset, 'unixepoch')
+// MySQL:  DATE_ADD('1970-01-01', INTERVAL (d.detected_at + offset) DIV 86400 DAY)
+func (ds *Datastore) detectionDateExpr(offsetSeconds int) string {
+	if ds.manager.IsMySQL() {
+		return fmt.Sprintf("DATE_ADD('1970-01-01', INTERVAL (d.detected_at + %d) DIV 86400 DAY)", offsetSeconds)
+	}
+	return fmt.Sprintf("date(d.detected_at + %d, 'unixepoch')", offsetSeconds)
+}
+
 // GetSpeciesSummaryData retrieves species summary data.
 func (ds *Datastore) GetSpeciesSummaryData(ctx context.Context, startDate, endDate string, sourceIDs ...uint) ([]datastore.SpeciesSummaryData, error) {
 	start, end, err := ds.parseDateRange(startDate, endDate)
@@ -2378,8 +2441,8 @@ func (ds *Datastore) GetSpeciesSummaryData(ctx context.Context, startDate, endDa
 			CommonName:     commonName,
 			SpeciesCode:    ds.speciesCodeMap[sciName],
 			Count:          int(d.TotalDetections),
-			FirstSeen:      time.Unix(d.FirstDetection, 0).In(ds.timezone),
-			LastSeen:       time.Unix(d.LastDetection, 0).In(ds.timezone),
+			FirstSeen:      unixTimeOrZero(d.FirstDetection, ds.timezone),
+			LastSeen:       unixTimeOrZero(d.LastDetection, ds.timezone),
 			AvgConfidence:  d.AvgConfidence,
 			MaxConfidence:  d.MaxConfidence,
 		})
@@ -2402,7 +2465,7 @@ func (ds *Datastore) GetHourlyAnalyticsData(ctx context.Context, date, species s
 		return nil, err
 	}
 
-	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, labelID, nil, sourceIDs...)
+	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelID, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2453,7 +2516,9 @@ func (ds *Datastore) GetDailyAnalyticsData(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	v2Data, err := ds.detection.GetDailyAnalytics(ctx, start, end, labelID, nil, sourceIDs...)
+	// Bucket dates by the configured timezone, anchored to a query boundary (start, or end for a
+	// left-open range) so an end-only historical query buckets stably regardless of run time.
+	v2Data, err := ds.detection.GetDailyAnalytics(ctx, start, end, ds.zoneOffsetSeconds(dateRangeOffsetAnchor(start, end)), labelID, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2470,7 +2535,8 @@ func (ds *Datastore) GetDailyAnalyticsData(ctx context.Context, startDate, endDa
 
 // GetDetectionTrends retrieves detection trends.
 func (ds *Datastore) GetDetectionTrends(ctx context.Context, period string, limit int, sourceIDs ...uint) ([]datastore.DailyAnalyticsData, error) {
-	v2Data, err := ds.detection.GetDetectionTrends(ctx, period, limit, nil, sourceIDs...)
+	// Trends cover a trailing window ending now, so anchor the offset to the current time.
+	v2Data, err := ds.detection.GetDetectionTrends(ctx, period, limit, ds.zoneOffsetSeconds(0), nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2500,7 +2566,7 @@ func (ds *Datastore) GetHourlyDistribution(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, labelID, nil, sourceIDs...)
+	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelID, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2538,7 +2604,12 @@ func (ds *Datastore) convertToNewSpeciesData(_ context.Context, data []speciesFi
 		// Look up common name from pre-built map, fallback to scientific name
 		commonName := ds.resolveCommonName(sciName)
 
-		firstSeenDate := time.Unix(d.FirstDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		// A zero/negative epoch means "no detection date"; emit an empty string instead
+		// of formatting the 1970 epoch origin (mirrors the LastDetected guard below).
+		var firstSeenDate string
+		if d.FirstDetected > 0 {
+			firstSeenDate = time.Unix(d.FirstDetected, 0).In(ds.timezone).Format(time.DateOnly)
+		}
 		var lastSeenDate string
 		if d.LastDetected > 0 {
 			lastSeenDate = time.Unix(d.LastDetected, 0).In(ds.timezone).Format(time.DateOnly)
@@ -2615,10 +2686,9 @@ func (ds *Datastore) GetSpeciesDetectionDatesInPeriod(ctx context.Context, start
 		limit = 10000
 	}
 
-	dateExpr := sqliteDetectionDateExpr
-	if ds.manager.IsMySQL() {
-		dateExpr = mysqlDetectionDateExpr
-	}
+	// Bucket dates by the configured timezone, anchored to a query boundary (start, or end for a
+	// left-open range) so an end-only historical query buckets stably regardless of run time.
+	dateExpr := ds.detectionDateExpr(ds.zoneOffsetSeconds(dateRangeOffsetAnchor(start, end)))
 
 	type result struct {
 		ScientificName string `gorm:"column:scientific_name"`
@@ -2669,10 +2739,8 @@ func (ds *Datastore) GetSpeciesLastDetectionDateBefore(ctx context.Context, scie
 		return "", fmt.Errorf("invalid before date format: %w", err)
 	}
 
-	dateExpr := sqliteDetectionDateExpr
-	if ds.manager.IsMySQL() {
-		dateExpr = mysqlDetectionDateExpr
-	}
+	// Bucket dates by the configured timezone, anchored to the before date.
+	dateExpr := ds.detectionDateExpr(ds.zoneOffsetSeconds(before.Unix()))
 
 	var result struct {
 		LastSeenDate string `gorm:"column:last_seen_date"`
@@ -2718,13 +2786,24 @@ func (ds *Datastore) GetSpeciesDiversityData(ctx context.Context, startDate, end
 
 	var results []datastore.DailyAnalyticsData
 
-	// Generate database-agnostic date expression
-	// MySQL: DATE(FROM_UNIXTIME(d.detected_at))
-	// SQLite: date(d.detected_at, 'unixepoch', 'localtime') - localtime for timezone-aware bucketing
-	dateExpr := sqliteDetectionDateExpr
-	if ds.manager.IsMySQL() {
-		dateExpr = mysqlDetectionDateExpr
+	// Bucket dates by the configured timezone, anchored to a query boundary: the start of the
+	// window, falling back to the end for a left-open range (and only then to the current offset
+	// for a fully open range), so an end-only historical query buckets stably regardless of run
+	// time. The SELECT, GROUP BY, and BETWEEN filter all reuse this single expression so they stay
+	// internally consistent; the user's date strings are interpreted in the same zone the dates
+	// are bucketed in.
+	var refEpoch int64
+	if startDate != "" {
+		if t, perr := time.ParseInLocation(time.DateOnly, startDate, ds.timezone); perr == nil {
+			refEpoch = t.Unix()
+		}
 	}
+	if refEpoch == 0 && endDate != "" {
+		if t, perr := time.ParseInLocation(time.DateOnly, endDate, ds.timezone); perr == nil {
+			refEpoch = t.Unix()
+		}
+	}
+	dateExpr := ds.detectionDateExpr(ds.zoneOffsetSeconds(refEpoch))
 
 	// Build query to count distinct species per day, excluding false positives
 	prefix := ds.manager.TablePrefix()
@@ -2819,10 +2898,13 @@ func thresholdScientificName(t *entities.DynamicThreshold) string {
 	return ""
 }
 
-// thresholdModelName constructs the classifier-style model ID from a threshold's label.
-func thresholdModelName(t *entities.DynamicThreshold) string {
-	if t.Label != nil && t.Label.Model != nil && t.Label.Model.Name != "" {
-		return t.Label.Model.Name + "_V" + t.Label.Model.Version
+// labelModelName constructs the classifier-style model ID ("Name_VVersion") from a
+// label's associated AIModel, used for both threshold records and threshold events.
+// Requires the caller's query to preload Label.Model; falls back to the default
+// BirdNET model identifier when the label or model is absent.
+func labelModelName(l *entities.Label) string {
+	if l != nil && l.Model != nil && l.Model.Name != "" {
+		return l.Model.Name + "_V" + l.Model.Version
 	}
 	return detection.DefaultModelName + "_V" + detection.DefaultModelVersion
 }
@@ -2924,14 +3006,33 @@ func (ds *Datastore) GetDynamicThreshold(speciesName, _ string) (*datastore.Dyna
 	// Resolve to scientific name in case caller passes a common name
 	t, err := ds.threshold.GetDynamicThreshold(ctx, ds.resolveToScientificName(speciesName))
 	if err != nil {
-		return nil, err
+		// Not-found is a benign result, not a DB fault. Wrap it as a CategoryNotFound
+		// EnhancedError (never CategoryDatabase, so it is not surfaced to Sentry as a
+		// database error, see #1019) so the API layer's handleErrorWithNotFound maps it
+		// to HTTP 404 instead of 500, matching the legacy backend (#1068). errors.Is
+		// against the sentinel still matches because EnhancedError.Unwrap exposes it, and
+		// shouldReportToSentry suppresses the benign "dynamic threshold not found" message
+		// so building this error produces no Sentry noise. Genuine failures fall through
+		// to the CategoryDatabase telemetry tags below.
+		if errors.Is(err, repository.ErrDynamicThresholdNotFound) {
+			return nil, errors.New(err).
+				Component("datastore").
+				Category(errors.CategoryNotFound).
+				Context("operation", "get_dynamic_threshold").
+				Build()
+		}
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_dynamic_threshold").
+			Build()
 	}
 	scientificName := thresholdScientificName(t)
 	return &datastore.DynamicThreshold{
 		ID:             t.ID,
 		SpeciesName:    strings.ToLower(ds.resolveCommonName(scientificName)),
 		ScientificName: scientificName,
-		ModelName:      thresholdModelName(t),
+		ModelName:      labelModelName(t.Label),
 		Level:          t.Level,
 		CurrentValue:   t.CurrentValue,
 		BaseThreshold:  t.BaseThreshold,
@@ -2953,7 +3054,11 @@ func (ds *Datastore) GetAllDynamicThresholds(limit ...int) ([]datastore.DynamicT
 	ctx := context.Background()
 	v2Thresholds, err := ds.threshold.GetAllDynamicThresholds(ctx, limit...)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_all_dynamic_thresholds").
+			Build()
 	}
 	result := make([]datastore.DynamicThreshold, 0, len(v2Thresholds))
 	for i := range v2Thresholds {
@@ -2963,7 +3068,7 @@ func (ds *Datastore) GetAllDynamicThresholds(limit ...int) ([]datastore.DynamicT
 			ID:             t.ID,
 			SpeciesName:    strings.ToLower(ds.resolveCommonName(scientificName)),
 			ScientificName: scientificName,
-			ModelName:      thresholdModelName(t),
+			ModelName:      labelModelName(t.Label),
 			Level:          t.Level,
 			CurrentValue:   t.CurrentValue,
 			BaseThreshold:  t.BaseThreshold,
@@ -3071,7 +3176,15 @@ func (ds *Datastore) GetDynamicThresholdStats() (totalCount, activeCount, atMini
 		return 0, 0, 0, make(map[int]int64), nil
 	}
 	ctx := context.Background()
-	return ds.threshold.GetDynamicThresholdStats(ctx)
+	totalCount, activeCount, atMinimumCount, levelDistribution, err = ds.threshold.GetDynamicThresholdStats(ctx)
+	if err != nil {
+		return 0, 0, 0, nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_dynamic_threshold_stats").
+			Build()
+	}
+	return totalCount, activeCount, atMinimumCount, levelDistribution, nil
 }
 
 // ============================================================
@@ -3140,7 +3253,12 @@ func (ds *Datastore) GetThresholdEvents(speciesName string, limit int) ([]datast
 	// Query 1: Try with the provided name (common name) - finds legacy/incorrectly saved events
 	v2Events, err := ds.threshold.GetThresholdEvents(ctx, speciesName, limit)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_threshold_events").
+			Context("query_type", "common_name").
+			Build()
 	}
 
 	// Query 2: If we can resolve to scientific name, also query with that
@@ -3149,17 +3267,27 @@ func (ds *Datastore) GetThresholdEvents(speciesName string, limit int) ([]datast
 	// normalization; a decomposed (NFD) localized name must match the NFC-folded keys.
 	if scientificName := ds.resolveToScientificName(speciesName); scientificName != speciesName {
 		sciEvents, err := ds.threshold.GetThresholdEvents(ctx, scientificName, limit)
-		if err == nil && len(sciEvents) > 0 {
-			v2Events = append(v2Events, sciEvents...)
+		if err != nil {
+			return nil, errors.New(err).
+				Component("datastore").
+				Category(errors.CategoryDatabase).
+				Context("operation", "get_threshold_events").
+				Context("query_type", "scientific_name").
+				Build()
 		}
+		v2Events = append(v2Events, sciEvents...)
 	}
 
 	// Note: Deduplication not needed - each event has exactly one LabelID,
 	// so queries for different labels return disjoint result sets.
 	uniqueEvents := v2Events
 
-	// Sort by CreatedAt DESC (most recent first)
+	// Sort by CreatedAt DESC (most recent first). Tie-break on ID so events sharing a
+	// timestamp truncate deterministically when the limit is applied below.
 	sort.Slice(uniqueEvents, func(i, j int) bool {
+		if uniqueEvents[i].CreatedAt.Equal(uniqueEvents[j].CreatedAt) {
+			return uniqueEvents[i].ID > uniqueEvents[j].ID
+		}
 		return uniqueEvents[i].CreatedAt.After(uniqueEvents[j].CreatedAt)
 	})
 
@@ -3175,6 +3303,7 @@ func (ds *Datastore) GetThresholdEvents(speciesName string, limit int) ([]datast
 		result = append(result, datastore.ThresholdEvent{
 			ID:            e.ID,
 			SpeciesName:   eventSpeciesName(e),
+			ModelName:     labelModelName(e.Label),
 			PreviousLevel: e.PreviousLevel,
 			NewLevel:      e.NewLevel,
 			PreviousValue: e.PreviousValue,
@@ -3195,7 +3324,11 @@ func (ds *Datastore) GetRecentThresholdEvents(limit int) ([]datastore.ThresholdE
 	ctx := context.Background()
 	v2Events, err := ds.threshold.GetRecentThresholdEvents(ctx, limit)
 	if err != nil {
-		return nil, err
+		return nil, errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "get_recent_threshold_events").
+			Build()
 	}
 	result := make([]datastore.ThresholdEvent, 0, len(v2Events))
 	for i := range v2Events {
@@ -3203,6 +3336,7 @@ func (ds *Datastore) GetRecentThresholdEvents(limit int) ([]datastore.ThresholdE
 		result = append(result, datastore.ThresholdEvent{
 			ID:            e.ID,
 			SpeciesName:   eventSpeciesName(e),
+			ModelName:     labelModelName(e.Label),
 			PreviousLevel: e.PreviousLevel,
 			NewLevel:      e.NewLevel,
 			PreviousValue: e.PreviousValue,
@@ -3216,16 +3350,42 @@ func (ds *Datastore) GetRecentThresholdEvents(limit int) ([]datastore.ThresholdE
 }
 
 // DeleteThresholdEvents deletes threshold events for a species.
-// NOTE: This only deletes events by the resolved scientific name. GetThresholdEvents
-// queries both common-name and scientific-name labels (WORKAROUND #1907). Legacy events
-// saved with common-name labels may survive this delete. Full dual-delete cleanup
-// should be added when the #1907 workaround is removed.
+// WORKAROUND(#1907): mirrors GetThresholdEvents' dual lookup. It deletes events saved
+// under BOTH the provided name (legacy common-name labels) AND the resolved scientific
+// name (post-#1907 labels). Without the common-name pass, legacy events survive the
+// delete and GetThresholdEvents resurfaces them on the next read.
+// TODO: Collapse to a single scientific-name delete when the #1907 workaround is removed
+// (after legacy common-name labels have been migrated).
 func (ds *Datastore) DeleteThresholdEvents(speciesName string) error {
 	if ds.threshold == nil {
 		return nil
 	}
 	ctx := context.Background()
-	return ds.threshold.DeleteThresholdEvents(ctx, ds.resolveToScientificName(speciesName))
+
+	// Delete by the provided name first - matches legacy/incorrectly saved events
+	// whose label scientific_name actually holds the common name.
+	if err := ds.threshold.DeleteThresholdEvents(ctx, speciesName); err != nil {
+		return errors.New(err).
+			Component("datastore").
+			Category(errors.CategoryDatabase).
+			Context("operation", "delete_threshold_events").
+			Context("query_type", "common_name").
+			Build()
+	}
+
+	// Also delete by the resolved scientific name when it differs - matches
+	// correctly saved events (after the #1907 fix).
+	if scientificName := ds.resolveToScientificName(speciesName); scientificName != speciesName {
+		if err := ds.threshold.DeleteThresholdEvents(ctx, scientificName); err != nil {
+			return errors.New(err).
+				Component("datastore").
+				Category(errors.CategoryDatabase).
+				Context("operation", "delete_threshold_events").
+				Context("query_type", "scientific_name").
+				Build()
+		}
+	}
+	return nil
 }
 
 // DeleteAllThresholdEvents deletes all threshold events.

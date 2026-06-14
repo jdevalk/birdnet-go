@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { t } from '$lib/i18n';
+  import { t, type TranslationKey } from '$lib/i18n';
   import { api } from '$lib/utils/api';
   import { getLocalDateString, parseLocalDateString } from '$lib/utils/date';
   import { formatNumber, formatDateTime } from '$lib/utils/formatters';
@@ -20,6 +20,7 @@
   import { handleBirdImageError } from '$lib/desktop/components/ui/image-utils';
   import LoadingSpinner from '$lib/desktop/components/ui/LoadingSpinner.svelte';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
+  import { localizeSpeciesName } from '$lib/utils/speciesDisplay';
   import type { SourceInfo } from '$lib/types/detection.types';
   import SourceBadge from '$lib/desktop/features/dashboard/components/SourceBadge.svelte';
 
@@ -69,6 +70,9 @@
     uniqueSpecies: number;
     avgConfidence: number;
     mostCommonSpecies: string;
+    // Canonical scientific name of the most-common species, so the displayed
+    // common name can localize per visitor while the lookup stays canonical.
+    mostCommonScientific: string;
     mostCommonCount: number;
   }
 
@@ -177,6 +181,7 @@
     uniqueSpecies: 0,
     avgConfidence: 0,
     mostCommonSpecies: '',
+    mostCommonScientific: '',
     mostCommonCount: 0,
   });
 
@@ -198,11 +203,30 @@
   const speciesBars = $derived(
     [...(chartData.species ?? [])]
       .sort((a, b) => b.count - a.count)
-      .map(s => ({ label: s.common_name, value: s.count }))
+      .map(s => ({ label: localizeSpeciesName(s.scientific_name, s.common_name), value: s.count }))
   );
 
-  // Time of day: hourly counts bucketed into the six fixed periods.
-  const timeOfDayBars = $derived(bucketHourlyByPeriod(chartData.timeOfDay));
+  // Time of day: hourly counts bucketed into the six fixed periods. The period
+  // display labels are localized at render time so the pure transform stays
+  // i18n-free. The map is keyed on the transform's stable English labels, so the
+  // localization is robust to bucket order or length; an unmapped label falls
+  // back to its English text. The two Night labels (0-4 and 20-23) must remain
+  // distinct in every locale: the BarChart uses the label as its d3 band-scale
+  // domain key, so identical strings would collapse the two buckets into one bar.
+  const TIME_OF_DAY_PERIOD_LABEL_KEYS = new Map<string, TranslationKey>([
+    ['Night (0-4)', 'analytics.timeOfDayPeriods.night0to4'],
+    ['Dawn (5-8)', 'analytics.timeOfDayPeriods.dawn5to8'],
+    ['Morning (9-11)', 'analytics.timeOfDayPeriods.morning9to11'],
+    ['Afternoon (12-16)', 'analytics.timeOfDayPeriods.afternoon12to16'],
+    ['Evening (17-19)', 'analytics.timeOfDayPeriods.evening17to19'],
+    ['Night (20-23)', 'analytics.timeOfDayPeriods.night20to23'],
+  ]);
+  const timeOfDayBars = $derived.by(() =>
+    bucketHourlyByPeriod(chartData.timeOfDay).map(bucket => {
+      const key = TIME_OF_DAY_PERIOD_LABEL_KEYS.get(bucket.label);
+      return { label: key ? t(key) : bucket.label, value: bucket.value };
+    })
+  );
 
   // Detection trend: aggregated/sorted daily points, wrapped as a single series.
   const trendSeries = $derived([
@@ -390,6 +414,7 @@
       let totalDetections = 0;
       let totalConfidence = 0;
       let mostCommonSpecies = '';
+      let mostCommonScientific = '';
       let mostCommonCount = 0;
 
       speciesArray.forEach(species => {
@@ -402,6 +427,7 @@
         if (count > mostCommonCount) {
           mostCommonCount = count;
           mostCommonSpecies = species.common_name || t('analytics.recentDetections.unknown');
+          mostCommonScientific = species.scientific_name || '';
         }
       });
 
@@ -410,6 +436,7 @@
         uniqueSpecies: speciesArray.length,
         avgConfidence: totalDetections > 0 ? totalConfidence / totalDetections : 0,
         mostCommonSpecies,
+        mostCommonScientific,
         mostCommonCount,
       };
     } catch (err) {
@@ -726,7 +753,9 @@
     <!-- Most Common Species Card -->
     <StatCard
       title={t('analytics.stats.mostCommon')}
-      value={summary.mostCommonSpecies || t('analytics.stats.none')}
+      value={summary.mostCommonCount > 0
+        ? localizeSpeciesName(summary.mostCommonScientific, summary.mostCommonSpecies)
+        : t('analytics.stats.none')}
       subtitle={summary.mostCommonCount > 0
         ? formatNumber(summary.mostCommonCount) + ' ' + t('analytics.stats.detections')
         : ''}
@@ -902,7 +931,8 @@
                           src={buildAppUrl(
                             `/api/v2/media/species-image?name=${encodeURIComponent(detection.scientificName ?? '')}`
                           )}
-                          alt={detection.commonName || 'Unknown species'}
+                          alt={detection.commonName ||
+                            t('analytics.recentDetections.unknownSpecies')}
                           class="w-full h-full object-cover"
                           onerror={handleBirdImageError}
                           loading="lazy"
@@ -912,7 +942,8 @@
                       </div>
                       <div>
                         <div class="font-medium">
-                          {detection.commonName || t('analytics.recentDetections.unknownSpecies')}
+                          {localizeSpeciesName(detection.scientificName, detection.commonName) ||
+                            t('analytics.recentDetections.unknownSpecies')}
                         </div>
                         <div class="text-xs opacity-50">{detection.scientificName || ''}</div>
                       </div>
@@ -967,7 +998,7 @@
                     src={buildAppUrl(
                       `/api/v2/media/species-image?name=${encodeURIComponent(detection.scientificName ?? '')}`
                     )}
-                    alt={detection.commonName || 'Unknown species'}
+                    alt={detection.commonName || t('analytics.recentDetections.unknownSpecies')}
                     class="w-full h-full object-cover"
                     onerror={handleBirdImageError}
                     loading="lazy"
@@ -981,7 +1012,8 @@
                     {detection.timestamp ? formatDateTime(detection.timestamp) : '-'}
                   </div>
                   <div class="font-medium leading-tight truncate">
-                    {detection.commonName || t('analytics.recentDetections.unknownSpecies')}
+                    {localizeSpeciesName(detection.scientificName, detection.commonName) ||
+                      t('analytics.recentDetections.unknownSpecies')}
                   </div>
                   <div class="text-xs opacity-60 truncate">{detection.scientificName || ''}</div>
                   <div class="mt-2 flex items-center justify-between">
