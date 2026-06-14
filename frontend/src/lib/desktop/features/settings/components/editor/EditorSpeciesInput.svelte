@@ -199,11 +199,26 @@
     updatePortalPosition();
   }
 
+  // Fallback dropdown-height estimate (px), used only before the dropdown has
+  // been laid out and its real offsetHeight can be measured.
+  const DROPDOWN_MAX_HEIGHT_ESTIMATE = 240;
+  const DROPDOWN_ITEM_HEIGHT_ESTIMATE = 40;
+
   function updatePortalPosition() {
     if (!portalDropdown || !inputElement) return;
 
     const rect = inputElement.getBoundingClientRect();
-    const dropdownHeight = Math.min(240, filteredPredictions.length * 40);
+    // Use the real rendered height (the dropdown is already populated when this
+    // runs) so the 'above' flip aligns the dropdown's bottom edge to the input.
+    // Fall back to an item-count estimate only before the first layout.
+    const measuredHeight = portalDropdown.offsetHeight;
+    const dropdownHeight =
+      measuredHeight > 0
+        ? measuredHeight
+        : Math.min(
+            DROPDOWN_MAX_HEIGHT_ESTIMATE,
+            filteredPredictions.length * DROPDOWN_ITEM_HEIGHT_ESTIMATE
+          );
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom;
     const spaceAbove = rect.top;
@@ -261,6 +276,7 @@
     if (event.key === 'Escape') {
       event.preventDefault();
       showPredictions = false;
+      manuallyDismissed = true;
       destroyPortalDropdown();
       inputElement?.blur();
     } else if (event.key === 'ArrowDown' && showPredictions && portalDropdown) {
@@ -308,6 +324,7 @@
     } else if (event.key === 'Escape') {
       event.preventDefault();
       showPredictions = false;
+      manuallyDismissed = true;
       destroyPortalDropdown();
       inputElement?.focus();
     }
@@ -323,17 +340,21 @@
     }
   }
 
-  // Register document-level listeners and clean up on destroy
+  // Register outside-click/touch and scroll/resize listeners only while the
+  // dropdown is open, so closed inputs do not keep global listeners that thrash
+  // layout on every scroll. Capture phase catches scrolls in nested containers.
   $effect(() => {
+    if (!showPredictions) return;
+
     document.addEventListener('click', handleDocumentClick);
     document.addEventListener('touchstart', handleDocumentClick);
-    window.addEventListener('scroll', updatePortalPosition, { passive: true });
+    window.addEventListener('scroll', updatePortalPosition, { passive: true, capture: true });
     window.addEventListener('resize', updatePortalPosition);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
       document.removeEventListener('touchstart', handleDocumentClick);
-      window.removeEventListener('scroll', updatePortalPosition);
+      window.removeEventListener('scroll', updatePortalPosition, { capture: true });
       window.removeEventListener('resize', updatePortalPosition);
       destroyPortalDropdown();
     };
@@ -358,10 +379,19 @@
       oninput={handleInput}
       onkeydown={handleKeydown}
       onfocus={() => {
-        if (filteredPredictions.length > 0) {
+        // Don't auto-reopen a dropdown the user explicitly dismissed (Escape or
+        // click-outside); typing resets manuallyDismissed. Recreate the portal
+        // directly rather than relying on the $effect, which won't re-run when
+        // neither filteredPredictions nor manuallyDismissed changed.
+        if (filteredPredictions.length > 0 && !manuallyDismissed) {
           showPredictions = true;
           if (portalDropdown) {
             updatePortalPosition();
+          } else {
+            createPortalDropdown();
+            // createPortalDropdown only appends an empty container; populate it now
+            // since the portal $effect won't re-run (no dependency changed).
+            updatePortalDropdown();
           }
         }
       }}

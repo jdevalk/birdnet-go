@@ -103,6 +103,10 @@
   let touched = $state(false);
   let inputElement: HTMLInputElement;
   let portalDropdown: HTMLDivElement | null = null;
+  // Tracks an explicit dismissal (click/touch outside). The portal $effect reads
+  // this so a dismissed dropdown stays closed while the input still holds text,
+  // instead of lingering on document.body until the next input change.
+  let manuallyDismissed = $state(false);
 
   // Generate unique ID for this instance using timestamp and counter
   // This ensures no collisions even with multiple instances created simultaneously
@@ -116,6 +120,9 @@
     idCounter = ++win.__speciesInputCounter;
   }
   const instanceId = `species-predictions-${Date.now()}-${idCounter}`;
+  // Distinct prefix from instanceId so it is never matched by the portal's
+  // `[id^="species-predictions-"]` lookups.
+  const wrapperId = instanceId.replace('species-predictions-', 'species-input-wrapper-');
 
   // Auto-derive button size from input size if not specified
   let effectiveButtonSize = $derived(buttonSize ?? size);
@@ -158,19 +165,27 @@
 
   // Update predictions visibility and manage portal dropdown
   $effect(() => {
-    const shouldShow = filteredPredictions.length > 0;
+    const hasPredictions = filteredPredictions.length > 0;
 
-    if (shouldShow && !portalDropdown && inputElement) {
-      createPortalDropdown();
-    } else if (!shouldShow && portalDropdown) {
-      destroyPortalDropdown();
+    if (!hasPredictions) {
+      // No predictions — always close and reset the dismissed flag.
+      if (portalDropdown) destroyPortalDropdown();
+      showPredictions = false;
+      manuallyDismissed = false;
+      return;
     }
 
-    if (shouldShow && portalDropdown) {
+    // Has predictions but the user dismissed the dropdown by clicking outside —
+    // stay closed until the next input change (which resets manuallyDismissed).
+    if (manuallyDismissed) return;
+
+    if (!portalDropdown && inputElement) {
+      createPortalDropdown();
+    }
+    if (portalDropdown) {
       updatePortalDropdown();
     }
-
-    showPredictions = shouldShow;
+    showPredictions = true;
   });
 
   // Event delegation handlers
@@ -269,12 +284,27 @@
     updatePortalPosition();
   }
 
+  // Fallback dropdown-height estimate (px), used only before the dropdown has
+  // been laid out and its real offsetHeight can be measured.
+  const DROPDOWN_MAX_HEIGHT_ESTIMATE = 240;
+  const DROPDOWN_ITEM_HEIGHT_ESTIMATE = 40;
+
   // Update portal dropdown position with smart positioning
   function updatePortalPosition() {
     if (!portalDropdown || !inputElement) return;
 
     const rect = inputElement.getBoundingClientRect();
-    const dropdownHeight = Math.min(240, filteredPredictions.length * 40); // Estimate height
+    // Use the real rendered height (the dropdown is already populated when this
+    // runs) so the 'above' flip aligns the dropdown's bottom edge to the input.
+    // Fall back to an item-count estimate only before the first layout.
+    const measuredHeight = portalDropdown.offsetHeight;
+    const dropdownHeight =
+      measuredHeight > 0
+        ? measuredHeight
+        : Math.min(
+            DROPDOWN_MAX_HEIGHT_ESTIMATE,
+            filteredPredictions.length * DROPDOWN_ITEM_HEIGHT_ESTIMATE
+          );
     const viewportHeight = window.innerHeight;
     const spaceBelow = viewportHeight - rect.bottom;
     const spaceAbove = rect.top;
@@ -337,6 +367,7 @@
     const target = event.target as HTMLInputElement;
     value = target.value;
     touched = false; // Reset touched state on input
+    manuallyDismissed = false; // Re-show suggestions on new input
     onInput?.(target.value);
   }
 
@@ -355,6 +386,7 @@
     } else if (event.key === 'Escape') {
       event.preventDefault();
       showPredictions = false;
+      manuallyDismissed = true;
       // Immediately destroy portal dropdown for testing consistency
       destroyPortalDropdown();
       inputElement?.blur();
@@ -420,31 +452,41 @@
     } else if (event.key === 'Escape') {
       event.preventDefault();
       showPredictions = false;
+      manuallyDismissed = true;
       // Immediately destroy portal dropdown for testing consistency
       destroyPortalDropdown();
       inputElement?.focus();
     }
   }
 
-  // Close predictions when clicking/touching outside
+  // Close predictions when clicking/touching outside this input's wrapper or its
+  // portaled dropdown. Scope to the per-instance wrapper id rather than the
+  // global `.form-control` class, which matches every other form field on the
+  // page and would otherwise keep the dropdown open on unrelated clicks.
   function handleDocumentClick(event: MouseEvent | TouchEvent) {
     const target = event.target as globalThis.Element;
-    if (!target.closest('.form-control') && !target.closest(`#${instanceId}`)) {
+    if (!target.closest(`#${wrapperId}`) && !target.closest(`#${instanceId}`)) {
       showPredictions = false;
+      manuallyDismissed = true;
+      destroyPortalDropdown();
     }
   }
 
-  // Add document click and touch listeners for mobile support, plus scroll/resize for positioning
+  // Register outside-click/touch and scroll/resize listeners only while the
+  // dropdown is open, so closed inputs do not keep global listeners that thrash
+  // layout on every scroll. Capture phase catches scrolls in nested containers.
   $effect(() => {
+    if (!showPredictions) return;
+
     document.addEventListener('click', handleDocumentClick);
     document.addEventListener('touchstart', handleDocumentClick);
-    window.addEventListener('scroll', updatePortalPosition, { passive: true });
+    window.addEventListener('scroll', updatePortalPosition, { passive: true, capture: true });
     window.addEventListener('resize', updatePortalPosition);
 
     return () => {
       document.removeEventListener('click', handleDocumentClick);
       document.removeEventListener('touchstart', handleDocumentClick);
-      window.removeEventListener('scroll', updatePortalPosition);
+      window.removeEventListener('scroll', updatePortalPosition, { capture: true });
       window.removeEventListener('resize', updatePortalPosition);
       // Clean up any remaining portal dropdown
       destroyPortalDropdown();
@@ -452,7 +494,11 @@
   });
 </script>
 
-<div class={cn('form-control relative min-w-0 species-input-container', className)} {...rest}>
+<div
+  id={wrapperId}
+  class={cn('form-control relative min-w-0 species-input-container', className)}
+  {...rest}
+>
   {#if label}
     <label class="label justify-start" for={id}>
       <span class="label-text capitalize">
@@ -499,10 +545,20 @@
         onblur={handleBlur}
         oninvalid={handleInvalid}
         onfocus={() => {
-          if (filteredPredictions.length > 0) {
+          // Don't auto-reopen a dropdown the user explicitly dismissed (Escape or
+          // click-outside); typing resets manuallyDismissed. Recreate the portal
+          // directly rather than relying on the $effect, which won't re-run when
+          // neither filteredPredictions nor manuallyDismissed changed (otherwise
+          // showPredictions/aria-expanded would be true with no visible listbox).
+          if (filteredPredictions.length > 0 && !manuallyDismissed) {
             showPredictions = true;
             if (portalDropdown) {
               updatePortalPosition();
+            } else {
+              createPortalDropdown();
+              // createPortalDropdown only appends an empty container; populate it
+              // now since the portal $effect won't re-run (no dependency changed).
+              updatePortalDropdown();
             }
           }
         }}
