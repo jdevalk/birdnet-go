@@ -1216,7 +1216,26 @@ type BirdNETConfig struct {
 	Labels             []string            `yaml:"-" json:"-"`                                                 // list of available species labels, runtime value
 	UseXNNPACK         bool                `yaml:"usexnnpack" json:"useXnnpack"`                               // true to use XNNPACK delegate for inference acceleration
 	ONNXRuntimePath    string              `yaml:"onnxruntimepath,omitempty" json:"onnxRuntimePath,omitempty"` // path to ONNX Runtime shared library (required for ONNX models)
+	OpenVINOPath       string              `yaml:"openvinopath,omitempty" json:"openVinoPath,omitempty"`       // path to libopenvino_c shared library (OpenVINO image variants only)
+	Backend            string              `yaml:"backend,omitempty" json:"backend,omitempty"`                 // inference backend preference: "auto" (default), "onnx", or "openvino"
+	OpenVINODevice     string              `yaml:"openvinodevice,omitempty" json:"openVinoDevice,omitempty"`   // OpenVINO device preference: "auto" (default), "cpu", or "gpu"
 }
+
+// Inference backend preferences for BirdNET.Backend.
+const (
+	BackendPrefAuto     = "auto"
+	BackendPrefONNX     = "onnx"
+	BackendPrefOpenVINO = "openvino"
+)
+
+// OpenVINO device preferences for BirdNET.OpenVINODevice. "auto" picks the GPU
+// (Intel iGPU) when present for eligible models, else the f16 CPU path; "cpu"
+// and "gpu" force a device. An empty string is treated as "auto".
+const (
+	OVDeviceAuto = "auto"
+	OVDeviceCPU  = "cpu"
+	OVDeviceGPU  = "gpu"
+)
 
 // RangeFilterSettings contains settings for the range filter
 type RangeFilterSettings struct {
