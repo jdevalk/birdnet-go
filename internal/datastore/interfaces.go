@@ -199,6 +199,13 @@ type Interface interface {
 	// ordered by detection count descending. Legacy datastores without an audio_sources table
 	// return an empty slice.
 	ListAnalyticsSourcesData(ctx context.Context) ([]AnalyticsSourceInfo, error)
+	// GetActivityHeatmap returns detection counts bucketed by (station-local date, intra-day slot)
+	// over the inclusive date range, as a columnar sparse payload. species is an optional filter.
+	GetActivityHeatmap(ctx context.Context, startDate, endDate, species string) (ActivityHeatmapData, error)
+	// GetHourlyDistributionBySpecies returns the normalized hour-of-day activity distribution for
+	// the top `limit` species by detection volume over the inclusive date range (false positives
+	// excluded), ordered by descending volume. Powers the who-sings-when ridgeline.
+	GetHourlyDistributionBySpecies(ctx context.Context, startDate, endDate string, limit int) ([]SpeciesHourlyDistribution, error)
 	// Search functionality
 	SearchDetections(filters *SearchFilters) ([]DetectionRecord, int, error)
 	// Dynamic Threshold methods
@@ -218,16 +225,10 @@ type Interface interface {
 	DeleteThresholdEvents(speciesName string) error
 	DeleteAllThresholdEvents() (int64, error)
 	// Notification History methods
-	// TODO(BG-17): Add context.Context as first parameter for cancellation/timeout support:
-	//   SaveNotificationHistory(ctx context.Context, history *NotificationHistory) error
-	//   GetNotificationHistory(ctx context.Context, scientificName string, notificationType string) (*NotificationHistory, error)
-	//   GetActiveNotificationHistory(ctx context.Context, after time.Time) ([]NotificationHistory, error)
-	//   DeleteExpiredNotificationHistory(ctx context.Context, before time.Time) (int64, error)
-	// This requires updating all implementations and call sites (breaking change)
-	SaveNotificationHistory(history *NotificationHistory) error
-	GetNotificationHistory(scientificName string, notificationType string) (*NotificationHistory, error)
-	GetActiveNotificationHistory(after time.Time) ([]NotificationHistory, error)
-	DeleteExpiredNotificationHistory(before time.Time) (int64, error) // Returns count deleted
+	SaveNotificationHistory(ctx context.Context, history *NotificationHistory) error
+	GetNotificationHistory(ctx context.Context, scientificName string, notificationType string) (*NotificationHistory, error)
+	GetActiveNotificationHistory(ctx context.Context, after time.Time) ([]NotificationHistory, error)
+	DeleteExpiredNotificationHistory(ctx context.Context, before time.Time) (int64, error) // Returns count deleted
 	// Database stats method for runtime statistics
 	GetDatabaseStats(ctx context.Context) (*DatabaseStats, error)
 	// PingWithLatency executes a trivial query (SELECT 1) and returns the round-trip time.

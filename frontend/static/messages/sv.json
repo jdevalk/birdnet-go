@@ -205,7 +205,6 @@
     "serverError": "500 - Internt serverfel",
     "componentError": "Komponentladdningsfel",
     "speciesAnalytics": "Artanalys",
-    "advancedAnalytics": "Avancerad analys",
     "detectionDetails": "Detektionsdetaljer",
     "settingsNotAvailable": "Inställningar ej tillgängliga"
   },
@@ -1555,7 +1554,7 @@
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
-      "clipLength": "Clip length",
+      "clipLength": "Segmentlängd",
       "species": "Species",
       "invocations": "Segments analysed",
       "avgLatency": "Avg latency",
@@ -1580,6 +1579,19 @@
       "queueCapacity": "Capacity",
       "lastSeen": "Last seen",
       "lastSeenNever": "No detections yet",
+      "deviceHelp": "Den beräkningsenhet som denna modell kör inferens på (CPU, GPU eller okänd).",
+      "paused": "Pausad",
+      "pausedScheduleHelp": "Denna modell körs endast enligt ett schema och är för närvarande pausad, så den bearbetar inte ljud.",
+      "activityPaused": "Pausad av schema",
+      "lastHeard": "Sist hörd",
+      "lastHeardHint": "Senaste förutsägelser över tröskeln, för diagnostik. Inkluderar icke-fågel- och utanför område-resultat som inte sparas som detekteringar.",
+      "lastHeardNever": "Inget hört än",
+      "confidenceColumn": "Konf.",
+      "heardWhen": "När",
+      "coDetectedColumn": "Även",
+      "coDetectedHelp": "Andra modeller som upptäckte denna art inom {seconds}s",
+      "outOfRangeHelp": "Utanför områdesfiltret (visas för diagnostik, sparas inte som detektering)",
+      "peak": "topp",
       "activityActive": "Inference active",
       "activityIdle": "Idle",
       "throughput": "Throughput",
@@ -1597,8 +1609,7 @@
       "fp16Help": "16-bit floating point. Hardware that supports it can run some models faster and with less memory.",
       "invocationsHelp": "Total audio segments this model has analysed since startup.",
       "noModelsHint": "No audio source configured yet?",
-      "noModelsHintLink": "Configure audio sources",
-      "noDataYet": "No data yet"
+      "noModelsHintLink": "Configure audio sources"
     },
     "metrics": {
       "cpu": "CPU",
@@ -1655,6 +1666,35 @@
     "reattach": "Återanslut"
   },
   "analytics": {
+    "hub": {
+      "tabs": {
+        "overview": "Översikt",
+        "patterns": "Aktivitetsmönster",
+        "trends": "Trender",
+        "biodiversity": "Biologisk mångfald",
+        "quality": "Granskning och noggrannhet"
+      },
+      "aria": {
+        "tabs": "Analysavsnitt"
+      },
+      "controls": {
+        "source": "Källa",
+        "sourceAll": "Alla källor",
+        "sourceComingSoon": "Filtrering efter källa kommer i en senare uppdatering.",
+        "speciesNotApplicable": "Diagrammen i det här avsnittet filtrerar inte efter art."
+      },
+      "card": {
+        "error": "Det gick inte att läsa in det här diagrammet",
+        "retry": "Försök igen",
+        "notEnoughData": "Inte tillräckligt med data ännu",
+        "notEnoughDataHint": "Det här diagrammet behöver minst {min} datapunkter. Fortsätt spela in och titta tillbaka snart.",
+        "export": "Exportera",
+        "exportComingSoon": "CSV-export kommer snart."
+      },
+      "comingSoon": {
+        "description": "Det här avsnittet är under uppbyggnad och kommer i en kommande uppdatering."
+      }
+    },
     "title": "Översikt",
     "loadingError": "Kunde inte ladda vissa analysdata. Försök igen senare.",
     "stats": {
@@ -1767,7 +1807,6 @@
       }
     },
     "advanced": {
-      "title": "Avancerad analys",
       "chartControls": "Diagramkontroller",
       "dateRange": "Datumintervall",
       "chartOptions": "Diagramalternativ",
@@ -1813,6 +1852,32 @@
           "noDataHint": "Välj ett datumintervall för att visa artdiversitetstrender",
           "axisDate": "Datum",
           "axisUniqueSpecies": "Unika arter"
+        },
+        "heatmap": {
+          "title": "Seasonal Activity Heatmap",
+          "description": "Detection density by date and time of day, revealing migration waves and dawn-chorus drift",
+          "noData": "No activity data available",
+          "noDataHint": "Select a date range to view seasonal activity patterns",
+          "axisDate": "Date",
+          "axisTime": "Time of Day",
+          "tooltipTime": "Time",
+          "tooltipCount": "Detections",
+          "legendLess": "Less",
+          "legendMore": "More ({max})",
+          "ariaLabel": "Seasonal activity heatmap: detection density by date and time of day",
+          "summary": "{total} detections across {days} days. Busiest around {time} on {date}."
+        },
+        "ridgeline": {
+          "title": "Who Sings When",
+          "description": "Hour-of-day activity for the most-detected species, sorting dawn singers from all-day and nocturnal birds",
+          "noData": "No species activity data available",
+          "noDataHint": "Select a wider date range to compare species activity patterns",
+          "ariaLabel": "Who-sings-when ridgeline: hour-of-day activity distribution per species",
+          "axisTime": "Time of Day",
+          "note": "Showing the top {count} species by detection volume",
+          "tooltipDetections": "Detections",
+          "tooltipPeak": "Peak",
+          "summary": "Hour-of-day activity for {count} species. Most active: {species} around {time}."
         },
         "tooltips": {
           "date": "Datum",

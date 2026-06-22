@@ -1586,6 +1586,18 @@ func (r *detectionRepository) GetHourlyDistribution(ctx context.Context, start, 
 	return results, err
 }
 
+// GetDetectionTimestamps returns raw detected_at epochs for [start, end), false positives
+// excluded, in no particular order. See the interface doc for why bucketing happens in Go,
+// not SQL.
+func (r *detectionRepository) GetDetectionTimestamps(ctx context.Context, start, end int64, labelID *uint) ([]int64, error) {
+	var timestamps []int64
+	// No ORDER BY: the caller buckets timestamps into a map and sorts the resulting cells
+	// itself, so ordering (potentially millions of) rows in SQL would be wasted work.
+	err := r.buildAnalyticsBaseQuery(ctx, start, end, labelID, nil).
+		Pluck("d.detected_at", &timestamps).Error
+	return timestamps, err
+}
+
 // GetDailyAnalytics returns daily statistics.
 func (r *detectionRepository) GetDailyAnalytics(ctx context.Context, start, end int64, tzOffsetSeconds int, labelID, modelID *uint, sourceIDs ...uint) ([]DailyAnalyticsData, error) {
 	var results []DailyAnalyticsData
@@ -1675,31 +1687,32 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 
 // GetSpeciesFirstDetectionInPeriod returns the first detection of each species within a date range.
 // Groups by scientific_name to aggregate across all models for the same species.
-// Uses ROW_NUMBER() window function to correctly identify the detection with the earliest timestamp
-// per species, with id as tie-breaker for deterministic results.
+//
+// It uses a plain GROUP BY + MIN(detected_at) rather than a ROW_NUMBER() window
+// function. The only consumer is the species tracker (yearly/seasonal first-seen
+// loads), which uses just scientific_name + first_detected and discards label_id
+// and detection_id; MIN(detected_at) per scientific_name is exactly that first-seen
+// date, and avoids the window function's full per-period sort (a large cost on the
+// startup load). label_id is reported as MIN(label_id) (a representative, not
+// necessarily the first row's label); detection_id is no longer selected (left zero).
 // When sourceIDs is non-empty, results are scoped to detections from those audio sources.
 func (r *detectionRepository) GetSpeciesFirstDetectionInPeriod(ctx context.Context, start, end int64, limit, offset int, sourceIDs ...uint) ([]SpeciesFirstSeen, error) {
 	var results []SpeciesFirstSeen
 
-	// The source filter is appended to an existing `WHERE d.detected_at ...` clause inside the
-	// inner subquery, so we need the AND-style fragment (second return value), not a fresh WHERE.
+	// The source filter is appended to the existing `WHERE d.detected_at ...` clause,
+	// so we need the AND-style fragment (second return value), not a fresh WHERE.
 	_, sourceClause, sourceArgs := buildSourceFilterClauses(sourceIDs, "", "d")
 
 	rawSQL := fmt.Sprintf(`
-		SELECT label_id, scientific_name, first_detected, detection_id
-		FROM (
-			SELECT
-				d.label_id,
-				l.scientific_name,
-				d.detected_at as first_detected,
-				d.id as detection_id,
-				ROW_NUMBER() OVER (PARTITION BY l.scientific_name ORDER BY d.detected_at ASC, d.id ASC) as rn
-			FROM %s d
-			JOIN %s l ON l.id = d.label_id
-			WHERE d.detected_at >= ? AND d.detected_at < ?%s
-		) ranked
-		WHERE rn = 1
-		ORDER BY first_detected ASC
+		SELECT
+			MIN(d.label_id) as label_id,
+			l.scientific_name,
+			MIN(d.detected_at) as first_detected
+		FROM %s d
+		JOIN %s l ON l.id = d.label_id
+		WHERE d.detected_at >= ? AND d.detected_at < ?%s
+		GROUP BY l.scientific_name
+		ORDER BY first_detected ASC, l.scientific_name ASC
 		LIMIT ? OFFSET ?
 	`, r.tableName(), r.labelsTable(), sourceClause)
 

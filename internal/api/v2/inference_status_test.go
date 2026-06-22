@@ -141,7 +141,8 @@ func TestBuildModelStatus(t *testing.T) {
 		NumSpecies:   6522,
 		Spec:         classifier.ModelSpec{SampleRate: 48000, ClipLength: 3 * time.Second},
 	}
-	snap := inferencestats.PeekSnapshot{InvokeCount: 1000, InvokeTotalUs: 47_200_000, InvokeMaxUs: 130_000}
+	// MaxMs is sourced from the lifetime max (the model card uses the all-time peak).
+	snap := inferencestats.PeekSnapshot{InvokeCount: 1000, InvokeTotalUs: 47_200_000, InvokeMaxUsLifetime: 130_000}
 	rss := map[string]int64{"BirdNET_V2.4": rssVal}
 
 	got := buildModelStatus(&info, snap, rss, nil, nil, nil)
@@ -165,6 +166,42 @@ func TestBuildModelStatus_ZeroInvocations(t *testing.T) {
 	assert.Nil(t, got.Stats.RTF, "rtf must be nil with zero invocations (no divide-by-zero)")
 	assert.Nil(t, got.Memory.ApproxRssBytes, "approxRssBytes must be nil when RSS unavailable")
 	assert.True(t, got.Memory.Approximate, "memory.approximate must always be true")
+}
+
+// TestApplyRuntimeBackend verifies that live backend/precision values override the
+// static file metadata, while empty live values preserve the static fallback that
+// buildModelStatus set. This is the core of the runtime-sourced fix: an ONNX model
+// executed on OpenVINO must report "OpenVINO" with its FP16 compute precision, but
+// a model that is not loaded (empty live values) must keep its static metadata.
+func TestApplyRuntimeBackend(t *testing.T) {
+	t.Parallel()
+
+	t.Run("live values override static file metadata", func(t *testing.T) {
+		t.Parallel()
+		// Static metadata says ONNX/FP32 (the file), live says OpenVINO/FP16 (running).
+		status := InferenceModelStatus{Backend: classifier.BackendONNX, Quantization: string(classifier.QuantizationFP32)}
+		applyRuntimeBackend(&status, classifier.BackendOpenVINO, string(classifier.QuantizationFP16))
+		assert.Equal(t, classifier.BackendOpenVINO, status.Backend, "live backend must win over static ONNX")
+		assert.Equal(t, string(classifier.QuantizationFP16), status.Quantization, "live precision must win over static FP32")
+	})
+
+	t.Run("live precision fills an empty static quantization", func(t *testing.T) {
+		t.Parallel()
+		// Perch has no static quantization; the live INT8 (from the int8_arm filename)
+		// must surface on the card.
+		status := InferenceModelStatus{Backend: classifier.BackendONNX, Quantization: ""}
+		applyRuntimeBackend(&status, classifier.BackendONNX, string(classifier.QuantizationINT8))
+		assert.Equal(t, string(classifier.QuantizationINT8), status.Quantization, "live INT8 must surface for perch_v2_int8_arm")
+	})
+
+	t.Run("empty live values preserve the static fallback", func(t *testing.T) {
+		t.Parallel()
+		// Model not loaded: live values are empty, so the static metadata is kept.
+		status := InferenceModelStatus{Backend: classifier.BackendTFLite, Quantization: string(classifier.QuantizationFP32)}
+		applyRuntimeBackend(&status, "", "")
+		assert.Equal(t, classifier.BackendTFLite, status.Backend, "empty live backend must keep the static value")
+		assert.Equal(t, string(classifier.QuantizationFP32), status.Quantization, "empty live precision must keep the static value")
+	})
 }
 
 // TestGetInferenceStatus_HTTP200 verifies that GetInferenceStatus returns HTTP
@@ -316,6 +353,7 @@ func TestBuildModelStatus_LastDetection(t *testing.T) {
 			ScientificName: "Erithacus rubecula",
 			Confidence:     0.92,
 			AtUnix:         1718000000,
+			InRange:        true,
 		},
 	}
 
@@ -326,6 +364,68 @@ func TestBuildModelStatus_LastDetection(t *testing.T) {
 	assert.Equal(t, "Erithacus rubecula", got.LastDetection.ScientificName)
 	assert.InDelta(t, 0.92, got.LastDetection.Confidence, 0.001)
 	assert.Equal(t, int64(1718000000), got.LastDetection.AtUnix)
+	assert.True(t, got.LastDetection.InRange)
+}
+
+// TestInferenceModelStatus_JSONContract locks in the Phase A JSON field names
+// and shapes the frontend depends on: device, paused, scheduleLabel, and a
+// newest-first recentDetections array. recentDetections must serialize as an
+// array (never null) so the frontend can iterate it unconditionally, while an
+// empty scheduleLabel must be omitted.
+func TestInferenceModelStatus_JSONContract(t *testing.T) {
+	t.Parallel()
+
+	status := InferenceModelStatus{
+		ID:            "Bat",
+		Name:          "Bat",
+		Device:        deviceCPU,
+		Paused:        true,
+		ScheduleLabel: "Night schedule",
+		RecentDetections: []LastDetectionInfo{
+			{Species: "Common Pipistrelle", ScientificName: "Pipistrellus pipistrellus", Confidence: 0.81, AtUnix: 1718000200, InRange: true},
+			{Species: "Soprano Pipistrelle", ScientificName: "Pipistrellus pygmaeus", Confidence: 0.74, AtUnix: 1718000100, InRange: false},
+		},
+	}
+
+	raw, err := json.Marshal(status)
+	require.NoError(t, err)
+
+	var m map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(raw, &m))
+
+	// The Phase A keys are present under their contract names.
+	assert.JSONEq(t, `"CPU"`, string(m["device"]))
+	assert.JSONEq(t, `true`, string(m["paused"]))
+	assert.JSONEq(t, `"Night schedule"`, string(m["scheduleLabel"]))
+	require.Contains(t, m, "recentDetections", "recentDetections key must always be present")
+
+	// recentDetections is newest-first and serializes its nested fields.
+	var recent []LastDetectionInfo
+	require.NoError(t, json.Unmarshal(m["recentDetections"], &recent))
+	require.Len(t, recent, 2)
+	assert.Equal(t, "Common Pipistrelle", recent[0].Species, "recentDetections must be newest-first")
+	assert.Equal(t, int64(1718000200), recent[0].AtUnix)
+
+	// The nested field names are part of the contract: assert their JSON keys.
+	var rows []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(m["recentDetections"], &rows))
+	require.NotEmpty(t, rows)
+	firstRow := rows[0]
+	for _, key := range []string{"species", "scientificName", "confidence", "atUnix", "inRange"} {
+		require.Contains(t, firstRow, key, "recentDetections element must carry the %q key", key)
+	}
+	assert.JSONEq(t, `true`, string(firstRow["inRange"]))
+
+	// An empty list still serializes as [] (never null) and an empty
+	// scheduleLabel is omitted from the object entirely.
+	active := InferenceModelStatus{ID: "x", Device: deviceUnknown, RecentDetections: []LastDetectionInfo{}}
+	rawActive, err := json.Marshal(active)
+	require.NoError(t, err)
+	var ma map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(rawActive, &ma))
+	assert.JSONEq(t, `[]`, string(ma["recentDetections"]), "empty recentDetections must serialize as [] not null")
+	assert.NotContains(t, ma, "scheduleLabel", "empty scheduleLabel must be omitted")
+	assert.JSONEq(t, `"Unknown"`, string(ma["device"]))
 }
 
 // TestSortInferenceModelsByName verifies that model statuses are ordered by

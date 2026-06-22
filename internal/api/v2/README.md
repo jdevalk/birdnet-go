@@ -82,17 +82,19 @@ Lightweight connectivity check. Returns a minimal response with no database quer
 
 ### Analytics (`analytics.go`)
 
-| Method | Route                                 | Handler                    | Auth | Description                                                  |
-| ------ | ------------------------------------- | -------------------------- | ---- | ------------------------------------------------------------ |
-| GET    | `/analytics/species/daily`            | `GetDailySpeciesSummary`   | ❌   | Daily species detection summary                              |
-| GET    | `/analytics/species/summary`          | `GetSpeciesSummary`        | ❌   | Overall species statistics                                   |
-| GET    | `/analytics/species/detections/new`   | `GetNewSpeciesDetections`  | ❌   | Recently detected new species                                |
-| GET    | `/analytics/species/thumbnails`       | `GetSpeciesThumbnails`     | ❌   | Species thumbnail images                                     |
-| GET    | `/analytics/species/diversity`        | `GetSpeciesDiversity`      | ❌   | Daily unique species counts                                  |
-| GET    | `/analytics/sources`                  | `ListAnalyticsSources`     | ❌   | Historical audio sources with detection counts (for filters) |
-| GET    | `/analytics/time/hourly`              | `GetHourlyAnalytics`       | ❌   | Hourly detection patterns                                    |
-| GET    | `/analytics/time/daily`               | `GetDailyAnalytics`        | ❌   | Daily detection patterns                                     |
-| GET    | `/analytics/time/distribution/hourly` | `GetTimeOfDayDistribution` | ❌   | Time-of-day detection distribution                           |
+| Method | Route                                  | Handler                        | Auth | Description                                                  |
+| ------ | -------------------------------------- | ------------------------------ | ---- | ------------------------------------------------------------ |
+| GET    | `/analytics/species/daily`             | `GetDailySpeciesSummary`       | ❌   | Daily species detection summary                              |
+| GET    | `/analytics/species/summary`           | `GetSpeciesSummary`            | ❌   | Overall species statistics                                   |
+| GET    | `/analytics/species/detections/new`    | `GetNewSpeciesDetections`      | ❌   | Recently detected new species                                |
+| GET    | `/analytics/species/thumbnails`        | `GetSpeciesThumbnails`         | ❌   | Species thumbnail images                                     |
+| GET    | `/analytics/species/diversity`         | `GetSpeciesDiversity`          | ❌   | Daily unique species counts                                  |
+| GET    | `/analytics/sources`                   | `ListAnalyticsSources`         | ❌   | Historical audio sources with detection counts (for filters) |
+| GET    | `/analytics/time/hourly`               | `GetHourlyAnalytics`           | ❌   | Hourly detection patterns                                    |
+| GET    | `/analytics/time/daily`                | `GetDailyAnalytics`            | ❌   | Daily detection patterns                                     |
+| GET    | `/analytics/time/distribution/hourly`  | `GetTimeOfDayDistribution`     | ❌   | Time-of-day detection distribution                           |
+| GET    | `/analytics/time/distribution/species` | `GetSpeciesHourlyDistribution` | ❌   | Who-sings-when ridgeline: per-species hour-of-day distribution for the top N species by volume. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 5, max 8) |
+| GET    | `/analytics/time/heatmap`              | `GetActivityHeatmap`           | ❌   | Seasonal density heatmap (date x intra-day slot; `?format=csv`) |
 
 #### Per-Source Filtering (`source_id` Query Parameter)
 

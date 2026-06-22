@@ -1,14 +1,17 @@
 <!--
   SystemInference - AI Models & Inference subpage.
 
-  Consumes the GET /api/v2/system/inference snapshot, renders hardware,
-  inference backends, audio pipeline metrics, and per-model cards with
-  latency / throughput sparklines, approximate host RAM, last
-  detection, activity pulse, and attached audio sources. Live updates arrive
-  over the existing metrics SSE stream (SSE first, polling fallback), and the
-  page re-fetches the snapshot when the backend broadcasts a topology change.
-  A periodic ~30s snapshot refresh keeps headline stats and lastDetection
-  current without reconnecting the SSE stream.
+  Consumes the GET /api/v2/system/inference snapshot, renders hardware and
+  inference backends, and per-model cards with a latency sparkline, compute
+  device, approximate host RAM, a schedule/paused indicator, an activity pulse,
+  a "Last heard" table of recent detections, and attached audio sources. Live
+  updates arrive over the existing metrics SSE stream (SSE first, polling
+  fallback), and the page re-fetches the snapshot when the backend broadcasts a
+  topology change. A periodic ~30s snapshot refresh keeps headline stats and
+  recent detections current without reconnecting the SSE stream.
+
+  The Audio pipeline card is intentionally hidden for now (see the template);
+  the backend still returns snapshot.audio for a future refactor.
 
   snapshot.models is the single source of truth: series for models that are
   not in the current snapshot are ignored (orphan-safe), and missing or null
@@ -22,15 +25,17 @@
   import { ReconnectingEventSource } from '$lib/utils/ReconnectingEventSource';
   import { loggers } from '$lib/utils/logger';
   import { connectionState } from '$lib/stores/connectionState.svelte';
-  import { formatBytesCompact, formatNumber, formatRelativeTime } from '$lib/utils/formatters';
+  import { formatBytesCompact, formatNumber } from '$lib/utils/formatters';
+  import { getLocalTimeString, formatLocalDateTime } from '$lib/utils/date';
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import Badge from '$lib/desktop/components/ui/Badge.svelte';
   import StatusPill from '$lib/desktop/components/ui/StatusPill.svelte';
   import Sparkline from '$lib/desktop/features/system/components/Sparkline.svelte';
-  import { Brain, Cpu, MemoryStick, Activity, Minus } from '@lucide/svelte';
+  import { Brain, Cpu, MemoryStick, Activity, Minus, Pause, MapPinOff } from '@lucide/svelte';
   import type {
     InferenceStatusResponse,
     InferenceModel,
+    InferenceLastDetection,
     BackendStatus,
     OpenVINOBackendStatus,
   } from '$lib/desktop/features/system/inference.types';
@@ -49,16 +54,29 @@
   const INFERENCE_ENDPOINT = '/api/v2/system/inference';
   const TOPOLOGY_EVENT = 'system.inference_topology_changed';
 
-  // Sparkline colors, chosen to match the existing system charts palette.
+  // Sparkline color, matching the existing system charts palette.
   const LATENCY_COLOR = '#3b82f6'; // blue
-  const THROUGHPUT_COLOR = '#10b981'; // emerald
-  const AUDIO_COLOR = '#06b6d4'; // cyan
 
   // Interval for periodic snapshot-only refreshes (does not reconnect SSE).
   const SNAPSHOT_REFRESH_MS = 30000;
 
   // Conversions for spec display.
   const HZ_PER_KHZ = 1000;
+
+  // Flat 0 baseline shown in the latency sparkline before real samples flow (the
+  // chart needs >= 2 points to draw a line; an all-zeros series renders as a flat
+  // line at the bottom). Used until the live series has at least two points.
+  const EMPTY_SPARKLINE_BASELINE = [0, 0];
+
+  // Tolerance (seconds) for treating the same species in two models' feeds as one
+  // co-detection. Detection timestamps are per-model wall-clock at second
+  // granularity, and models analyze different segment lengths, so co-detections of
+  // one bird land a few seconds apart; this stays well under the per-species
+  // throttle so it never matches two different occurrences within a model.
+  const CO_DETECTION_TOLERANCE_SEC = 3;
+
+  // Rows per column in the two-column Last-heard layout (backend retains 2x this).
+  const LAST_HEARD_COLUMN_ROWS = 10;
 
   interface MetricPoint {
     timestamp: string;
@@ -99,42 +117,32 @@
     return next.length > MAX_HISTORY_POINTS ? next.slice(next.length - MAX_HISTORY_POINTS) : next;
   }
 
-  // Collect every metric key across the snapshot models and audio pipeline.
-  // The audio queue-depth key is included regardless of model count so the
-  // Audio card sparkline receives data even before any model is loaded.
-  // When neither audio keys nor model keys are present the function returns ''
-  // and the caller falls through to the awaitingModels / polling path.
+  // Collect the per-model metric keys we actually consume live: avgMs feeds the
+  // latency sparkline, and throughput feeds the activity pulse (its own sparkline
+  // was removed, but the series still drives "is inference happening"). RTF and
+  // error-rate are rendered from the 30s snapshot (model.stats.*), not a live
+  // series, so they are intentionally NOT subscribed. The audio queue-depth key
+  // is also omitted while the Audio card is hidden (see the template). When there
+  // are no models this returns '' and the caller falls through to polling.
   function metricKeysParam(): string {
     if (!snapshot) return '';
     const keys: string[] = [];
-    if (snapshot.audio) {
-      keys.push(snapshot.audio.metricKeys.queueDepth);
-    }
     for (const m of snapshot.models) {
-      keys.push(
-        m.metricKeys.avgMs,
-        m.metricKeys.rtf,
-        m.metricKeys.throughput,
-        m.metricKeys.errorRate
-      );
+      keys.push(m.metricKeys.avgMs, m.metricKeys.throughput);
     }
     return keys.join(',');
   }
 
-  // Set of metric keys belonging to current snapshot models and audio pipeline.
+  // Set of metric keys belonging to current snapshot models.
   // Used to ignore series for models that are no longer present (orphan-safe).
+  // Mirrors metricKeysParam: only the live-consumed keys (avgMs, throughput).
   // Derived so it is recomputed only when the snapshot changes.
   const validKeys = $derived.by(() => {
     const keys = new Set<string>();
     if (!snapshot) return keys;
-    if (snapshot.audio) {
-      keys.add(snapshot.audio.metricKeys.queueDepth);
-    }
     for (const m of snapshot.models) {
       keys.add(m.metricKeys.avgMs);
-      keys.add(m.metricKeys.rtf);
       keys.add(m.metricKeys.throughput);
-      keys.add(m.metricKeys.errorRate);
     }
     return keys;
   });
@@ -378,7 +386,7 @@
     snapshot ? snapshot.backends.openvino : null
   );
 
-  // Spec line for a model: sample rate in kHz, clip length in seconds.
+  // Spec line for a model: sample rate in kHz, segment length in seconds.
   function sampleRateKhz(hz: number): string {
     return (hz / HZ_PER_KHZ).toFixed(hz % HZ_PER_KHZ === 0 ? 0 : 1);
   }
@@ -411,6 +419,39 @@
   function maxLatencyDisplay(model: InferenceModel): string {
     if (model.stats.invocations <= 0) return '-';
     return model.stats.maxMs.toFixed(1) + ' ' + t('system.inference.unitMs');
+  }
+
+  // Compact, readable summary for the latency sparkline: current value and the
+  // series peak in ms (the bare line carries no scale on its own).
+  function latencySummary(series: number[]): string {
+    if (series.length === 0) return '';
+    const current = series[series.length - 1] ?? 0;
+    const peak = Math.max(...series);
+    return `${current.toFixed(1)} ${t('system.inference.unitMs')} · ${t('system.inference.peak')} ${peak.toFixed(1)}`;
+  }
+
+  // Short names of other loaded models whose feed contains the same species within
+  // CO_DETECTION_TOLERANCE_SEC of this detection, for cross-model correlation.
+  function coDetectingModels(modelId: string, d: InferenceLastDetection): string[] {
+    if (!snapshot) return [];
+    if (!d.scientificName && !d.species) return [];
+    const names: string[] = [];
+    for (const m of snapshot.models) {
+      if (m.id === modelId) continue;
+      // When both entries have a scientific name, that is the authoritative
+      // identity: compare it and do not fall back to the common name (two
+      // different species can share a common name). Only fall back to the
+      // species key when one side lacks a scientific name.
+      const hit = m.recentDetections?.some(o => {
+        const sameSpecies =
+          o.scientificName && d.scientificName
+            ? o.scientificName === d.scientificName
+            : (o.scientificName || o.species) === (d.scientificName || d.species);
+        return sameSpecies && Math.abs(o.atUnix - d.atUnix) <= CO_DETECTION_TOLERANCE_SEC;
+      });
+      if (hit) names.push(m.detectionName || m.name);
+    }
+    return names;
   }
 </script>
 
@@ -448,8 +489,9 @@
       {error}
     </div>
   {:else if snapshot}
-    <!-- Top context row: hardware, inference backends, and audio as compact cards. -->
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <!-- Top context row: hardware and inference backends as compact cards.
+         The Audio pipeline card is intentionally hidden for now (see below). -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <!-- Hardware -->
       <div
         class="bg-[var(--surface-100)] border border-[var(--border-100)] rounded-xl p-4 shadow-sm"
@@ -558,52 +600,18 @@
         </div>
       </div>
 
-      <!-- Audio pipeline -->
-      {#if snapshot.audio}
-        <div
-          class="bg-[var(--surface-100)] border border-[var(--border-100)] rounded-xl p-4 shadow-sm"
-        >
-          <h3 class="text-xs font-semibold uppercase tracking-wider mb-3 text-muted">
-            {t('system.inference.sectionAudio')}
-          </h3>
-          <div class="space-y-2.5">
-            <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-              {@render stat(
-                t('system.inference.queueDepth'),
-                t('system.inference.queueDepthHelp'),
-                String(snapshot.audio.queueDepth),
-                'help-queue-depth'
-              )}
-              {@render stat(
-                t('system.inference.queueCapacity'),
-                t('system.inference.queueCapacityHelp'),
-                String(snapshot.audio.queueCapacity),
-                'help-queue-capacity'
-              )}
-              {@render stat(
-                t('system.inference.droppedChunks'),
-                t('system.inference.droppedChunksHelp'),
-                formatNumber(snapshot.audio.droppedChunksTotal),
-                'help-dropped-chunks'
-              )}
-            </div>
-            <div>
-              <div class="text-xs text-muted mb-1 flex items-center gap-1">
-                <Activity class="w-3 h-3 shrink-0" aria-hidden="true" />
-                {t('system.inference.queueDepthChart')}
-              </div>
-              <div class="h-10">
-                <Sparkline
-                  data={seriesByKey[snapshot.audio.metricKeys.queueDepth] ?? []}
-                  color={AUDIO_COLOR}
-                  decorative
-                  emptyLabel={t('system.inference.noDataYet')}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      {/if}
+      <!--
+        Audio pipeline card: intentionally DISABLED for now.
+
+        As built it was low signal (a bare queue-depth / dropped-chunks readout)
+        and it squeezed the Inference Backends card too narrow. It is hidden on
+        purpose until it can be refactored into something genuinely useful
+        (per-source pipeline health, backlog trends, drop-cause attribution).
+
+        The backend still returns `snapshot.audio` and its i18n keys are kept, so
+        re-enabling is just a matter of restoring the markup. Tracked in the
+        Phase A spec (Forgejo #1144). Do NOT delete the audio types/fields.
+      -->
     </div>
 
     <!-- Models -->
@@ -643,27 +651,48 @@
                 {#if model.quantization}
                   <Badge variant="secondary" size="sm" text={model.quantization} />
                 {/if}
-                <Badge
-                  variant={model.isStock ? 'neutral' : 'accent'}
-                  size="sm"
-                  text={model.isStock ? t('system.inference.stock') : t('system.inference.custom')}
-                />
-                <span
-                  class="ml-auto flex items-center gap-1"
-                  role="status"
-                  aria-label={isActive
-                    ? t('system.inference.activityActive')
-                    : t('system.inference.activityIdle')}
-                >
-                  {#if isActive}
-                    <Activity
-                      class="w-3 h-3 text-green-500 animate-pulse motion-reduce:animate-none"
-                      aria-hidden="true"
-                    />
-                  {:else}
-                    <Minus class="w-3 h-3 text-base-content/30" aria-hidden="true" />
-                  {/if}
-                </span>
+                {#if model.device}
+                  <Badge
+                    variant="info"
+                    size="sm"
+                    text={model.device}
+                    title={t('system.inference.deviceHelp')}
+                  />
+                {/if}
+                {#if model.paused}
+                  <!-- Schedule-gated model that is currently off-schedule: explain the
+                       flat latency line instead of showing a bare "idle" dash. -->
+                  <span
+                    class="ml-auto flex items-center gap-1.5"
+                    role="status"
+                    aria-label={t('system.inference.activityPaused')}
+                    title={t('system.inference.pausedScheduleHelp')}
+                  >
+                    <Pause class="w-3 h-3 shrink-0 text-amber-500" aria-hidden="true" />
+                    <span class="text-xs text-amber-600 dark:text-amber-400">
+                      {t('system.inference.paused')}{#if model.scheduleLabel}<span
+                          class="text-muted">&nbsp;({model.scheduleLabel})</span
+                        >{/if}
+                    </span>
+                  </span>
+                {:else}
+                  <span
+                    class="ml-auto flex items-center gap-1"
+                    role="status"
+                    aria-label={isActive
+                      ? t('system.inference.activityActive')
+                      : t('system.inference.activityIdle')}
+                  >
+                    {#if isActive}
+                      <Activity
+                        class="w-3 h-3 text-green-500 animate-pulse motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                    {:else}
+                      <Minus class="w-3 h-3 text-base-content/30" aria-hidden="true" />
+                    {/if}
+                  </span>
+                {/if}
               </div>
 
               <!-- Spec line -->
@@ -688,24 +717,6 @@
                     {formatNumber(model.numSpecies)}
                   </span>
                 </span>
-              </div>
-
-              <!-- Last seen -->
-              <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-                <span class="text-muted">{t('system.inference.lastSeen')}:</span>
-                {#if model.lastDetection}
-                  <span class="text-base-content">
-                    {model.lastDetection.species}
-                  </span>
-                  <span class="font-mono tabular-nums text-base-content">
-                    {Math.round(model.lastDetection.confidence * 100)}%
-                  </span>
-                  <span class="text-muted">
-                    {formatRelativeTime(model.lastDetection.atUnix * 1000)}
-                  </span>
-                {:else}
-                  <span class="text-muted">{t('system.inference.lastSeenNever')}</span>
-                {/if}
               </div>
 
               <!-- Stats line -->
@@ -762,35 +773,149 @@
                 {/if}
               </div>
 
-              <!-- Sparklines -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <div class="text-xs text-muted mb-1 flex items-center gap-1">
-                    <Activity class="w-3 h-3 shrink-0" aria-hidden="true" />
-                    {t('system.inference.latencyChart')}
-                  </div>
-                  <div class="h-10">
-                    <Sparkline
-                      data={latencySeries}
-                      color={LATENCY_COLOR}
-                      decorative
-                      emptyLabel={t('system.inference.noDataYet')}
-                    />
-                  </div>
+              <!-- Latency sparkline (full width) -->
+              <div>
+                <div class="text-xs text-muted mb-1 flex items-center gap-1">
+                  <Activity class="w-3 h-3 shrink-0" aria-hidden="true" />
+                  {t('system.inference.latencyChart')}
+                  {#if latencySeries.length > 0}
+                    <span class="ml-auto font-mono tabular-nums text-base-content">
+                      {latencySummary(latencySeries)}
+                    </span>
+                  {/if}
                 </div>
-                <div>
-                  <div class="text-xs text-muted mb-1 flex items-center gap-1">
-                    <Activity class="w-3 h-3 shrink-0" aria-hidden="true" />
-                    {t('system.inference.throughputChart')}
-                  </div>
-                  <div class="h-10">
-                    <Sparkline
-                      data={throughputSeries}
-                      color={THROUGHPUT_COLOR}
-                      decorative
-                      emptyLabel={t('system.inference.noDataYet')}
-                    />
-                  </div>
+                <div class="h-10">
+                  <!-- Before real samples flow, draw a flat 0 baseline (the chart
+                       needs >= 2 points) instead of an empty/placeholder state. -->
+                  <Sparkline
+                    data={latencySeries.length >= 2 ? latencySeries : EMPTY_SPARKLINE_BASELINE}
+                    color={LATENCY_COLOR}
+                    decorative
+                  />
+                </div>
+              </div>
+
+              <!-- Recent detections (Last heard): a per-species-throttled feed (the
+                   same species is recorded at most once per the model's segment
+                   interval). Shown as two columns of ten (newest ten on the left,
+                   the next ten on the right) with absolute timestamps and the other
+                   models that detected the same species within the tolerance, so
+                   detections can be correlated across models. -->
+              <div>
+                <div class="text-xs text-muted">{t('system.inference.lastHeard')}</div>
+                <!-- The feed shows everything each model fires on above the base
+                     threshold, so it includes non-bird, human, and out-of-range
+                     predictions that are not saved. Explain it so they are not
+                     mistaken for saved detections. -->
+                <div class="text-[11px] text-muted mb-1 leading-snug">
+                  {t('system.inference.lastHeardHint')}
+                </div>
+
+                {#snippet feedTable(rows: InferenceLastDetection[])}
+                  <table class="w-full text-xs table-fixed">
+                    <thead class="text-muted">
+                      <tr>
+                        <th class="text-left font-normal py-0.5 pr-2">
+                          {t('system.inference.species')}
+                        </th>
+                        <th
+                          class="text-left font-normal py-0.5 w-12 whitespace-nowrap"
+                          title={t('common.labels.confidence')}
+                          aria-label={t('common.labels.confidence')}
+                        >
+                          {t('system.inference.confidenceColumn')}
+                        </th>
+                        <th class="text-left font-normal py-0.5 w-16 whitespace-nowrap">
+                          {t('system.inference.heardWhen')}
+                        </th>
+                        <th
+                          class="text-left font-normal py-0.5 pl-2 w-20 whitespace-nowrap"
+                          title={t('system.inference.coDetectedHelp', {
+                            seconds: CO_DETECTION_TOLERANCE_SEC,
+                          })}
+                          aria-label={t('system.inference.coDetectedHelp', {
+                            seconds: CO_DETECTION_TOLERANCE_SEC,
+                          })}
+                        >
+                          {t('system.inference.coDetectedColumn')}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each rows as d (`${d.scientificName || d.species}-${d.atUnix}`)}
+                        {@const coNames = coDetectingModels(model.id, d)}
+                        <tr class="border-t border-[var(--border-100)]">
+                          <td class="py-0.5 pr-2 text-base-content">
+                            <div class="flex items-center gap-1 min-w-0">
+                              {#if !d.inRange}
+                                <!-- Did not pass the range filter (non-avian, human,
+                                     or out-of-range): shown for diagnostics but not
+                                     saved as a detection. -->
+                                <span
+                                  class="shrink-0 inline-flex text-muted"
+                                  role="img"
+                                  title={t('system.inference.outOfRangeHelp')}
+                                  aria-label={t('system.inference.outOfRangeHelp')}
+                                >
+                                  <MapPinOff class="w-3 h-3" aria-hidden="true" />
+                                </span>
+                              {/if}
+                              <span
+                                class="truncate"
+                                title={d.scientificName
+                                  ? `${d.species} (${d.scientificName})`
+                                  : d.species}
+                              >
+                                {d.species}
+                              </span>
+                            </div>
+                          </td>
+                          <td class="text-left py-0.5 font-mono tabular-nums text-base-content">
+                            {Math.round(d.confidence * 100)}%
+                          </td>
+                          <td
+                            class="text-left py-0.5 font-mono tabular-nums text-muted whitespace-nowrap"
+                            title={formatLocalDateTime(new Date(d.atUnix * 1000))}
+                          >
+                            {getLocalTimeString(new Date(d.atUnix * 1000))}
+                          </td>
+                          <td
+                            class="truncate py-0.5 pl-2 text-muted"
+                            title={coNames.length > 0 ? coNames.join(', ') : undefined}
+                          >
+                            {#if coNames.length > 0}
+                              {coNames.join(', ')}
+                            {:else}
+                              -
+                            {/if}
+                          </td>
+                        </tr>
+                      {/each}
+                    </tbody>
+                  </table>
+                {/snippet}
+
+                <!-- min-height sized for the full ten rows per column so the card
+                     does not resize as detections fill in after a restart. -->
+                <div class="min-h-[12rem]">
+                  {#if model.recentDetections && model.recentDetections.length > 0}
+                    {@const left = model.recentDetections.slice(0, LAST_HEARD_COLUMN_ROWS)}
+                    {@const right = model.recentDetections.slice(
+                      LAST_HEARD_COLUMN_ROWS,
+                      LAST_HEARD_COLUMN_ROWS * 2
+                    )}
+                    <!-- Two newspaper columns: newest ten on the left, next ten on
+                         the right. The left table stays half-width even before the
+                         right column fills, so the species column never hogs the card. -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-6 items-start">
+                      {@render feedTable(left)}
+                      {#if right.length > 0}
+                        {@render feedTable(right)}
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="text-xs text-muted">{t('system.inference.lastHeardNever')}</div>
+                  {/if}
                 </div>
               </div>
 

@@ -205,7 +205,6 @@
     "serverError": "500 - Interner Serverfehler",
     "componentError": "Komponentenladefehler",
     "speciesAnalytics": "Arten-Analysen",
-    "advancedAnalytics": "Erweiterte Analysen",
     "detectionDetails": "Erkennungsdetails",
     "settingsNotAvailable": "Einstellungen nicht verfügbar"
   },
@@ -1555,7 +1554,7 @@
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
-      "clipLength": "Clip length",
+      "clipLength": "Segmentlänge",
       "species": "Species",
       "invocations": "Segments analysed",
       "avgLatency": "Avg latency",
@@ -1580,6 +1579,19 @@
       "queueCapacity": "Capacity",
       "lastSeen": "Last seen",
       "lastSeenNever": "No detections yet",
+      "deviceHelp": "Das Rechengerät, auf dem dieses Modell die Inferenz ausführt (CPU, GPU oder unbekannt).",
+      "paused": "Pausiert",
+      "pausedScheduleHelp": "Dieses Modell läuft nur nach Zeitplan und ist derzeit pausiert, sodass es keine Audiodaten verarbeitet.",
+      "activityPaused": "Durch Zeitplan pausiert",
+      "lastHeard": "Zuletzt gehört",
+      "lastHeardHint": "Aktuelle Vorhersagen über dem Schwellenwert, zur Diagnose. Enthält Nicht-Vogel- und außerhalb des Bereichs liegende Ergebnisse, die nicht als Erkennungen gespeichert werden.",
+      "lastHeardNever": "Noch nichts gehört",
+      "confidenceColumn": "Konf.",
+      "heardWhen": "Wann",
+      "coDetectedColumn": "Auch",
+      "coDetectedHelp": "Andere Modelle, die diese Art innerhalb von {seconds}s erkannt haben",
+      "outOfRangeHelp": "Außerhalb des Bereichsfilters (zur Diagnose angezeigt, nicht als Erkennung gespeichert)",
+      "peak": "Peak",
       "activityActive": "Inference active",
       "activityIdle": "Idle",
       "throughput": "Throughput",
@@ -1597,8 +1609,7 @@
       "fp16Help": "16-bit floating point. Hardware that supports it can run some models faster and with less memory.",
       "invocationsHelp": "Total audio segments this model has analysed since startup.",
       "noModelsHint": "No audio source configured yet?",
-      "noModelsHintLink": "Configure audio sources",
-      "noDataYet": "No data yet"
+      "noModelsHintLink": "Configure audio sources"
     },
     "metrics": {
       "cpu": "CPU",
@@ -1655,6 +1666,35 @@
     "reattach": "Wieder anhängen"
   },
   "analytics": {
+    "hub": {
+      "tabs": {
+        "overview": "Übersicht",
+        "patterns": "Aktivitätsmuster",
+        "trends": "Trends",
+        "biodiversity": "Artenvielfalt",
+        "quality": "Überprüfung & Genauigkeit"
+      },
+      "aria": {
+        "tabs": "Analysebereiche"
+      },
+      "controls": {
+        "source": "Quelle",
+        "sourceAll": "Alle Quellen",
+        "sourceComingSoon": "Die Filterung nach Quelle kommt in einem späteren Update.",
+        "speciesNotApplicable": "Die Diagramme in diesem Bereich filtern nicht nach Art."
+      },
+      "card": {
+        "error": "Dieses Diagramm konnte nicht geladen werden",
+        "retry": "Erneut versuchen",
+        "notEnoughData": "Noch nicht genügend Daten",
+        "notEnoughDataHint": "Dieses Diagramm benötigt mindestens {min} Datenpunkte. Nimm weiter auf und schau bald wieder vorbei.",
+        "export": "Exportieren",
+        "exportComingSoon": "CSV-Export kommt bald."
+      },
+      "comingSoon": {
+        "description": "Dieser Bereich befindet sich im Aufbau und kommt in einem kommenden Update."
+      }
+    },
     "title": "Übersicht",
     "loadingError": "Fehler beim Laden einiger Analysedaten. Bitte versuchen Sie es später erneut.",
     "stats": {
@@ -1767,7 +1807,6 @@
       }
     },
     "advanced": {
-      "title": "Erweiterte Analytik",
       "chartControls": "Diagrammsteuerung",
       "dateRange": "Datumsbereich",
       "chartOptions": "Diagrammoptionen",
@@ -1813,6 +1852,32 @@
           "noDataHint": "Wählen Sie einen Datumsbereich, um Artenvielfalt-Trends zu sehen",
           "axisDate": "Datum",
           "axisUniqueSpecies": "Einzigartige Arten"
+        },
+        "heatmap": {
+          "title": "Seasonal Activity Heatmap",
+          "description": "Detection density by date and time of day, revealing migration waves and dawn-chorus drift",
+          "noData": "No activity data available",
+          "noDataHint": "Select a date range to view seasonal activity patterns",
+          "axisDate": "Date",
+          "axisTime": "Time of Day",
+          "tooltipTime": "Time",
+          "tooltipCount": "Detections",
+          "legendLess": "Less",
+          "legendMore": "More ({max})",
+          "ariaLabel": "Seasonal activity heatmap: detection density by date and time of day",
+          "summary": "{total} detections across {days} days. Busiest around {time} on {date}."
+        },
+        "ridgeline": {
+          "title": "Who Sings When",
+          "description": "Hour-of-day activity for the most-detected species, sorting dawn singers from all-day and nocturnal birds",
+          "noData": "No species activity data available",
+          "noDataHint": "Select a wider date range to compare species activity patterns",
+          "ariaLabel": "Who-sings-when ridgeline: hour-of-day activity distribution per species",
+          "axisTime": "Time of Day",
+          "note": "Showing the top {count} species by detection volume",
+          "tooltipDetections": "Detections",
+          "tooltipPeak": "Peak",
+          "summary": "Hour-of-day activity for {count} species. Most active: {species} around {time}."
         },
         "tooltips": {
           "date": "Datum",

@@ -63,6 +63,19 @@ type BirdNET struct {
 	TaxonomyPath        string              // Path to custom taxonomy file, if used
 	modelVersion        string              // Human-readable model version string (per-instance to avoid shared global state)
 	modelsDir           string              // base directory for gallery-installed models (set by Orchestrator)
+	// device is the compute device the classifier backend bound to at load time
+	// ("CPU" for TFLite/ONNX, or the OpenVINO device for the OV path). It is set
+	// by each initialize*Model path and defaults to deviceCPU in NewBirdNET so a
+	// path that forgets to set it still reports a sane value. Reported via Device().
+	device string
+	// backend is the inference execution backend bound to at load time
+	// (BackendTFLite/BackendONNX/BackendOpenVINO), and precision is the effective
+	// runtime precision the model executes at ("INT8"/"FP16"/"FP32"). Both mirror
+	// device: set by each initialize*Model path so the inference status card reports
+	// what is really running rather than the static ModelInfo file metadata.
+	// Reported via Backend()/Precision(); guarded by mu like device.
+	backend   string
+	precision string
 	// mu guards the inference backends (classifier, rangeFilter, rangeFilterFellBack).
 	// Inference holds mu for the full duration of the native call, not just the field
 	// read: the backends are not goroutine-safe and reload/Delete Close() them under
@@ -103,6 +116,9 @@ func NewBirdNET(settings *conf.Settings, modelInfo *ModelInfo) (*BirdNET, error)
 		TaxonomyPath: "", // Default to embedded taxonomy
 		modelVersion: defaultModelVersionString,
 		speciesCache: make(map[string]*speciesCacheEntry),
+		// Default to CPU; the OpenVINO init path overrides this with the real
+		// device (CPU/GPU) it bound to. TFLite and ONNX paths set it explicitly too.
+		device: deviceCPU,
 	}
 	bn.settingsAtomic.Store(settings)
 
@@ -146,6 +162,13 @@ func NewBirdNET(settings *conf.Settings, modelInfo *ModelInfo) (*BirdNET, error)
 	// resolved v2.4 TFLite model (from version:"2.4" or the default) to the INT8
 	// ONNX entry so existing arm64 configs keep starting without a TFLite backend.
 	bn.ModelInfo = remapV24ForONNXOnly(&bn.ModelInfo, tfliteBackendAvailable, findModelPathInStandardPaths)
+
+	// Seed backend/precision from the resolved static metadata so a model that
+	// somehow loads without an initialize*Model path still reports a sane value
+	// (mirrors the device default). Each init path overrides these with the real
+	// load-time backend and effective runtime precision.
+	bn.backend = bn.ModelInfo.Backend
+	bn.precision = string(bn.ModelInfo.Quantization)
 
 	// Load taxonomy data
 	bn.TaxonomyMap, bn.ScientificIndex, err = LoadTaxonomyData(bn.TaxonomyPath)
@@ -245,22 +268,23 @@ func (bn *BirdNET) usesONNXBackend() bool {
 
 // initializeModel loads and initializes the primary BirdNET model.
 // Dispatches to OpenVINO (A76 image, gated), ONNX, or TFLite (see
-// usesONNXBackend / shouldTryOpenVINO). OpenVINO failures fall back to ONNX.
+// usesONNXBackend / openVINOPlan). OpenVINO failures fall back to ONNX, and a
+// declined OpenVINO attempt is logged with the reason (see logOpenVINODeclined),
+// so the chosen backend is never silent in the journal.
 func (bn *BirdNET) initializeModel() error {
-	if bn.usesONNXBackend() {
-		if bn.shouldTryOpenVINO() {
-			err := bn.initializeOpenVINOModel()
-			if err == nil {
-				return nil
-			}
-			GetLogger().Warn("OpenVINO backend unavailable, falling back to ONNX Runtime", logger.Error(err))
-		} else if bn.Settings.BirdNET.Backend == conf.BackendPrefOpenVINO {
-			GetLogger().Warn("backend is set to 'openvino' but it cannot be used here; using ONNX Runtime",
-				logger.String("reason", "requires the openvino build, the BirdNET v2.4 model, and a supported device (an ARMv8.2/A76+ CPU with native f16, or an Intel OpenVINO GPU)"))
-		}
-		return bn.initializeONNXModel()
+	if !bn.usesONNXBackend() {
+		return bn.initializeTFLiteModel()
 	}
-	return bn.initializeTFLiteModel()
+	if _, ok, reason := bn.openVINOPlan(); ok {
+		err := bn.initializeOpenVINOModel()
+		if err == nil {
+			return nil
+		}
+		GetLogger().Warn("OpenVINO backend unavailable, falling back to ONNX Runtime", logger.Error(err))
+	} else {
+		logOpenVINODeclined(bn.ModelInfo.ID, bn.Settings.BirdNET.Backend, reason)
+	}
+	return bn.initializeONNXModel()
 }
 
 // initializeTFLiteModel loads and initializes a TFLite model as the classifier backend.
@@ -298,6 +322,12 @@ func (bn *BirdNET) initializeTFLiteModel() error {
 	}
 
 	bn.classifier = classifier
+	// TFLite runs on CPU (the optional XNNPACK delegate is still CPU execution).
+	bn.device = deviceCPU
+	// TFLite executes the model file as-is, so the runtime precision is the weight
+	// precision recorded in ModelInfo.Quantization (FP32 for the stock v2.4 model).
+	bn.backend = BackendTFLite
+	bn.precision = string(bn.ModelInfo.Quantization)
 
 	// Update the human-readable model version string for display when a custom
 	// model path is provided. Model identity (ModelInfo.ID) is never modified
@@ -1451,6 +1481,37 @@ func (bn *BirdNET) Labels() []string {
 	bn.mu.Lock()
 	defer bn.mu.Unlock()
 	return slices.Clone(bn.Settings.BirdNET.Labels)
+}
+
+// Device returns the compute device this model's classifier backend bound to
+// at load time ("CPU" for TFLite/ONNX, or the OpenVINO device for the OV path).
+// Guarded by bn.mu because reloadModelInternal rewrites bn.device under the same
+// lock when re-initializing the backend. Implements ModelInstance.
+func (bn *BirdNET) Device() string {
+	bn.mu.Lock()
+	defer bn.mu.Unlock()
+	return bn.device
+}
+
+// Backend returns the inference execution backend this model loaded on
+// (BackendTFLite/BackendONNX/BackendOpenVINO). Guarded by bn.mu because
+// reloadModelInternal rewrites bn.backend under the same lock when re-initializing
+// the backend. Implements ModelInstance.
+func (bn *BirdNET) Backend() string {
+	bn.mu.Lock()
+	defer bn.mu.Unlock()
+	return bn.backend
+}
+
+// Precision returns the effective runtime precision this model executes at
+// ("INT8"/"FP16"/"FP32"), which can differ from the weight precision stored in
+// the file (BirdNET v2.4 runs the FP32 ONNX model at FP16 on OpenVINO CPU).
+// Guarded by bn.mu because reloadModelInternal rewrites bn.precision under the
+// same lock. Implements ModelInstance.
+func (bn *BirdNET) Precision() string {
+	bn.mu.Lock()
+	defer bn.mu.Unlock()
+	return bn.precision
 }
 
 // ReloadSnapshot returns a copy of the model metadata and taxonomy maps safely under bn.mu.

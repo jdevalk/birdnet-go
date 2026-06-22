@@ -3,6 +3,7 @@ package api
 
 import (
 	"context"
+	"encoding/csv"
 	"fmt"
 	"maps"
 	"net/http"
@@ -30,6 +31,11 @@ const (
 	defaultAnalyticsDays       = 30               // Default number of days for analytics queries
 	defaultNewSpeciesLimit     = 100              // Default pagination limit for new species queries
 	analyticsQueryTimeout      = 30 * time.Second // Timeout for analytics database queries
+
+	// Species ridgeline (who-sings-when) top-N bounds. The default matches the chart's maxSpecies
+	// cap; the max keeps the ridgeline readable (more than ~8 overlapping ridges are unreadable).
+	defaultSpeciesRidgelineLimit = 5
+	maxSpeciesRidgelineLimit     = 8
 )
 
 // msgQueryTimeout is the user-facing message returned when an analytics query
@@ -181,8 +187,10 @@ func (c *Controller) initAnalyticsRoutes() {
 	timeGroup.GET("/hourly", c.GetHourlyAnalytics)
 	timeGroup.GET("/hourly/batch", c.GetBatchHourlySpeciesData) // Batch hourly data for multiple species
 	timeGroup.GET("/daily", c.GetDailyAnalytics)
-	timeGroup.GET("/daily/batch", c.GetBatchDailySpeciesData)         // Batch daily trends for multiple species
-	timeGroup.GET("/distribution/hourly", c.GetTimeOfDayDistribution) // Renamed endpoint for time-of-day distribution
+	timeGroup.GET("/daily/batch", c.GetBatchDailySpeciesData)              // Batch daily trends for multiple species
+	timeGroup.GET("/distribution/hourly", c.GetTimeOfDayDistribution)      // Renamed endpoint for time-of-day distribution
+	timeGroup.GET("/distribution/species", c.GetSpeciesHourlyDistribution) // Who-sings-when ridgeline (top-N species hour-of-day)
+	timeGroup.GET("/heatmap", c.GetActivityHeatmap)                        // Seasonal density heatmap (date x intra-day slot)
 
 	// Audio source listing for analytics filters: returns historical audio_sources with
 	// detection counts (distinct from /system/audio/sources which lists live engine sources).
@@ -1158,6 +1166,257 @@ func (c *Controller) ListAnalyticsSources(ctx echo.Context) error {
 		logger.String("ip", ctx.RealIP()),
 	)
 	return ctx.JSON(http.StatusOK, resp)
+}
+
+// activityHeatmapCells holds the parallel cell arrays for the heatmap wire payload.
+type activityHeatmapCells struct {
+	DateIndex []int `json:"dateIndex"`
+	Slot      []int `json:"slot"`
+	Count     []int `json:"count"`
+}
+
+// activityHeatmapResponse is the columnar, sparse heatmap payload (design spec section 6.1).
+type activityHeatmapResponse struct {
+	Dates                 []string             `json:"dates"`
+	SlotResolutionMinutes int                  `json:"slotResolutionMinutes"`
+	Cells                 activityHeatmapCells `json:"cells"`
+}
+
+// newActivityHeatmapResponse maps the datastore aggregation onto the wire payload, coalescing
+// nil slices to empty ones so the client always receives JSON arrays (never null).
+func newActivityHeatmapResponse(data *datastore.ActivityHeatmapData) activityHeatmapResponse {
+	dates := data.Dates
+	if dates == nil {
+		dates = []string{}
+	}
+	dateIndex := data.CellDateIndex
+	if dateIndex == nil {
+		dateIndex = []int{}
+	}
+	slot := data.CellSlot
+	if slot == nil {
+		slot = []int{}
+	}
+	count := data.CellCount
+	if count == nil {
+		count = []int{}
+	}
+	return activityHeatmapResponse{
+		Dates:                 dates,
+		SlotResolutionMinutes: data.SlotResolutionMinutes,
+		Cells:                 activityHeatmapCells{DateIndex: dateIndex, Slot: slot, Count: count},
+	}
+}
+
+// GetActivityHeatmap handles GET /api/v2/analytics/time/heatmap
+// Returns detection counts bucketed by (station-local date, intra-day slot) over the date range
+// as a columnar sparse payload. With ?format=csv it streams the non-zero cells as CSV instead.
+func (c *Controller) GetActivityHeatmap(ctx echo.Context) error {
+	const operation = "activity heatmap"
+
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+	speciesParam := ctx.QueryParam("species")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	c.logInfoIfEnabled("Retrieving activity heatmap",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.String("species", speciesParam),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Resolve a localized common name to its scientific name so this endpoint matches the
+	// detections/search path and the sibling time endpoints; a scientific name or unresolved
+	// term passes through. Only the datastore query uses the resolved value.
+	querySpecies := speciesParam
+	if resolved, hit := c.resolveSpeciesToScientific(speciesParam); hit {
+		querySpecies = resolved
+	}
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetActivityHeatmap(ctxWithTimeout, startDate, endDate, querySpecies)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Activity heatmap", "Failed to get activity heatmap data",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.String("species", speciesParam),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	if strings.EqualFold(ctx.QueryParam("format"), "csv") {
+		return c.writeActivityHeatmapCSV(ctx, &data)
+	}
+
+	c.logInfoIfEnabled("Activity heatmap retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("slot_resolution_minutes", data.SlotResolutionMinutes),
+		logger.Int("cell_count", len(data.CellCount)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newActivityHeatmapResponse(&data))
+}
+
+// writeActivityHeatmapCSV streams the heatmap's non-zero cells as CSV. Each row is one cell:
+// the calendar date, the slot index, the slot's wall-clock start time, and the detection count.
+func (c *Controller) writeActivityHeatmapCSV(ctx echo.Context, data *datastore.ActivityHeatmapData) error {
+	ctx.Response().Header().Set(echo.HeaderContentType, "text/csv; charset=utf-8")
+	ctx.Response().Header().Set(echo.HeaderContentDisposition, `attachment; filename="activity-heatmap.csv"`)
+	ctx.Response().WriteHeader(http.StatusOK)
+
+	w := csv.NewWriter(ctx.Response())
+	if err := w.Write([]string{"date", "slot", "slot_start", "count"}); err != nil {
+		return err
+	}
+
+	resolution := data.SlotResolutionMinutes
+	// Bound by the shortest parallel slice so a malformed payload can never panic on index access.
+	n := min(len(data.CellDateIndex), len(data.CellSlot), len(data.CellCount))
+	for i := range n {
+		date := ""
+		if di := data.CellDateIndex[i]; di >= 0 && di < len(data.Dates) {
+			date = data.Dates[di]
+		}
+		slot := data.CellSlot[i]
+		startMinutes := slot * resolution
+		row := []string{
+			date,
+			strconv.Itoa(slot),
+			fmt.Sprintf("%02d:%02d", startMinutes/60, startMinutes%60),
+			strconv.Itoa(data.CellCount[i]),
+		}
+		if err := w.Write(row); err != nil {
+			return err
+		}
+	}
+
+	w.Flush()
+	return w.Error()
+}
+
+// speciesHourlyDistributionItem is one species' row in the ridgeline wire payload: the stable
+// scientific-name key, its 24 normalized hour-of-day buckets (index = station-local hour 0..23,
+// summing to 1.0), and the raw detection count. The localized common name is resolved client-side
+// (the v2 label schema stores no common name), matching the sibling species charts.
+type speciesHourlyDistributionItem struct {
+	ScientificName string      `json:"scientificName"`
+	Buckets        [24]float64 `json:"buckets"`
+	Total          int         `json:"total"`
+}
+
+// newSpeciesHourlyDistributionResponse maps the datastore aggregation onto the wire payload as a
+// JSON array (never null), preserving the descending-volume order.
+func newSpeciesHourlyDistributionResponse(data []datastore.SpeciesHourlyDistribution) []speciesHourlyDistributionItem {
+	items := make([]speciesHourlyDistributionItem, 0, len(data))
+	for i := range data {
+		items = append(items, speciesHourlyDistributionItem{
+			ScientificName: data[i].ScientificName,
+			Buckets:        data[i].Buckets,
+			Total:          data[i].Total,
+		})
+	}
+	return items
+}
+
+// GetSpeciesHourlyDistribution handles GET /api/v2/analytics/time/distribution/species
+// Returns the normalized hour-of-day activity distribution for the top N species by detection
+// volume over the date range, powering the who-sings-when ridgeline (design spec section 6.2).
+func (c *Controller) GetSpeciesHourlyDistribution(ctx echo.Context) error {
+	const operation = "species hourly distribution"
+
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	limit := c.parsePaginationLimit(ctx.QueryParam("limit"), defaultSpeciesRidgelineLimit, maxSpeciesRidgelineLimit)
+
+	c.logInfoIfEnabled("Retrieving species hourly distribution",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("limit", limit),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetHourlyDistributionBySpecies(ctxWithTimeout, startDate, endDate, limit)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Species hourly distribution", "Failed to get species hourly distribution",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.Int("limit", limit),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.logInfoIfEnabled("Species hourly distribution retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("species_count", len(data)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newSpeciesHourlyDistributionResponse(data))
 }
 
 // GetTimeOfDayDistribution handles GET /api/v2/analytics/time/distribution/hourly

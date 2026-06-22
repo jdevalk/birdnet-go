@@ -332,6 +332,10 @@ func (o *Orchestrator) SetSunCalc(sc *suncalc.SunCalc) {
 	}
 }
 
+// scheduleReasonNight is the human-readable reason ModelScheduleStatus returns
+// when a model is paused by the nighttime schedule (currently only the bat model).
+const scheduleReasonNight = "Night schedule"
+
 // IsModelActive returns whether a model should currently run inference.
 // For the bat model, this checks the nighttime scheduler. For all other
 // models, it always returns true.
@@ -344,6 +348,83 @@ func (o *Orchestrator) IsModelActive(modelID string) bool {
 		return true // no scheduler = no restriction
 	}
 	return s.isActive()
+}
+
+// ModelScheduleStatus reports whether a model is currently allowed to run and,
+// when paused, a human-readable reason. It is the reason-carrying sibling of
+// IsModelActive (which stays bool-only because it is on the hot monitor-tick
+// path). Only the bat model is schedule-gated today: it returns
+// (false, scheduleReasonNight) when the nighttime scheduler has it paused, and
+// (true, "") otherwise. Every other model returns (true, ""). The design is
+// general so a future gated model can return its own reason.
+func (o *Orchestrator) ModelScheduleStatus(modelID string) (active bool, reason string) {
+	if modelID != RegistryIDBat {
+		return true, ""
+	}
+	s := o.scheduler.Load()
+	if s == nil || s.isActive() {
+		return true, ""
+	}
+	return false, scheduleReasonNight
+}
+
+// instanceFor returns the live ModelInstance for modelID, or nil when the model
+// is not loaded or its instance has been torn down. Locking mirrors ModelInfos /
+// PredictModel: o.mu.RLock to find the entry, then entry.mu only briefly to
+// capture the instance pointer. The pointer is captured under entry.mu and the
+// lock released before the caller invokes any instance method, because those
+// methods may take their own per-model lock (BirdNET locks bn.mu), and holding
+// entry.mu across such a call would stall PredictModel, which needs entry.mu only
+// briefly on the inference hot path.
+func (o *Orchestrator) instanceFor(modelID string) ModelInstance {
+	o.mu.RLock()
+	entry, ok := o.models[modelID]
+	o.mu.RUnlock()
+	if !ok {
+		return nil
+	}
+	entry.mu.Lock()
+	inst := entry.instance
+	entry.mu.Unlock()
+	return inst
+}
+
+// GetModelDevice returns the compute device (execution provider) the named
+// model's inference currently runs on, resolved from the live instance's
+// Device() (e.g. "CPU" or "GPU"). It returns deviceUnknown when the model is not
+// loaded or its instance has been torn down.
+func (o *Orchestrator) GetModelDevice(modelID string) string {
+	inst := o.instanceFor(modelID)
+	if inst == nil {
+		return deviceUnknown
+	}
+	return inst.Device()
+}
+
+// GetModelBackend returns the live inference execution backend the named model
+// loaded on (BackendTFLite/BackendONNX/BackendOpenVINO), resolved from the live
+// instance's Backend(). It returns "" when the model is not loaded or its instance
+// has been torn down, signalling callers to fall back to the static
+// ModelInfo.Backend file metadata.
+func (o *Orchestrator) GetModelBackend(modelID string) string {
+	inst := o.instanceFor(modelID)
+	if inst == nil {
+		return ""
+	}
+	return inst.Backend()
+}
+
+// GetModelPrecision returns the effective runtime precision the named model
+// executes at ("INT8"/"FP16"/"FP32"), resolved from the live instance's
+// Precision(). It returns "" when the model is not loaded, its instance has been
+// torn down, or the precision is unknown, signalling callers to fall back to the
+// static ModelInfo.Quantization file metadata.
+func (o *Orchestrator) GetModelPrecision(modelID string) string {
+	inst := o.instanceFor(modelID)
+	if inst == nil {
+		return ""
+	}
+	return inst.Precision()
 }
 
 // ModelSpecFor returns the ModelSpec for the given model ID.
@@ -385,8 +466,9 @@ func (o *Orchestrator) resolveInstalledPaths(registryID string) (modelPath, labe
 			logger.String("registry_id", registryID))
 		return "", "", ""
 	}
-	for i := range EmbeddedCatalog {
-		entry := &EmbeddedCatalog[i]
+	catalog := ActiveCatalog()
+	for i := range catalog {
+		entry := &catalog[i]
 		if entry.RegistryID != registryID {
 			continue
 		}
@@ -1197,9 +1279,9 @@ func secondaryTripletFor(settings *conf.Settings) secondaryBackendKey {
 	}
 }
 
-// ReloadSecondaryModels rebuilds the OV-capable secondary models (currently
-// Perch) when the BirdNET inference backend or OpenVINO device preference
-// changes at runtime, so they move to the new device without a full restart.
+// ReloadSecondaryModels rebuilds the OV-capable secondary models (Perch, and the
+// bat embedding extractor) when the BirdNET inference backend or OpenVINO device
+// preference changes at runtime, so they move to the new device without a full restart.
 // It mirrors the primary reload's transactional safety: each model is built on
 // the new backend BEFORE the old instance is closed, and a build failure leaves
 // the old instance serving (one model failing does not abort the others).
@@ -1465,10 +1547,10 @@ type secondaryModelBuilder func(o *Orchestrator, settings *conf.Settings, thread
 // whose construction honors the BirdNET inference backend / OpenVINO device
 // preference to a builder returning a fresh, unregistered instance.
 // ReloadSecondaryModels rebuilds exactly these models when the backend/device
-// changes at runtime. ORT-only secondaries (e.g. Bat, which consumes only
-// ONNXRuntimePath) are intentionally absent: rebuilding them on a device change
-// would be wasted native work. Giving a new secondary OpenVINO support is a
-// one-line entry here, paired with the OV fields on its loader config.
+// changes at runtime. For Bat, only the heavy embedding extractor honors the
+// preference; the tiny bat classifier head always runs on ORT. Giving a new
+// secondary OpenVINO support is a one-line entry here, paired with the OV fields on
+// its loader config.
 var openvinoCapableSecondaryBuilders = map[string]secondaryModelBuilder{
 	RegistryIDPerchV2: func(o *Orchestrator, settings *conf.Settings, threads int) (ModelInstance, error) {
 		// Explicit nil-on-error return avoids the typed-nil interface trap (a
@@ -1478,6 +1560,15 @@ var openvinoCapableSecondaryBuilders = map[string]secondaryModelBuilder{
 			return nil, err
 		}
 		return p, nil
+	},
+	RegistryIDBat: func(o *Orchestrator, settings *conf.Settings, threads int) (ModelInstance, error) {
+		// Explicit nil-on-error return avoids the typed-nil interface trap (a
+		// nil *Bat wrapped in a non-nil ModelInstance).
+		b, err := o.buildBat(settings, threads)
+		if err != nil {
+			return nil, err
+		}
+		return b, nil
 	},
 }
 
