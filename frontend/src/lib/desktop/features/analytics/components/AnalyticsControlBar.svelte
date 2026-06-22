@@ -21,7 +21,7 @@
   import SelectDropdown from '$lib/desktop/components/forms/SelectDropdown.svelte';
   import type { Species } from '$lib/types/species';
   import { formatDateForAPI } from '../registry/analyticsParams';
-  import type { AnalyticsParams, DateRangePreset } from '../registry/types';
+  import type { AnalyticsParams, AnalyticsSourceOption, DateRangePreset } from '../registry/types';
 
   interface Props {
     params: AnalyticsParams;
@@ -29,6 +29,10 @@
     loadingSpecies?: boolean;
     /** Whether any chart in the active tab filters by species. */
     speciesApplicable?: boolean;
+    /** Historical audio sources for the source filter (already grouped by display name). */
+    availableSources?: AnalyticsSourceOption[];
+    /** Whether any chart in the active tab filters by source. */
+    sourceApplicable?: boolean;
     onParamsChange: (_partial: Partial<AnalyticsParams>) => void;
   }
 
@@ -37,6 +41,8 @@
     availableSpecies,
     loadingSpecies = false,
     speciesApplicable = true,
+    availableSources = [],
+    sourceApplicable = true,
     onParamsChange,
   }: Props = $props();
 
@@ -55,8 +61,19 @@
     { value: 'custom', label: t('analytics.advanced.dateRangeOptions.custom') },
   ]);
 
-  // Source filter is inert in PR0: a single "All sources" option, disabled.
-  const sourceOptions = $derived([{ value: '', label: t('analytics.hub.controls.sourceAll') }]);
+  // "All sources" (clears the filter) followed by each historical source. Each
+  // option's value is the comma-separated audio_sources.id list the hub resolved
+  // for that source; selecting it sets params.source, which the registry fetchers
+  // forward as the `source_id` query param.
+  const sourceOptions = $derived([
+    { value: '', label: t('analytics.hub.controls.sourceAll') },
+    ...availableSources.map(s => ({ value: s.value, label: s.label })),
+  ]);
+
+  // Enable the picker only when the active tab has a source-filtering chart and
+  // there is more than one source to choose between — a single source makes the
+  // filter meaningless (and "All sources" would be the only other option).
+  const sourcePickerEnabled = $derived(sourceApplicable && availableSources.length > 1);
 
   // Custom date inputs reflect the resolved range so switching to "custom"
   // starts from whatever was showing, and reloads restore the typed dates.
@@ -84,6 +101,11 @@
     } else {
       onParamsChange({ range });
     }
+  }
+
+  function handleSourceChange(value: string | string[]): void {
+    const source = Array.isArray(value) ? (value[0] ?? '') : value;
+    onParamsChange({ source });
   }
 
   function handleStartChange(event: Event): void {
@@ -150,20 +172,28 @@
       </div>
     {/if}
 
-    <!-- Source / mic filter (present but inert in PR0). The reason is a hover
-         tooltip (keeps the toolbar row aligned/compact) plus a visually-hidden
-         line so screen-reader users in reading order also get the explanation. -->
-    <div class="w-44 max-w-full space-y-1" title={t('analytics.hub.controls.sourceComingSoon')}>
+    <!-- Source / mic filter. Disabled when the active tab has no source-filtering
+         chart (with a hover tooltip + visually-hidden line so screen-reader users
+         in reading order also get the explanation) or when there is at most one
+         source to choose between. -->
+    <div
+      class="w-44 max-w-full space-y-1"
+      title={sourceApplicable ? undefined : t('analytics.hub.controls.sourceNotApplicable')}
+    >
       <SelectDropdown
         value={params.source}
         options={sourceOptions}
-        disabled={true}
+        onChange={handleSourceChange}
+        disabled={!sourcePickerEnabled}
         label={t('analytics.hub.controls.source')}
+        placeholder={t('analytics.hub.controls.sourceAll')}
         variant="select"
         size="sm"
         menuSize="sm"
       />
-      <span class="sr-only">{t('analytics.hub.controls.sourceComingSoon')}</span>
+      {#if !sourceApplicable}
+        <span class="sr-only">{t('analytics.hub.controls.sourceNotApplicable')}</span>
+      {/if}
     </div>
 
     <div class="grow"></div>

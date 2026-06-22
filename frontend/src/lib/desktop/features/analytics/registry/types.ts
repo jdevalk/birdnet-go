@@ -61,6 +61,23 @@ export interface ChartSupports {
   source: boolean;
 }
 
+/**
+ * An audio-source option for the control bar's source filter.
+ *
+ * `value` is the comma-separated list of `audio_sources.id` values the selection
+ * maps to (one display name can cover several underlying rows), and is what the
+ * hub stores in `AnalyticsParams.source` and the registry fetchers forward as the
+ * `source_id` query param. An empty `value` means "all sources" (no filter).
+ */
+export interface AnalyticsSourceOption {
+  /** Comma-separated `audio_sources.id` list; empty for "all sources". */
+  value: string;
+  /** Human-readable source/display name shown in the picker. */
+  label: string;
+  /** Total detections across the underlying source rows (for the picker hint). */
+  count?: number;
+}
+
 /** Relative width a card occupies in the responsive grid. */
 export type ChartSize = 'normal' | 'wide' | 'full';
 

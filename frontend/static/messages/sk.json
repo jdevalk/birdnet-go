@@ -1680,7 +1680,7 @@
       "controls": {
         "source": "Zdroj",
         "sourceAll": "Všetky zdroje",
-        "sourceComingSoon": "Filtrovanie podľa zdroja príde v neskoršej aktualizácii.",
+        "sourceNotApplicable": "The charts in this section do not filter by source.",
         "speciesNotApplicable": "Grafy v tejto sekcii nefiltrujú podľa druhu."
       },
       "card": {

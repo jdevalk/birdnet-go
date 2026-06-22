@@ -34,15 +34,46 @@ function makeParams(overrides: Partial<AnalyticsParams> = {}): AnalyticsParams {
 }
 
 describe('AnalyticsControlBar', () => {
-  it('renders the source filter as inert with an explanation', () => {
+  it('explains when source filtering does not apply to the active tab', () => {
     const onParamsChange = vi.fn();
     render(AnalyticsControlBar, {
-      props: { params: makeParams(), availableSpecies: species, onParamsChange },
+      props: {
+        params: makeParams(),
+        availableSpecies: species,
+        sourceApplicable: false,
+        onParamsChange,
+      },
     });
 
     expect(screen.getByText('analytics.hub.controls.source')).toBeInTheDocument();
-    // The "coming soon" reason is a hover tooltip on the source control wrapper.
-    expect(screen.getByTitle('analytics.hub.controls.sourceComingSoon')).toBeInTheDocument();
+    // The reason is a hover tooltip on the source control wrapper.
+    expect(screen.getByTitle('analytics.hub.controls.sourceNotApplicable')).toBeInTheDocument();
+  });
+
+  it('reports a source selection through onParamsChange', async () => {
+    const onParamsChange = vi.fn();
+    render(AnalyticsControlBar, {
+      props: {
+        params: makeParams(),
+        availableSpecies: species,
+        availableSources: [
+          { value: '1', label: 'Front Door', count: 100 },
+          { value: '2,3', label: 'Garden', count: 50 },
+        ],
+        onParamsChange,
+      },
+    });
+
+    // The source trigger shows the current value label ("All sources").
+    const trigger = screen.getByText('analytics.hub.controls.sourceAll').closest('button');
+    expect(trigger).not.toBeNull();
+    await fireEvent.click(trigger as HTMLButtonElement);
+
+    // "Garden" maps to two underlying source rows -> comma-separated ids.
+    const gardenOption = await screen.findByText('Garden');
+    await fireEvent.click(gardenOption);
+
+    expect(onParamsChange).toHaveBeenCalledWith(expect.objectContaining({ source: '2,3' }));
   });
 
   it('explains when species filtering does not apply to the active tab', () => {

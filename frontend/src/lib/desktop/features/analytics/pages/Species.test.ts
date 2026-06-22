@@ -185,6 +185,10 @@ describe('Species (analytics page) — sortable column headers', () => {
     globalThis.fetch = mockFetchSequence({
       '/api/v2/analytics/species/summary': () => summary,
       '/api/v2/analytics/species/thumbnails': () => ({}),
+      // The page mounts fetchAudioSources(); without this mock the catch handler
+      // calls loggers.analytics.error(), which is undefined in this test env and
+      // throws an unhandled TypeError. Matches the first describe block above.
+      '/api/v2/analytics/sources': () => ({ sources: [] }),
     });
     window.localStorage.clear();
   });

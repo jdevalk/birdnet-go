@@ -1680,7 +1680,7 @@
       "controls": {
         "source": "Forrás",
         "sourceAll": "Minden forrás",
-        "sourceComingSoon": "A forrás szerinti szűrés egy későbbi frissítésben érkezik.",
+        "sourceNotApplicable": "The charts in this section do not filter by source.",
         "speciesNotApplicable": "Az ebben a szakaszban lévő diagramok nem szűrnek faj szerint."
       },
       "card": {

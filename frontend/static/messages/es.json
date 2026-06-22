@@ -1680,7 +1680,7 @@
       "controls": {
         "source": "Fuente",
         "sourceAll": "Todas las fuentes",
-        "sourceComingSoon": "El filtrado por fuente llegará en una próxima actualización.",
+        "sourceNotApplicable": "The charts in this section do not filter by source.",
         "speciesNotApplicable": "Los gráficos de esta sección no filtran por especie."
       },
       "card": {

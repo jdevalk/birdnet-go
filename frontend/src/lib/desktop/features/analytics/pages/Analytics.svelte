@@ -40,7 +40,7 @@
     resolveDateRange,
     serializeAnalyticsParams,
   } from '../registry/analyticsParams';
-  import type { AnalyticsParams, ChartGroup } from '../registry/types';
+  import type { AnalyticsParams, AnalyticsSourceOption, ChartGroup } from '../registry/types';
 
   const logger = getLogger('analytics-hub');
 
@@ -56,6 +56,19 @@
     scientific_name?: string;
     common_name?: string;
     count?: number;
+  }
+
+  // One historical audio source row from GET /api/v2/analytics/sources. Several
+  // rows can share a displayName (e.g. when the source_uri or node_name changed
+  // over time); the hub groups them by displayName so a single picker entry maps
+  // to all the underlying audio_sources.id values.
+  interface AnalyticsSourceResponse {
+    id?: number;
+    displayName?: string;
+    detectionCount?: number;
+  }
+  interface AnalyticsSourceListResponse {
+    sources?: AnalyticsSourceResponse[];
   }
 
   // Tab metadata (label key + icon), in display order.
@@ -80,6 +93,11 @@
   let loadingSpecies = $state(false);
   let speciesController: AbortController | null = null;
 
+  // Historical audio sources, grouped by display name. Fetched once (sources are
+  // range-independent) and shared with the control bar's source picker.
+  let availableSources = $state<AnalyticsSourceOption[]>([]);
+  let sourcesController: AbortController | null = null;
+
   const speciesNames = $derived(
     new Map(availableSpecies.map(s => [s.scientificName ?? s.id, s.commonName]))
   );
@@ -87,6 +105,7 @@
   const activeCharts = $derived(chartsForGroup(params.tab));
   const isOverview = $derived(params.tab === 'overview');
   const speciesApplicable = $derived(activeCharts.some(c => c.supports.species));
+  const sourceApplicable = $derived(activeCharts.some(c => c.supports.source));
   const activeTabLabelKey = $derived(
     TABS.find(tab => tab.group === params.tab)?.labelKey ?? 'analytics.hub.tabs.overview'
   );
@@ -120,13 +139,60 @@
   }
 
   // Browser Back/Forward: re-read params from the URL without writing (no loop).
+  // Also kick off the one-time source-list fetch for the control bar's picker.
   onMount(() => {
     const handlePopState = () => {
       params = readParams();
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    void fetchAvailableSources();
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      sourcesController?.abort();
+    };
   });
+
+  // --- Available sources ----------------------------------------------------
+
+  // Fetches the historical audio sources once and groups them by display name so a
+  // single picker entry maps to every underlying audio_sources.id (the value sent
+  // back as the `source_id` filter). Range-independent: sources are historical, so
+  // this is not re-fetched when the date range changes. Failures leave the list
+  // empty, which disables the picker rather than surfacing an error.
+  async function fetchAvailableSources(): Promise<void> {
+    sourcesController?.abort();
+    const ac = new AbortController();
+    sourcesController = ac;
+
+    try {
+      const response = await fetch(buildAppUrl('/api/v2/analytics/sources'), { signal: ac.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+      const data = (await response.json()) as AnalyticsSourceListResponse;
+      const rows = Array.isArray(data.sources) ? data.sources : [];
+
+      // Group by display name, preserving backend order (detection count desc).
+      const groups = new Map<string, { ids: number[]; count: number }>();
+      for (const row of rows) {
+        if (typeof row.id !== 'number') continue;
+        const label = row.displayName?.trim() || t('common.unknown');
+        const group = groups.get(label) ?? { ids: [], count: 0 };
+        group.ids.push(row.id);
+        group.count += row.detectionCount ?? 0;
+        groups.set(label, group);
+      }
+
+      availableSources = [...groups.entries()].map(([label, { ids, count }]) => ({
+        value: ids.join(','),
+        label,
+        count,
+      }));
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      logger.error('Failed to fetch analytics sources', err);
+      availableSources = [];
+    }
+  }
 
   // --- Available species ----------------------------------------------------
 
@@ -299,6 +365,8 @@
       {availableSpecies}
       {loadingSpecies}
       {speciesApplicable}
+      {availableSources}
+      {sourceApplicable}
       onParamsChange={partial => applyParams(partial, 'push')}
     />
   </div>

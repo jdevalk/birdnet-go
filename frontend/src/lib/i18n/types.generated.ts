@@ -1308,7 +1308,7 @@ export type TranslationKey =
   | 'analytics.hub.aria.tabs'
   | 'analytics.hub.controls.source'
   | 'analytics.hub.controls.sourceAll'
-  | 'analytics.hub.controls.sourceComingSoon'
+  | 'analytics.hub.controls.sourceNotApplicable'
   | 'analytics.hub.controls.speciesNotApplicable'
   | 'analytics.hub.card.error'
   | 'analytics.hub.card.retry'

@@ -66,6 +66,21 @@ function ensureOk(response: Response): void {
   }
 }
 
+/**
+ * Appends the `source_id` query param when an audio-source filter is active.
+ * `params.source` carries a comma-separated list of `audio_sources.id` values (what
+ * the control bar resolves a selected source to — one display name can map to several
+ * underlying rows). The analytics endpoints read it as `source_id` and scope results to
+ * those sources. No-op when empty, so the query matches "all sources" and the URL stays
+ * clean. Only call this from a fetcher whose endpoint honors `source_id` and whose
+ * ChartDef declares `supports.source`.
+ */
+function appendSourceFilter(search: URLSearchParams, params: AnalyticsParams): void {
+  if (params.source) {
+    search.set('source_id', params.source);
+  }
+}
+
 // --- Fetchers (verbatim endpoints/params from the legacy page) -------------
 
 /**
@@ -83,6 +98,7 @@ async function fetchTimeOfDay(
     min_confidence: '0',
   });
   params.species.forEach(name => search.append('species', name));
+  appendSourceFilter(search, params);
 
   const response = await fetch(buildAppUrl(`/api/v2/analytics/time/hourly/batch?${search}`), {
     signal,
@@ -117,6 +133,7 @@ async function fetchDailyTrend(
     end_date: formatDateForAPI(params.endDate),
   });
   params.species.forEach(name => search.append('species', name));
+  appendSourceFilter(search, params);
 
   const response = await fetch(buildAppUrl(`/api/v2/analytics/time/daily/batch?${search}`), {
     signal,
@@ -160,6 +177,7 @@ async function fetchDiversity(
     start_date: formatDateForAPI(params.startDate),
     end_date: formatDateForAPI(params.endDate),
   });
+  appendSourceFilter(search, params);
 
   const response = await fetch(buildAppUrl(`/api/v2/analytics/species/diversity?${search}`), {
     signal,
@@ -395,7 +413,7 @@ export const CHART_REGISTRY: ChartDef[] = [
       selectedSpecies: params.species,
     }),
     size: 'full',
-    supports: { species: true, source: false },
+    supports: { species: true, source: true },
   },
   {
     id: 'daily-species-trend',
@@ -428,7 +446,7 @@ export const CHART_REGISTRY: ChartDef[] = [
         }),
     }),
     size: 'full',
-    supports: { species: true, source: false },
+    supports: { species: true, source: true },
   },
   {
     id: 'species-diversity',
@@ -444,7 +462,7 @@ export const CHART_REGISTRY: ChartDef[] = [
       dateRange: [params.startDate, params.endDate] as [Date, Date],
     }),
     size: 'full',
-    supports: { species: false, source: false },
+    supports: { species: false, source: true },
   },
 ];
 
