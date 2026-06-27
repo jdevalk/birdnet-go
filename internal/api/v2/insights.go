@@ -5,17 +5,26 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	datastoreV2 "github.com/tphakala/birdnet-go/internal/datastore/v2"
 	"github.com/tphakala/birdnet-go/internal/datastore/v2/repository"
 	"github.com/tphakala/birdnet-go/internal/imageprovider"
 	"github.com/tphakala/birdnet-go/internal/logger"
-	"golang.org/x/text/unicode/norm"
+	"github.com/tphakala/birdnet-go/internal/notification"
 )
+
+// requireV2 checks that the enhanced database is available and returns an error
+// response if not. Shared by the insights handlers in this file. The alerts
+// domain (now its own package) keeps its own copy of this guard; consolidating
+// the two is deferred so this extraction stays behavior-preserving.
+func (c *Controller) requireV2(ctx echo.Context) error {
+	return c.HandleErrorWithKey(ctx, nil,
+		"Alert rules require the enhanced (v2) database", http.StatusConflict, notification.MsgErrAlertV2Required, nil)
+}
 
 // Insights constants
 const (
@@ -160,15 +169,6 @@ type nameMaps struct {
 	commonToSci map[string]string
 }
 
-// normalizeForLookup prepares a string for case- and Unicode-form-insensitive
-// map lookup. BirdNET labels ship in composed (NFC) form, but users typing
-// on macOS or with composing keyboards may submit decomposed (NFD) bytes
-// for diacritics, so normalising both sides to NFC prevents silent misses
-// on species like "Lehtopöllö".
-func normalizeForLookup(s string) string {
-	return strings.ToLower(norm.NFC.String(s))
-}
-
 // buildNameMaps parses a BirdNET label list ("ScientificName_CommonName")
 // and builds both lookup maps in a single pass. If two or more labels share
 // the same normalised common name but map to different scientific names,
@@ -190,7 +190,7 @@ func buildNameMaps(labels []string, resolver datastore.SpeciesNameResolver) *nam
 	for _, sn := range datastore.ResolveLabelNames(labels, resolver) {
 		nm.sciToCommon[sn.Scientific] = sn.Common
 
-		key := normalizeForLookup(sn.Common)
+		key := apicore.NormalizeForLookup(sn.Common)
 		if _, seen := ambiguous[key]; seen {
 			continue
 		}
@@ -398,7 +398,7 @@ func (c *Controller) initInsightsRoutes() {
 	c.insightsRepo = repository.NewInsightsRepository(db, useV2Prefix, isMySQL)
 
 	// Build both name maps once and cache on Controller
-	if s := c.controllerSettings(); s != nil {
+	if s := c.ControllerSettings(); s != nil {
 		c.UpdateCommonNameMap(s.BirdNET.Labels)
 	}
 
@@ -482,7 +482,7 @@ func (c *Controller) getExpectedTodayRegionalImpl(ctx echo.Context) error {
 		})
 	}
 
-	settings := c.currentSettings()
+	settings := c.CurrentSettings()
 	if settings == nil {
 		return ctx.JSON(http.StatusOK, ExpectedTodayRegionalResponse{
 			Species:   []RegionalSpeciesItem{},
@@ -511,7 +511,7 @@ func (c *Controller) getExpectedTodayRegionalImpl(ctx echo.Context) error {
 	yearRanges := buildYearRanges(now, expectedTodayWindowDays)
 	localSpecies, localErr := c.insightsRepo.GetExpectedSpeciesToday(reqCtx, yearRanges, analyticsTZOffset(now), nil)
 	if localErr != nil {
-		c.logAPIRequest(ctx, logger.LogLevelWarn, "Failed to query local species for deduplication",
+		c.LogAPIRequest(ctx, logger.LogLevelWarn, "Failed to query local species for deduplication",
 			logger.Error(localErr))
 	}
 

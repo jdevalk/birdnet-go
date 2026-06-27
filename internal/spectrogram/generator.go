@@ -90,10 +90,8 @@ func WithDuration(seconds float64) GenerateOption {
 }
 
 // WithFrequencyProfile sets the frequency profile for spectrogram generation.
-// BatProfile() applies no resample and a high-pass at 18 kHz; BirdProfile()
-// resamples to 24 kHz. When not set, defaults to BirdProfile(). Note that the
-// automatic bat gating in ProfileForModelType is temporarily disabled, so all
-// detections currently resolve to BirdProfile().
+// BatProfile() resamples to 256 kHz (0-128 kHz axis); BirdProfile() resamples to
+// 24 kHz (0-12 kHz axis). When not set, defaults to BirdProfile().
 func WithFrequencyProfile(fp FrequencyProfile) GenerateOption {
 	return func(o *generateOptions) {
 		o.freqProfile = &fp
@@ -292,7 +290,7 @@ func (g *Generator) GenerateFromFile(ctx context.Context, audioPath, outputPath 
 		logger.Int("width", width),
 		logger.Bool("raw", raw),
 		logger.Float64("pre_validated_duration", options.preValidatedDuration),
-		logger.Bool("bat_profile", profile.HighPassHz > 0))
+		logger.Bool("bat_profile", ProfileSuffix(profile) != ""))
 
 	// Validate inputs before filesystem operations
 	if outputPath == "" {
@@ -440,7 +438,7 @@ func (g *Generator) GenerateFromPCM(ctx context.Context, pcmData []byte, outputP
 		logger.Int("pcm_bytes", len(pcmData)),
 		logger.Int("width", width),
 		logger.Bool("raw", raw),
-		logger.Bool("bat_profile", profile.HighPassHz > 0))
+		logger.Bool("bat_profile", ProfileSuffix(profile) != ""))
 
 	// Validate inputs before filesystem operations
 	if outputPath == "" {
@@ -724,6 +722,14 @@ func (g *Generator) generateWithFFmpegSoxPipeline(ctx context.Context, settings 
 	// Run FFmpeg (producer)
 	if err := ffmpegCmd.Run(); err != nil {
 		g.killSoxProcess(soxCmd, soxPid)
+		// Wait for Sox to exit before reading soxOutput below. soxCmd.Stderr is a
+		// *bytes.Buffer, so os/exec runs a background goroutine that copies Sox's
+		// stderr into that buffer until soxCmd.Wait() joins it. Reading the buffer
+		// before Wait() returns races that copier goroutine. Setting soxWaitDone
+		// also stops the deferred cleanup from waiting a second time.
+		soxKillTimeout := computeRemainingTimeout(ctx, soxWaitFallbackTimeout)
+		g.waitWithTimeout(soxCmd, soxKillTimeout)
+		soxWaitDone = true
 		g.log().Warn("FFmpeg|SoX pipeline failed (FFmpeg stage)",
 			logger.String("audio_path", audioPath),
 			logger.Int("width", width),
@@ -820,11 +826,9 @@ func (g *Generator) generateWithSoxPCM(ctx context.Context, settings *conf.Setti
 		"-n", // No audio output (null output)
 	}
 
-	// Frequency-dependent effects: resample (bird) or high-pass filter (bat).
-	// Guard: sinc filter requires sample rate > 2*cutoff (Nyquist constraint).
-	if profile.HighPassHz > 0 && effectiveRate > 2*profile.HighPassHz {
-		args = append(args, "sinc", strconv.Itoa(profile.HighPassHz)+"-")
-	} else if profile.ResampleRate > 0 {
+	// Frequency-dependent effects: resample to the profile's rate (bird 24 kHz,
+	// bat 256 kHz) so the spectrogram's frequency axis matches the fixed UI overlay.
+	if profile.ResampleRate > 0 {
 		args = append(args, "rate", strconv.Itoa(profile.ResampleRate))
 	}
 
@@ -889,6 +893,37 @@ func (g *Generator) generateWithSoxPCM(ctx context.Context, settings *conf.Setti
 	return nil
 }
 
+// buildFFmpegSpectrogramFilter builds the -lavfi filtergraph for the FFmpeg-only
+// fallback. The showspectrumpic stage uses a style-aware color mode so the fallback
+// visually matches the Sox primary path (without it the fallback always renders the
+// default colorful style, causing intermittent mismatches when Sox fails under load).
+// When the frequency profile sets a resample rate, an aresample stage is prepended so
+// the rendered frequency axis matches the Sox paths (which apply the same rate) and the
+// fixed UI overlay: bird clips resample to 24 kHz (0-12 kHz axis) and bat clips to
+// 256 kHz (0-128 kHz axis) regardless of capture rate. Without it the fallback renders
+// to the native Nyquist and that axis-mismatched image gets cached under the profile
+// filename.
+func buildFFmpegSpectrogramFilter(width int, raw bool, style string, profile FrequencyProfile) string {
+	height := fftFriendlyHeight(width)
+	colorMode := getFFmpegColorMode(style)
+
+	legendFlag := 1
+	if raw {
+		legendFlag = 0
+	}
+
+	// Match the Sox "rate" effect so both backends produce the same frequency axis:
+	// an aresample stage sets showspectrumpic's input rate, so the axis tops out at
+	// its Nyquist (rate/2). Built as a single Sprintf to avoid a throwaway alloc.
+	resamplePrefix := ""
+	if profile.ResampleRate > 0 {
+		resamplePrefix = fmt.Sprintf("aresample=%d,", profile.ResampleRate)
+	}
+
+	return fmt.Sprintf("%sshowspectrumpic=s=%dx%d:legend=%d:gain=%s:drange=%s:color=%s",
+		resamplePrefix, width, height, legendFlag, ffmpegGain, ffmpegDrange, colorMode)
+}
+
 // generateWithFFmpeg generates a spectrogram using only FFmpeg (no Sox).
 // This is a fallback when Sox is not available or fails.
 func (g *Generator) generateWithFFmpeg(ctx context.Context, settings *conf.Settings, audioPath, outputPath string, width int, raw bool, profile FrequencyProfile) error {
@@ -903,26 +938,8 @@ func (g *Generator) generateWithFFmpeg(ctx context.Context, settings *conf.Setti
 			Build()
 	}
 
-	height := fftFriendlyHeight(width)
-
-	// Apply style-aware color mode so FFmpeg fallback matches the Sox primary style.
-	// Without this, the FFmpeg fallback always produces the default colorful style,
-	// causing intermittent style mismatches when Sox fails under resource pressure.
 	style := settings.Realtime.Dashboard.Spectrogram.Style
-	colorMode := getFFmpegColorMode(style)
-
-	legendFlag := 1
-	if raw {
-		legendFlag = 0
-	}
-
-	filterStr := fmt.Sprintf("showspectrumpic=s=%dx%d:legend=%d:gain=%s:drange=%s:color=%s",
-		width, height, legendFlag, ffmpegGain, ffmpegDrange, colorMode)
-
-	// Bat profile: prepend high-pass filter to remove sub-ultrasonic content
-	if profile.HighPassHz > 0 {
-		filterStr = fmt.Sprintf("highpass=f=%d,%s", profile.HighPassHz, filterStr)
-	}
+	filterStr := buildFFmpegSpectrogramFilter(width, raw, style, profile)
 
 	ffmpegArgs := []string{
 		"-hide_banner",
@@ -993,14 +1010,12 @@ func (g *Generator) getSoxSpectrogramArgs(ctx context.Context, settings *conf.Se
 	heightStr := strconv.Itoa(fftFriendlyHeight(width))
 	widthStr := strconv.Itoa(width)
 
-	// Build base args: either resample (bird) or high-pass filter (bat)
+	// Build base args: resample to the profile's rate (bird 24 kHz, bat 256 kHz) so
+	// the spectrogram's frequency axis matches the fixed UI overlay.
 	var args []string
-	switch {
-	case profile.HighPassHz > 0:
-		args = []string{"-n", "sinc", strconv.Itoa(profile.HighPassHz) + "-", "spectrogram", "-x", widthStr, "-y", heightStr}
-	case profile.ResampleRate > 0:
+	if profile.ResampleRate > 0 {
 		args = []string{"-n", "rate", strconv.Itoa(profile.ResampleRate), "spectrogram", "-x", widthStr, "-y", heightStr}
-	default:
+	} else {
 		args = []string{"-n", "spectrogram", "-x", widthStr, "-y", heightStr}
 	}
 

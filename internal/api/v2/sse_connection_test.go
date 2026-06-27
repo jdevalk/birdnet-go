@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore/mocks"
 	"github.com/tphakala/birdnet-go/internal/observability"
@@ -44,11 +45,19 @@ type SSETestConfig struct {
 	connectionTimeout time.Duration
 }
 
+// maxSSEReadLines is the number of lines attemptSSEConnection reads from an SSE
+// stream before returning. The initial connected event is exactly this many
+// lines ("event: ...", "data: ...", and the trailing blank line from the
+// "\n\n" terminator), so reading this many confirms the connection was
+// established without blocking on the next event, which only arrives at the
+// heartbeat interval.
+const maxSSEReadLines = 3
+
 // attemptSSEConnection attempts to establish an SSE connection and read events.
 // Returns true if connection was established and events were read.
 func attemptSSEConnection(t *testing.T, serverURL, endpoint string, connID int, timeout time.Duration) bool {
 	t.Helper()
-	client := createTestHTTPClient(timeout)
+	client := apitest.NewTestHTTPClient(timeout)
 	defer client.CloseIdleConnections()
 
 	req, err := http.NewRequest("GET", serverURL+"/api/v2"+endpoint, http.NoBody)
@@ -68,13 +77,20 @@ func attemptSSEConnection(t *testing.T, serverURL, endpoint string, connID int, 
 		return false
 	}
 
-	// Read a few events
+	// Read the initial connected event's lines, then stop. The line-count check
+	// must come before scanner.Scan() so that once we have read the connected
+	// event (exactly maxSSEReadLines lines) we never issue another Scan. A Scan
+	// after the connected event would block until the next heartbeat or the
+	// client timeout, burning the full timeout per connection for no benefit.
 	scanner := bufio.NewScanner(resp.Body)
 	eventCount := 0
-	for scanner.Scan() && eventCount < 3 {
+	for eventCount < maxSSEReadLines && scanner.Scan() {
 		eventCount++
 	}
-	return true
+	// Report success only if the full connected event was read. Returning true
+	// unconditionally would count a connection that got HTTP 200 but never
+	// delivered the handshake (e.g. the stream closed early) as established.
+	return eventCount == maxSSEReadLines
 }
 
 // Common test configurations for different SSE endpoints
@@ -143,7 +159,7 @@ func testSSEEndpointCleanup(t *testing.T, config SSETestConfig) {
 func testSingleConnectionManualDisconnect(t *testing.T, server *httptest.Server, config SSETestConfig) {
 	t.Helper()
 	// Create HTTP client optimized for tests
-	client := createTestHTTPClient(config.testTimeout)
+	client := apitest.NewTestHTTPClient(config.testTimeout)
 
 	// Make SSE request
 	req, err := http.NewRequest("GET", server.URL+"/api/v2"+config.endpoint, http.NoBody)
@@ -196,7 +212,7 @@ func testSingleConnectionContextCancellation(t *testing.T, server *httptest.Serv
 	ctx, cancel := context.WithCancel(t.Context())
 
 	// Create HTTP client optimized for tests
-	client := createTestHTTPClient(config.testTimeout)
+	client := apitest.NewTestHTTPClient(config.testTimeout)
 
 	// Make SSE request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", server.URL+"/api/v2"+config.endpoint, http.NoBody)
@@ -273,7 +289,7 @@ func testConnectionTimeout(t *testing.T, server *httptest.Server, config SSETest
 	// This test would require modifying the timeout constants for testing
 	// For now, we'll test the behavior with a short-lived connection
 
-	client := createTestHTTPClient(config.connectionTimeout)
+	client := apitest.NewTestHTTPClient(config.connectionTimeout)
 
 	req, err := http.NewRequest("GET", server.URL+"/api/v2"+config.endpoint, http.NoBody)
 	require.NoError(t, err)
@@ -310,7 +326,7 @@ func TestSSEUnbufferedChannelFix(t *testing.T) {
 	defer server.Close()
 	defer controller.Shutdown()
 
-	client := createTestHTTPClient(3 * time.Second)
+	client := apitest.NewTestHTTPClient(3 * time.Second)
 
 	// Create multiple rapid connections and disconnections to stress test
 	// the Done channel handling
@@ -348,7 +364,7 @@ func TestSSERateLimiting(t *testing.T) {
 	defer server.Close()
 	defer controller.Shutdown()
 
-	client := createTestHTTPClient(2 * time.Second)
+	client := apitest.NewTestHTTPClient(2 * time.Second)
 
 	var successCount, rateLimitedCount int
 
@@ -445,7 +461,7 @@ func BenchmarkSSEConnectionSetup(b *testing.B) {
 	defer server.Close()
 	defer controller.Shutdown()
 
-	client := createTestHTTPClient(5 * time.Second)
+	client := apitest.NewTestHTTPClient(5 * time.Second)
 	defer client.CloseIdleConnections()
 
 	b.ReportAllocs()

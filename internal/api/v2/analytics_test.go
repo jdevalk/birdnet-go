@@ -18,6 +18,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	speciestracker "github.com/tphakala/birdnet-go/internal/analysis/species"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	"github.com/tphakala/birdnet-go/internal/datastore/mocks"
@@ -616,7 +618,7 @@ func TestGetInvalidAnalyticsRequests(t *testing.T) {
 	// Initialize a mock image cache for controller creation - ONCE for all test cases
 	testMetrics, _ := observability.NewMetrics() // Create a dummy metrics instance
 	// Create a stub provider to avoid nil pointer panics
-	stubProvider := &TestImageProvider{
+	stubProvider := &apitest.TestImageProvider{
 		FetchFunc: func(scientificName string) (imageprovider.BirdImage, error) {
 			return imageprovider.BirdImage{}, nil
 		},
@@ -629,11 +631,7 @@ func TestGetInvalidAnalyticsRequests(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			controller := &Controller{
-				DS:             mockDS,
-				BirdImageCache: mockImageCache,
-				// sunCalc and controlChan might be needed depending on handlers tested
-			}
+			controller := &Controller{Core: &apicore.Core{DS: mockDS, BirdImageCache: mockImageCache}}
 			controller.Settings.Store(appSettings)
 
 			e := echo.New()
@@ -769,7 +767,7 @@ func TestGetDailySpeciesSummary_MultipleDetections(t *testing.T) {
 	// mockDS.On("SaveImageCache", mock.AnythingOfType("*datastore.ImageCache")).Return(nil)
 
 	// Create a mock image provider (can be nil if cache doesn't need real fetching)
-	mockImageProvider := &TestImageProvider{
+	mockImageProvider := &apitest.TestImageProvider{
 		FetchFunc: func(scientificName string) (imageprovider.BirdImage, error) {
 			// Return placeholder or specific mock image data if needed
 			return imageprovider.BirdImage{
@@ -789,10 +787,7 @@ func TestGetDailySpeciesSummary_MultipleDetections(t *testing.T) {
 	})
 
 	// Create a controller with our mocks
-	controller := &Controller{
-		DS:             mockDS,
-		BirdImageCache: imageCache,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS, BirdImageCache: imageCache}}
 
 	// Create a request with the date we want to test
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v2/analytics/species/daily?date=%s", testDate), http.NoBody)
@@ -934,7 +929,7 @@ func TestGetDailySpeciesSummary_LocalizedNonPrimarySpecies(t *testing.T) {
 			sciEurasianBlackbird: blackbirdHourly,
 		}, nil)
 
-	controller := &Controller{DS: mockDS}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS}}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date="+testDate, http.NoBody)
 	rec := httptest.NewRecorder()
@@ -1036,7 +1031,7 @@ func TestGetDailySpeciesSummary_SingleDetection(t *testing.T) {
 	// mockDS.On("SaveImageCache", mock.AnythingOfType("*datastore.ImageCache")).Return(nil)
 
 	// Create a mock image provider
-	mockImageProvider := &TestImageProvider{
+	mockImageProvider := &apitest.TestImageProvider{
 		FetchFunc: func(scientificName string) (imageprovider.BirdImage, error) {
 			return imageprovider.BirdImage{
 				ScientificName: scientificName,
@@ -1046,13 +1041,10 @@ func TestGetDailySpeciesSummary_SingleDetection(t *testing.T) {
 	}
 
 	// Create a bird image cache with our mock provider
-	imageCache := imageprovider.InitCache("test", mockImageProvider, NewTestMetrics(t), mockDS)
+	imageCache := imageprovider.InitCache("test", mockImageProvider, apitest.NewTestMetrics(t), mockDS)
 
 	// Create a controller with our mocks
-	controller := &Controller{
-		DS:             mockDS,
-		BirdImageCache: imageCache,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS, BirdImageCache: imageCache}}
 
 	// Create a request with the date we want to test
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date=2025-03-07", http.NoBody)
@@ -1104,9 +1096,7 @@ func TestGetDailySpeciesSummary_EmptyResult(t *testing.T) {
 	// Expect GetBatchHourlyOccurrences not to be called since there are no birds
 
 	// Create a controller with our mock
-	controller := &Controller{
-		DS: mockDS,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS}}
 
 	// Create a request with the date we want to test
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date=2025-03-07", http.NoBody)
@@ -1188,9 +1178,7 @@ func TestGetDailySpeciesSummary_TimeHandling(t *testing.T) {
 	}, nil)
 
 	// Create a controller with our mock
-	controller := &Controller{
-		DS: mockDS,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS}}
 
 	// Create a request with the date we want to test
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date=2025-03-07", http.NoBody)
@@ -1272,9 +1260,7 @@ func TestGetDailySpeciesSummary_ConfidenceFilter(t *testing.T) {
 	}, nil)
 
 	// Create a controller with our mock
-	controller := &Controller{
-		DS: mockDS,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS}}
 
 	// Test with a confidence threshold of "70"
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date=2025-03-07&min_confidence=70", http.NoBody)
@@ -1358,9 +1344,7 @@ func TestGetDailySpeciesSummary_LimitParameter(t *testing.T) {
 	}, nil)
 
 	// Create a controller with our mock
-	controller := &Controller{
-		DS: mockDS,
-	}
+	controller := &Controller{Core: &apicore.Core{DS: mockDS}}
 
 	// Create a request with a limit of 2
 	req := httptest.NewRequest(http.MethodGet, "/api/v2/analytics/species/daily?date=2025-03-07&limit=2", http.NoBody)
@@ -1501,7 +1485,7 @@ func TestAnalytics_ResolvesLocalizedCommonNameToScientific(t *testing.T) {
 	t.Attr("feature", "localized-name-resolution")
 
 	e := echo.New()
-	c := &Controller{Group: e.Group("/api/v2")}
+	c := &Controller{Core: &apicore.Core{Group: e.Group("/api/v2")}}
 	c.SetNameResolver(&analyticsBatchFakeResolver{batch: map[string]string{
 		"Barbastella barbastellus": "mopsilepakko",
 	}})

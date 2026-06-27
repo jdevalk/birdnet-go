@@ -11,7 +11,10 @@
   toggle (the date range stays visible) to keep the toolbar compact. Each
   control honors the active tab's chart `supports` flags: when no chart in the
   active tab filters by species (e.g. Biodiversity), the species toggle is
-  disabled with an explanation. The source filter is present but inert in PR0.
+  disabled with an explanation. The source/mic filter follows the same rule via
+  `sourceApplicable`: it is enabled only when a chart in the active tab consumes
+  the source dimension and sources exist, and otherwise carries a specific
+  disabled reason rather than being a silent dead end.
 -->
 <script lang="ts">
   import { ChevronDown, ChevronRight } from '@lucide/svelte';
@@ -21,7 +24,7 @@
   import SelectDropdown from '$lib/desktop/components/forms/SelectDropdown.svelte';
   import type { Species } from '$lib/types/species';
   import { formatDateForAPI } from '../registry/analyticsParams';
-  import type { AnalyticsParams, AnalyticsSourceOption, DateRangePreset } from '../registry/types';
+  import type { AnalyticsParams, AudioSourceOption, DateRangePreset } from '../registry/types';
 
   interface Props {
     params: AnalyticsParams;
@@ -29,8 +32,9 @@
     loadingSpecies?: boolean;
     /** Whether any chart in the active tab filters by species. */
     speciesApplicable?: boolean;
-    /** Historical audio sources for the source filter (already grouped by display name). */
-    availableSources?: AnalyticsSourceOption[];
+    /** Audio sources for the source/mic filter (empty until a source-aware tab loads them). */
+    availableSources?: AudioSourceOption[];
+    loadingSources?: boolean;
     /** Whether any chart in the active tab filters by source. */
     sourceApplicable?: boolean;
     onParamsChange: (_partial: Partial<AnalyticsParams>) => void;
@@ -42,7 +46,8 @@
     loadingSpecies = false,
     speciesApplicable = true,
     availableSources = [],
-    sourceApplicable = true,
+    loadingSources = false,
+    sourceApplicable = false,
     onParamsChange,
   }: Props = $props();
 
@@ -61,19 +66,33 @@
     { value: 'custom', label: t('analytics.advanced.dateRangeOptions.custom') },
   ]);
 
-  // "All sources" (clears the filter) followed by each historical source. Each
-  // option's value is the comma-separated audio_sources.id list the hub resolved
-  // for that source; selecting it sets params.source, which the registry fetchers
-  // forward as the `source_id` query param.
+  // Source/mic filter options: "All sources" plus the live source list (id -> opaque value, name ->
+  // already anonymized server-side for unauthenticated clients).
   const sourceOptions = $derived([
     { value: '', label: t('analytics.hub.controls.sourceAll') },
-    ...availableSources.map(s => ({ value: s.value, label: s.label })),
+    ...availableSources.map(s => ({ value: s.id, label: s.name })),
   ]);
 
-  // Enable the picker only when the active tab has a source-filtering chart and
-  // there is more than one source to choose between — a single source makes the
-  // filter meaningless (and "All sources" would be the only other option).
-  const sourcePickerEnabled = $derived(sourceApplicable && availableSources.length > 1);
+  // The source filter is enabled when a chart in the active tab consumes the source dimension and
+  // either there are sources to choose from or a source is already selected. The selected-source case
+  // keeps a stale filter from a URL/bookmark clearable back to "All sources" even when the live list
+  // came back empty. Otherwise it is disabled with a specific reason, so the control is never a silent
+  // dead end (no chart sets supports.source yet, so this stays disabled until the per-mic chart lands).
+  const sourceEnabled = $derived(
+    sourceApplicable && !loadingSources && (availableSources.length > 0 || params.source !== '')
+  );
+
+  const sourceDisabledReason = $derived.by(() => {
+    if (sourceEnabled) return undefined;
+    if (!sourceApplicable) return t('analytics.hub.controls.sourceNotApplicable');
+    if (loadingSources) return t('analytics.hub.controls.sourceLoading');
+    return t('analytics.hub.controls.sourceNone');
+  });
+
+  function handleSourceChange(value: string | string[]): void {
+    const source = Array.isArray(value) ? (value[0] ?? '') : value;
+    onParamsChange({ source });
+  }
 
   // Custom date inputs reflect the resolved range so switching to "custom"
   // starts from whatever was showing, and reloads restore the typed dates.
@@ -101,11 +120,6 @@
     } else {
       onParamsChange({ range });
     }
-  }
-
-  function handleSourceChange(value: string | string[]): void {
-    const source = Array.isArray(value) ? (value[0] ?? '') : value;
-    onParamsChange({ source });
   }
 
   function handleStartChange(event: Event): void {
@@ -172,28 +186,25 @@
       </div>
     {/if}
 
-    <!-- Source / mic filter. Disabled when the active tab has no source-filtering
-         chart (with a hover tooltip + visually-hidden line so screen-reader users
-         in reading order also get the explanation) or when there is at most one
-         source to choose between. -->
-    <div
-      class="w-44 max-w-full space-y-1"
-      title={sourceApplicable ? undefined : t('analytics.hub.controls.sourceNotApplicable')}
-    >
+    <!-- Source / mic filter. Enabled only when a chart in the active tab consumes the source
+         dimension and sources exist; otherwise disabled with a specific reason surfaced as visible
+         help text (SelectDropdown wires it to the control via aria-describedby), so the reason is
+         discoverable on touch/tablet and to screen readers, matching the species control rather than
+         relying on a hover-only tooltip. -->
+    <div class="w-44 max-w-full space-y-1">
       <SelectDropdown
         value={params.source}
         options={sourceOptions}
+        disabled={!sourceEnabled}
         onChange={handleSourceChange}
-        disabled={!sourcePickerEnabled}
+        id="analyticsSourceFilter"
         label={t('analytics.hub.controls.source')}
         placeholder={t('analytics.hub.controls.sourceAll')}
+        helpText={sourceDisabledReason}
         variant="select"
         size="sm"
         menuSize="sm"
       />
-      {#if !sourceApplicable}
-        <span class="sr-only">{t('analytics.hub.controls.sourceNotApplicable')}</span>
-      {/if}
     </div>
 
     <div class="grow"></div>

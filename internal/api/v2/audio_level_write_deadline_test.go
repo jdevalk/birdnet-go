@@ -13,6 +13,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 )
 
@@ -67,8 +69,8 @@ func TestSendAudioLevelUpdateSetsWriteDeadline(t *testing.T) {
 		ctx.Response().Writer = mockWriter
 
 		// Create minimal controller
-		controller := &Controller{}
-		controller.Settings.Store(newValidTestSettings())
+		controller := &Controller{Core: &apicore.Core{}}
+		controller.Settings.Store(apitest.NewValidTestSettings())
 
 		// Create test audio level data
 		levels := map[string]audiocore.AudioLevelData{
@@ -108,8 +110,8 @@ func TestSendAudioLevelUpdateSetsWriteDeadline(t *testing.T) {
 		ctx := e.NewContext(req, rec)
 		ctx.Response().Writer = mockWriter
 
-		controller := &Controller{}
-		controller.Settings.Store(newValidTestSettings())
+		controller := &Controller{Core: &apicore.Core{}}
+		controller.Settings.Store(apitest.NewValidTestSettings())
 		levels := map[string]audiocore.AudioLevelData{
 			"test_source": {Level: 50, Name: "Test Source", Source: "test_source"},
 		}
@@ -141,8 +143,8 @@ func TestSendAudioLevelHeartbeatSetsWriteDeadline(t *testing.T) {
 		ctx.Response().Writer = mockWriter
 
 		// Create minimal controller
-		controller := &Controller{}
-		controller.Settings.Store(newValidTestSettings())
+		controller := &Controller{Core: &apicore.Core{}}
+		controller.Settings.Store(apitest.NewValidTestSettings())
 
 		// Call sendAudioLevelHeartbeat
 		err := controller.sendAudioLevelHeartbeat(ctx)

@@ -23,6 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/conf/conftest"
 	"github.com/tphakala/birdnet-go/internal/datastore/mocks"
@@ -48,7 +50,7 @@ func TestGetSpectrogramStatusFindsInFlightJobAfterExportPathChange(t *testing.T)
 		raw    = true
 	)
 
-	settings := newValidTestSettings()
+	settings := apitest.NewValidTestSettings()
 	settings.Realtime.Audio.Export.Path = filepath.Join(tmp, "original")
 
 	// A non-nil datastore satisfies requireDatastore; no Get expectation is set because
@@ -56,11 +58,9 @@ func TestGetSpectrogramStatusFindsInFlightJobAfterExportPathChange(t *testing.T)
 	// path). An unexpected Get call would fail this test, which is the point.
 	mockDS := mocks.NewMockInterface(t)
 
-	controller := &Controller{
-		SFS: sfs,
-		ctx: t.Context(),
-		DS:  mockDS,
-	}
+	controllerCore := &apicore.Core{SFS: sfs, DS: mockDS}
+	controllerCore.SetTestContext(t.Context(), nil)
+	controller := &Controller{Core: controllerCore}
 	controller.Settings.Store(settings)
 	conftest.SetTestSettings(settings)
 
@@ -115,11 +115,10 @@ func TestGenerateSpectrogramFromRelRetainsFailedStatusForPolling(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
-	settings := newValidTestSettings()
-	controller := &Controller{
-		SFS: sfs,
-		ctx: ctx,
-	}
+	settings := apitest.NewValidTestSettings()
+	controllerCore := &apicore.Core{SFS: sfs}
+	controllerCore.SetTestContext(ctx, nil)
+	controller := &Controller{Core: controllerCore}
 	controller.Settings.Store(settings)
 	conftest.SetTestSettings(settings)
 
@@ -129,7 +128,7 @@ func TestGenerateSpectrogramFromRelRetainsFailedStatusForPolling(t *testing.T) {
 	// relAudioPath points at a file that does not exist, so generation fails.
 	relAudioPath := "2024/06/04/Turdus_merula_80p.wav"
 	_, genErr := controller.generateSpectrogramFromRel(
-		t.Context(), relAudioPath, "clip.wav", queueKey, SpectrogramSizeLg, true, "", "")
+		t.Context(), relAudioPath, "clip.wav", queueKey, SpectrogramSizeLg, true, "", "", "")
 	require.Error(t, genErr, "generation against a missing audio file must fail")
 
 	statusValue, ok := spectrogramQueue.Load(queueKey)

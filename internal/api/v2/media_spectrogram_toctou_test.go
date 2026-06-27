@@ -18,6 +18,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/conf/conftest"
 	"github.com/tphakala/birdnet-go/internal/securefs"
@@ -41,18 +43,17 @@ func TestGenerateSpectrogramFromRelIgnoresLiveExportPath(t *testing.T) {
 
 	ctx := t.Context()
 
-	controller := &Controller{
-		SFS: sfs,
-		ctx: ctx,
-	}
-	controller.Settings.Store(newValidTestSettings())
+	controllerCore := &apicore.Core{SFS: sfs}
+	controllerCore.SetTestContext(ctx, nil)
+	controller := &Controller{Core: controllerCore}
+	controller.Settings.Store(apitest.NewValidTestSettings())
 
 	const (
 		width = SpectrogramSizeLg
 		raw   = true
 	)
 	relAudioPath := "2024/06/04/Turdus_merula_80p.wav"
-	_, _, _, relSpectrogramPath := buildSpectrogramPaths(relAudioPath, width, raw, "", "")
+	_, _, _, relSpectrogramPath := buildSpectrogramPaths(relAudioPath, width, raw, "", "", "")
 
 	// Pre-create the spectrogram on disk so the fast path returns without ffmpeg.
 	full := filepath.Join(tmp, relSpectrogramPath)
@@ -67,7 +68,7 @@ func TestGenerateSpectrogramFromRelIgnoresLiveExportPath(t *testing.T) {
 	conftest.SetTestSettings(live)
 	controller.Settings.Store(live)
 
-	got, err := controller.generateSpectrogramFromRel(ctx, relAudioPath, "irrelevant/clip/path.wav", "", width, raw, "", "")
+	got, err := controller.generateSpectrogramFromRel(ctx, relAudioPath, "irrelevant/clip/path.wav", "", width, raw, "", "", "")
 	require.NoError(t, err)
 	assert.Equal(t, relSpectrogramPath, got,
 		"generateSpectrogramFromRel must derive the spectrogram path from the threaded relAudioPath, not the live Export.Path")

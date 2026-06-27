@@ -40,7 +40,7 @@
     resolveDateRange,
     serializeAnalyticsParams,
   } from '../registry/analyticsParams';
-  import type { AnalyticsParams, AnalyticsSourceOption, ChartGroup } from '../registry/types';
+  import type { AnalyticsParams, AudioSourceOption, ChartGroup } from '../registry/types';
 
   const logger = getLogger('analytics-hub');
 
@@ -56,19 +56,6 @@
     scientific_name?: string;
     common_name?: string;
     count?: number;
-  }
-
-  // One historical audio source row from GET /api/v2/analytics/sources. Several
-  // rows can share a displayName (e.g. when the source_uri or node_name changed
-  // over time); the hub groups them by displayName so a single picker entry maps
-  // to all the underlying audio_sources.id values.
-  interface AnalyticsSourceResponse {
-    id?: number;
-    displayName?: string;
-    detectionCount?: number;
-  }
-  interface AnalyticsSourceListResponse {
-    sources?: AnalyticsSourceResponse[];
   }
 
   // Tab metadata (label key + icon), in display order.
@@ -93,14 +80,17 @@
   let loadingSpecies = $state(false);
   let speciesController: AbortController | null = null;
 
-  // Historical audio sources, grouped by display name. Fetched once (sources are
-  // range-independent) and shared with the control bar's source picker.
-  let availableSources = $state<AnalyticsSourceOption[]>([]);
-  let sourcesController: AbortController | null = null;
-
   const speciesNames = $derived(
     new Map(availableSpecies.map(s => [s.scientificName ?? s.id, s.commonName]))
   );
+
+  // Audio sources for the source/mic filter. Loaded lazily the first time a tab whose charts consume
+  // the source dimension becomes active (see the effect below), so tabs that never filter by source
+  // (the whole hub until the per-mic chart lands) make no request.
+  let availableSources = $state<AudioSourceOption[]>([]);
+  let loadingSources = $state(false);
+  let sourcesRequested = false;
+  let sourcesController: AbortController | null = null;
 
   const activeCharts = $derived(chartsForGroup(params.tab));
   const isOverview = $derived(params.tab === 'overview');
@@ -139,60 +129,16 @@
   }
 
   // Browser Back/Forward: re-read params from the URL without writing (no loop).
-  // Also kick off the one-time source-list fetch for the control bar's picker.
   onMount(() => {
     const handlePopState = () => {
       params = readParams();
     };
     window.addEventListener('popstate', handlePopState);
-    void fetchAvailableSources();
     return () => {
       window.removeEventListener('popstate', handlePopState);
       sourcesController?.abort();
     };
   });
-
-  // --- Available sources ----------------------------------------------------
-
-  // Fetches the historical audio sources once and groups them by display name so a
-  // single picker entry maps to every underlying audio_sources.id (the value sent
-  // back as the `source_id` filter). Range-independent: sources are historical, so
-  // this is not re-fetched when the date range changes. Failures leave the list
-  // empty, which disables the picker rather than surfacing an error.
-  async function fetchAvailableSources(): Promise<void> {
-    sourcesController?.abort();
-    const ac = new AbortController();
-    sourcesController = ac;
-
-    try {
-      const response = await fetch(buildAppUrl('/api/v2/analytics/sources'), { signal: ac.signal });
-      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-
-      const data = (await response.json()) as AnalyticsSourceListResponse;
-      const rows = Array.isArray(data.sources) ? data.sources : [];
-
-      // Group by display name, preserving backend order (detection count desc).
-      const groups = new Map<string, { ids: number[]; count: number }>();
-      for (const row of rows) {
-        if (typeof row.id !== 'number') continue;
-        const label = row.displayName?.trim() || t('common.unknown');
-        const group = groups.get(label) ?? { ids: [], count: 0 };
-        group.ids.push(row.id);
-        group.count += row.detectionCount ?? 0;
-        groups.set(label, group);
-      }
-
-      availableSources = [...groups.entries()].map(([label, { ids, count }]) => ({
-        value: ids.join(','),
-        label,
-        count,
-      }));
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      logger.error('Failed to fetch analytics sources', err);
-      availableSources = [];
-    }
-  }
 
   // --- Available species ----------------------------------------------------
 
@@ -296,6 +242,70 @@
     untrack(() => maybeAutoSelectSpecies());
   });
 
+  // --- Available audio sources ---------------------------------------------
+
+  interface SourcesResponse {
+    sources?: unknown;
+  }
+
+  // Coerce the /analytics/sources payload ({ sources: [{ id, name, count }] }) defensively into the
+  // control bar's option shape, dropping rows without a usable id and falling back name -> id.
+  function coerceSources(data: unknown): AudioSourceOption[] {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return [];
+    const raw = (data as SourcesResponse).sources;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map(item => {
+        if (!item || typeof item !== 'object') return null;
+        const s = item as { id?: unknown; name?: unknown; count?: unknown };
+        // The backend serialises id as a string; also accept a finite number defensively so a future
+        // numeric-id payload does not silently drop sources.
+        let id = '';
+        if (typeof s.id === 'string') id = s.id;
+        else if (typeof s.id === 'number' && Number.isFinite(s.id)) id = String(s.id);
+        if (!id) return null;
+        const name = typeof s.name === 'string' && s.name ? s.name : id;
+        const count = typeof s.count === 'number' && Number.isFinite(s.count) ? s.count : 0;
+        return { id, name, count };
+      })
+      .filter((s): s is AudioSourceOption => s !== null);
+  }
+
+  async function fetchAvailableSources(): Promise<void> {
+    sourcesController?.abort();
+    const ac = new AbortController();
+    sourcesController = ac;
+    loadingSources = true;
+
+    try {
+      // The list is all-history (not range-scoped) so the dropdown stays stable as the date range
+      // changes; the per-source charts still re-fetch their own data per range.
+      const response = await fetch(buildAppUrl('/api/v2/analytics/sources'), { signal: ac.signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      availableSources = coerceSources(await response.json());
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      logger.error('Failed to fetch available sources', err);
+      availableSources = [];
+      // Clear the latch so the next time a source-aware tab becomes active the list is retried
+      // rather than staying empty for the rest of the session after a transient failure.
+      sourcesRequested = false;
+    } finally {
+      if (!ac.signal.aborted) loadingSources = false;
+    }
+  }
+
+  // Lazily load the source list the first time a tab whose charts consume the source dimension becomes
+  // active. Until then (e.g. while no chart sets supports.source) no request is made, so the disabled
+  // source control costs nothing. `sourcesRequested` is a plain (non-reactive) latch: the list is
+  // all-history, so one successful fetch suffices for the session; a failed fetch clears the latch so a
+  // later activation retries.
+  $effect(() => {
+    if (!sourceApplicable || sourcesRequested) return;
+    sourcesRequested = true;
+    untrack(() => fetchAvailableSources());
+  });
+
   // Roving-tabindex keyboard navigation for the tab bar. Focus moves by id so we
   // avoid holding element refs (and the array-index access that comes with them).
   function handleTabKeydown(event: KeyboardEvent): void {
@@ -366,6 +376,7 @@
       {loadingSpecies}
       {speciesApplicable}
       {availableSources}
+      {loadingSources}
       {sourceApplicable}
       onParamsChange={partial => applyParams(partial, 'push')}
     />

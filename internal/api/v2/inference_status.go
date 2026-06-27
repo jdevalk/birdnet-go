@@ -288,6 +288,15 @@ func buildModelStatus(info *classifier.ModelInfo, snap inferencestats.PeekSnapsh
 	}
 }
 
+// modelRuntime is the live device/backend/precision triplet for one model,
+// resolved atomically from the orchestrator (one GetModelRuntimeInfo call) so the
+// status card never shows a mixed-generation triplet when a reload races a poll.
+type modelRuntime struct {
+	device    string
+	backend   string
+	precision string
+}
+
 // applyRuntimeBackend overrides a model status's static file metadata (Backend,
 // Quantization) with the live values resolved from the loaded instance: the real
 // execution provider and effective runtime precision. An empty live value means
@@ -310,7 +319,7 @@ func applyRuntimeBackend(status *InferenceModelStatus, backend, precision string
 // metrics. The snapshot is assembled from live sources on every request so it
 // reflects hot-reload changes without any caching.
 func (c *Controller) GetInferenceStatus(ctx echo.Context) error {
-	settings := c.currentSettings()
+	settings := c.CurrentSettings()
 
 	resp := InferenceStatusResponse{
 		SnapshotAtUnix: time.Now().Unix(),
@@ -363,22 +372,21 @@ func (c *Controller) GetInferenceStatus(ctx echo.Context) error {
 	attachments := buildSourceAttachments(settings, infos, primaryID)
 
 	// Compute per-model device, backend, precision, and schedule status from the
-	// live orchestrator. Backend and precision come from the loaded instance (the
-	// real execution provider and runtime precision) rather than the static
-	// ModelInfo file metadata, so an ONNX model executed on OpenVINO reports
-	// "OpenVINO" and its effective precision. Empty values fall back to the static
-	// metadata in the assembly loop below.
-	devices := make(map[string]string, len(infos))
-	backends := make(map[string]string, len(infos))
-	precisions := make(map[string]string, len(infos))
+	// live orchestrator. The device/backend/precision triplet is read in one
+	// GetModelRuntimeInfo call so a reload completing mid-read cannot yield a mixed
+	// triplet (e.g. old device + new backend). Backend and precision come from the
+	// loaded instance (the real execution provider and runtime precision) rather
+	// than the static ModelInfo file metadata, so an ONNX model executed on
+	// OpenVINO reports "OpenVINO" and its effective precision. Empty values fall
+	// back to the static metadata in the assembly loop below.
+	runtimes := make(map[string]modelRuntime, len(infos))
 	paused := make(map[string]bool, len(infos))
 	scheduleLabels := make(map[string]string, len(infos))
 	if orch != nil {
 		for i := range infos {
 			id := infos[i].ID
-			devices[id] = orch.GetModelDevice(id)
-			backends[id] = orch.GetModelBackend(id)
-			precisions[id] = orch.GetModelPrecision(id)
+			device, backend, precision := orch.GetModelRuntimeInfo(id)
+			runtimes[id] = modelRuntime{device: device, backend: backend, precision: precision}
 			active, reason := orch.ModelScheduleStatus(id)
 			paused[id] = !active
 			scheduleLabels[id] = reason
@@ -446,14 +454,15 @@ func (c *Controller) GetInferenceStatus(ctx echo.Context) error {
 		status := buildModelStatus(&infos[i], counters[id], rss, attachments[id], loadFailures, lastDetections)
 		// Live runtime fields resolved from the orchestrator/processor, kept out of
 		// the pure buildModelStatus so it stays a side-effect-free assembler.
-		status.Device = devices[id]
+		rt := runtimes[id]
+		status.Device = rt.device
 		if status.Device == "" {
 			status.Device = deviceUnknown
 		}
 		// Override the static file metadata with the live backend/precision when the
 		// model is loaded (see applyRuntimeBackend); an empty value means "not loaded
 		// / unknown", so the static ModelInfo values set by buildModelStatus survive.
-		applyRuntimeBackend(&status, backends[id], precisions[id])
+		applyRuntimeBackend(&status, rt.backend, rt.precision)
 		status.Paused = paused[id]
 		status.ScheduleLabel = scheduleLabels[id]
 		status.RecentDetections = recentDetections[id]
@@ -524,10 +533,14 @@ func buildSourceAttachments(settings *conf.Settings, models []classifier.ModelIn
 
 // BroadcastInferenceTopologyChanged signals all metrics-stream SSE clients that
 // the inference topology (models or source attachment) changed so they re-fetch
-// the /api/v2/system/inference snapshot. Safe to call when no metrics store is set.
+// the /api/v2/system/inference snapshot. Safe to call when the controller, its
+// core, or its metrics store is nil. It stays on the facade (rather than moving
+// to apicore with the other broadcasters) to preserve its nil-*Controller-safe
+// contract: promotion of a *Core method would dereference the embedded core on a
+// nil *Controller before the guard could run.
 func (c *Controller) BroadcastInferenceTopologyChanged() {
-	if c == nil || c.metricsStore == nil {
+	if c == nil || c.Core == nil || c.MetricsStore == nil {
 		return
 	}
-	c.metricsStore.BroadcastTopologyChanged()
+	c.MetricsStore.BroadcastTopologyChanged()
 }

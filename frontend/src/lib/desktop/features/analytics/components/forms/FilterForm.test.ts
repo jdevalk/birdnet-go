@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { createI18nMock, analyticsI18nTranslations } from '../../../../../../test/render-helpers';
+import { reactiveState } from '../../../../../../test/reactive-state.svelte';
 import FilterForm from './FilterForm.svelte';
 
 // Mock i18n translations using shared translation constants
@@ -8,18 +9,24 @@ vi.mock('$lib/i18n', () => ({
   t: createI18nMock(analyticsI18nTranslations),
 }));
 
-const defaultFilters = {
+// Plain fixture values. createDefaultFilters() and the variants below wrap a
+// fresh copy in reactiveState so the bound `filters.*` props are reactive
+// proxies, matching how the app passes a $state object via bind:filters (see
+// reactive-state.svelte.ts). A fresh copy per render keeps test state isolated.
+const defaultFilterValues = {
   timePeriod: 'all' as const,
   startDate: '',
   endDate: '',
   sourceGroups: [] as string[],
 };
 
+const createDefaultFilters = () => reactiveState({ ...defaultFilterValues });
+
 describe('FilterForm', () => {
   it('renders with basic props', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit: vi.fn(),
         onReset: vi.fn(),
       },
@@ -33,7 +40,7 @@ describe('FilterForm', () => {
   it('displays time period options', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit: vi.fn(),
         onReset: vi.fn(),
       },
@@ -45,10 +52,10 @@ describe('FilterForm', () => {
   });
 
   it('shows custom date fields when custom time period is selected', () => {
-    const customFilters = {
-      ...defaultFilters,
+    const customFilters = reactiveState({
+      ...defaultFilterValues,
       timePeriod: 'custom' as const,
-    };
+    });
 
     render(FilterForm, {
       props: {
@@ -65,7 +72,7 @@ describe('FilterForm', () => {
   it('hides custom date fields when other time period is selected', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit: vi.fn(),
         onReset: vi.fn(),
       },
@@ -80,7 +87,7 @@ describe('FilterForm', () => {
 
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit,
         onReset: vi.fn(),
       },
@@ -98,7 +105,7 @@ describe('FilterForm', () => {
 
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit: vi.fn(),
         onReset,
       },
@@ -113,7 +120,7 @@ describe('FilterForm', () => {
   it('disables buttons when loading', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         isLoading: true,
         onSubmit: vi.fn(),
         onReset: vi.fn(),
@@ -127,7 +134,7 @@ describe('FilterForm', () => {
   it('shows loading spinner when loading', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         isLoading: true,
         onSubmit: vi.fn(),
         onReset: vi.fn(),
@@ -144,7 +151,7 @@ describe('FilterForm', () => {
 
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit,
         onReset: vi.fn(),
       },
@@ -161,7 +168,7 @@ describe('FilterForm', () => {
   });
 
   it('handles time period change correctly', async () => {
-    const filters = { ...defaultFilters };
+    const filters = createDefaultFilters();
 
     render(FilterForm, {
       props: {
@@ -182,7 +189,7 @@ describe('FilterForm', () => {
   it('renders with proper form structure', () => {
     render(FilterForm, {
       props: {
-        filters: defaultFilters,
+        filters: createDefaultFilters(),
         onSubmit: vi.fn(),
         onReset: vi.fn(),
       },

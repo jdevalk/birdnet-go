@@ -16,7 +16,9 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/tphakala/birdnet-go/internal/analysis/species"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
 	"github.com/tphakala/birdnet-go/internal/datastore"
+	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
 	"github.com/tphakala/birdnet-go/internal/errors"
 	"github.com/tphakala/birdnet-go/internal/imageprovider"
 	"github.com/tphakala/birdnet-go/internal/logger"
@@ -32,10 +34,30 @@ const (
 	defaultNewSpeciesLimit     = 100              // Default pagination limit for new species queries
 	analyticsQueryTimeout      = 30 * time.Second // Timeout for analytics database queries
 
+	// Confidence distribution bin bounds (design spec section 6.5). The histogram bins span [0,1];
+	// the default of 20 equal bins (width 0.05) aligns with the round confidence thresholds users
+	// reason about (e.g. 0.80). The range is clamped so a malformed or extreme bins param can neither
+	// break the binning nor produce an unreadably fine or coarse histogram.
+	defaultConfidenceBins = 20
+	minConfidenceBins     = 5
+	maxConfidenceBins     = 50
+
 	// Species ridgeline (who-sings-when) top-N bounds. The default matches the chart's maxSpecies
 	// cap; the max keeps the ridgeline readable (more than ~8 overlapping ridges are unreadable).
 	defaultSpeciesRidgelineLimit = 5
 	maxSpeciesRidgelineLimit     = 8
+
+	// Arrival/departure phenology top-N bounds. The default matches the chart's maxSpecies cap; the
+	// max keeps the Gantt's residency bars legible within the card's fixed height (one bar per species,
+	// so beyond ~20 rows the bars and labels crowd).
+	defaultSpeciesPhenologyLimit = 12
+	maxSpeciesPhenologyLimit     = 20
+
+	// Acoustic succession streamgraph top-N bounds. The default matches the chart's maxSpecies cap;
+	// the max keeps the stacked streamgraph readable (beyond ~10 bands the wiggle layers crowd within
+	// the card's fixed height).
+	defaultSpeciesSuccessionLimit = 6
+	maxSpeciesSuccessionLimit     = 10
 )
 
 // msgQueryTimeout is the user-facing message returned when an analytics query
@@ -64,13 +86,13 @@ func (c *Controller) handleAnalyticsQueryError(ctx echo.Context, err error, opLa
 		// Client disconnected (navigated away / closed the tab). An expected lifecycle
 		// event, not a server error: log at info and return the non-standard
 		// client-closed status, matching the convention in media.go.
-		c.logInfoIfEnabled(opLabel+" query canceled by client", fields...)
+		c.LogInfoIfEnabled(opLabel+" query canceled by client", fields...)
 		return c.HandleError(ctx, err, "Request canceled by client", StatusClientClosedRequest)
 	case errors.Is(err, context.DeadlineExceeded):
-		c.logErrorIfEnabled(opLabel+" query timeout", fields...)
+		c.LogErrorIfEnabled(opLabel+" query timeout", fields...)
 		return c.HandleError(ctx, err, msgQueryTimeout, http.StatusRequestTimeout)
 	default:
-		c.logErrorIfEnabled(opLabel+" query failed", fields...)
+		c.LogErrorIfEnabled(opLabel+" query failed", fields...)
 		return c.HandleError(ctx, err, genericMsg, http.StatusInternalServerError)
 	}
 }
@@ -82,10 +104,10 @@ func (c *Controller) handleAnalyticsQueryError(ctx echo.Context, err error, opLa
 func (c *Controller) logBatchQueryError(msg string, err error, fields ...logger.Field) (canceled bool) {
 	fields = append(fields, logger.Error(err))
 	if errors.Is(err, context.Canceled) {
-		c.logDebugIfEnabled(msg+": client canceled request", fields...)
+		c.LogDebugIfEnabled(msg+": client canceled request", fields...)
 		return true
 	}
-	c.logErrorIfEnabled(msg, fields...)
+	c.LogErrorIfEnabled(msg, fields...)
 	return false
 }
 
@@ -181,6 +203,8 @@ func (c *Controller) initAnalyticsRoutes() {
 	speciesGroup.GET("/detections/new", c.GetNewSpeciesDetections) // Renamed endpoint
 	speciesGroup.GET("/thumbnails", c.GetSpeciesThumbnails)        // Batch thumbnail endpoint
 	speciesGroup.GET("/diversity", c.GetSpeciesDiversity)          // Species diversity over time
+	speciesGroup.GET("/accumulation", c.GetSpeciesAccumulation)    // Species accumulation curve (biodiversity collector's curve)
+	speciesGroup.GET("/phenology", c.GetSpeciesPhenology)          // Arrival/departure phenology (residency-bar Gantt)
 
 	// Time analytics routes (can be implemented later)
 	timeGroup := analyticsGroup.Group("/time")
@@ -191,10 +215,28 @@ func (c *Controller) initAnalyticsRoutes() {
 	timeGroup.GET("/distribution/hourly", c.GetTimeOfDayDistribution)      // Renamed endpoint for time-of-day distribution
 	timeGroup.GET("/distribution/species", c.GetSpeciesHourlyDistribution) // Who-sings-when ridgeline (top-N species hour-of-day)
 	timeGroup.GET("/heatmap", c.GetActivityHeatmap)                        // Seasonal density heatmap (date x intra-day slot)
+	timeGroup.GET("/dawn-onset", c.GetDawnChorusOnset)                     // Dawn-chorus onset tracker (daily onset vs civil dawn)
+	timeGroup.GET("/succession", c.GetAcousticSuccession)                  // Acoustic succession streamgraph (top-N species hour-of-day, stacked)
+	timeGroup.GET("/year-over-year", c.GetYearOverYear)                    // Year-over-year tracker (this year-to-date vs same span last year, cumulative)
 
-	// Audio source listing for analytics filters: returns historical audio_sources with
-	// detection counts (distinct from /system/audio/sources which lists live engine sources).
-	analyticsGroup.GET("/sources", c.ListAnalyticsSources)
+	// Confidence analytics routes
+	confidenceGroup := analyticsGroup.Group("/confidence")
+	confidenceGroup.GET("/distribution", c.GetConfidenceDistribution) // Confidence distribution per species (Review & Accuracy)
+
+	// Sun times for the nocturnal activity clock's day/night shading. Additive: the clock's counts
+	// come from the existing /time/distribution/hourly endpoint (unchanged); only this sun endpoint
+	// is new (design spec section 6.4).
+	analyticsGroup.GET("/sun", c.GetAnalyticsSun)
+
+	// Audio sources that have detections in range, powering the analytics hub's source/mic filter.
+	// Additive and read-only; names are anonymized for unauthenticated clients (the page is public).
+	// NOTE: we serve /sources with upstream's GetAnalyticsSources so the response shape ({sources:[{id,
+	// name,count}]}) matches the hub frontend's coerceSources parser. The actual chart filtering is
+	// Joost's: the hub forwards the selected source id as `source_id`, which the analytics query
+	// handlers parse (parseOptionalSourceIDs) and scope results by. Joost's older ListAnalyticsSources
+	// handler is now unrouted (kept for reference; safe to delete in a follow-up cleanup).
+	analyticsGroup.GET("/sources", c.GetAnalyticsSources)
+
 }
 
 // GetDailySpeciesSummary handles GET /api/v2/analytics/species/daily
@@ -209,7 +251,7 @@ func (c *Controller) GetDailySpeciesSummary(ctx echo.Context) error {
 		return err // Return the HTTP error created by the helper
 	}
 
-	c.logInfoIfEnabled("Retrieving daily species summary",
+	c.LogInfoIfEnabled("Retrieving daily species summary",
 		logger.String("date", selectedDate),
 		logger.Float64("min_confidence", minConfidence),
 		logger.Int("limit", limit),
@@ -259,7 +301,7 @@ func (c *Controller) GetDailySpeciesSummary(ctx echo.Context) error {
 		return result[i].LatestHeard > result[j].LatestHeard
 	})
 
-	c.logInfoIfEnabled("Daily species summary retrieved",
+	c.LogInfoIfEnabled("Daily species summary retrieved",
 		logger.String("date", selectedDate),
 		logger.Int("count", len(result)),
 		logger.Bool("limit_applied", limit > 0),
@@ -283,7 +325,7 @@ func (c *Controller) GetBatchDailySpeciesSummary(ctx echo.Context) error {
 		return err
 	}
 
-	c.logInfoIfEnabled("Retrieving batch daily species summary",
+	c.LogInfoIfEnabled("Retrieving batch daily species summary",
 		logger.Int("date_count", len(dates)),
 		logger.Float64("min_confidence", minConfidence),
 		logger.Int("limit", limit),
@@ -327,7 +369,7 @@ func (c *Controller) processBatchDates(ctx context.Context, dates []string, minC
 		// Stop cleanly if the client disconnected (request canceled): an expected
 		// lifecycle event, not a processing failure worth recording.
 		if err := ctx.Err(); err != nil {
-			c.logDebugIfEnabled("Batch daily species summary: client canceled request",
+			c.LogDebugIfEnabled("Batch daily species summary: client canceled request",
 				logger.String("date", selectedDate),
 				logger.Error(err),
 				logger.String("ip", ip),
@@ -380,7 +422,7 @@ func (c *Controller) processSingleDateForBatch(ctx context.Context, selectedDate
 	// Build response
 	result, err := c.buildDailySpeciesSummaryResponse(aggregatedData, selectedDate)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to build response for date in batch request",
+		c.LogErrorIfEnabled("Failed to build response for date in batch request",
 			logger.String("date", selectedDate),
 			logger.Error(err),
 			logger.String("ip", ip),
@@ -598,7 +640,7 @@ func getThumbnailWithFallback(thumbnailURLs map[string]string, scientificName st
 
 // buildSpeciesSummaryFromData creates a SpeciesDailySummary from aggregated data
 func buildSpeciesSummaryFromData(data *aggregatedBirdInfo, thumbnailURL string) SpeciesDailySummary {
-	hourlyCountsSlice := make([]int, HoursPerDay)
+	hourlyCountsSlice := make([]int, apicore.HoursPerDay)
 	copy(hourlyCountsSlice, data.HourlyCounts[:])
 
 	return SpeciesDailySummary{
@@ -653,7 +695,7 @@ func (c *Controller) GetSpeciesSummary(ctx echo.Context) error {
 	sourceIDs := c.parseOptionalSourceIDs(ctx, "source_id")
 	ip, path := ctx.RealIP(), ctx.Request().URL.Path
 
-	c.logInfoIfEnabled("Retrieving species summary",
+	c.LogInfoIfEnabled("Retrieving species summary",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("source_id_count", len(sourceIDs)),
@@ -667,7 +709,7 @@ func (c *Controller) GetSpeciesSummary(ctx echo.Context) error {
 
 	// Retrieve species summary data from the datastore
 	summaryData, dbDuration, err := c.fetchSpeciesSummaryData(ctx, startDate, endDate, sourceIDs)
-	c.logInfoIfEnabled("Database query completed",
+	c.LogInfoIfEnabled("Database query completed",
 		logger.Int64("duration_ms", dbDuration.Milliseconds()),
 		logger.Int("record_count", len(summaryData)),
 		logger.String("ip", ip),
@@ -691,7 +733,7 @@ func (c *Controller) GetSpeciesSummary(ctx echo.Context) error {
 	// Apply limit
 	response, limit := c.applyOptionalLimit(ctx, response, ip, path)
 
-	c.logInfoIfEnabled("Species summary retrieved",
+	c.LogInfoIfEnabled("Species summary retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("count", len(response)),
@@ -729,7 +771,7 @@ func (c *Controller) batchFetchThumbnailsWithLogging(scientificNames []string, i
 		return nil
 	}
 
-	c.logDebugIfEnabled("Fetching cached thumbnails only",
+	c.LogDebugIfEnabled("Fetching cached thumbnails only",
 		logger.Int("count", len(scientificNames)),
 		logger.String("ip", ip),
 		logger.String("path", path),
@@ -737,7 +779,7 @@ func (c *Controller) batchFetchThumbnailsWithLogging(scientificNames []string, i
 	thumbStart := time.Now()
 	thumbnailURLs := cache.GetBatchCachedOnly(scientificNames)
 	thumbDuration := time.Since(thumbStart)
-	c.logInfoIfEnabled("Cached thumbnail fetch completed",
+	c.LogInfoIfEnabled("Cached thumbnail fetch completed",
 		logger.Int64("duration_ms", thumbDuration.Milliseconds()),
 		logger.Int("cached_count", len(thumbnailURLs)),
 		logger.Int("requested_count", len(scientificNames)),
@@ -798,7 +840,7 @@ func (c *Controller) applyOptionalLimit(ctx echo.Context, response []SpeciesSumm
 
 	limit, err := strconv.Atoi(limitStr)
 	if err != nil {
-		c.logWarnIfEnabled("Invalid limit parameter",
+		c.LogWarnIfEnabled("Invalid limit parameter",
 			logger.String("value", limitStr),
 			logger.Error(err),
 			logger.String("ip", ip),
@@ -835,7 +877,7 @@ func (c *Controller) GetHourlyAnalytics(ctx echo.Context) error {
 		return err
 	}
 
-	c.logInfoIfEnabled("Retrieving hourly analytics",
+	c.LogInfoIfEnabled("Retrieving hourly analytics",
 		logger.String("date", date),
 		logger.String("species", speciesParam),
 		logger.Int("source_id_count", len(sourceIDs)),
@@ -868,12 +910,12 @@ func (c *Controller) GetHourlyAnalytics(ctx echo.Context) error {
 	}
 
 	// Create a 24-hour array filled with zeros
-	hourlyCountsArray := make([]int, HoursPerDay)
+	hourlyCountsArray := make([]int, apicore.HoursPerDay)
 
 	// Fill in the actual counts
 	for i := range hourlyData {
 		data := hourlyData[i]
-		if data.Hour >= 0 && data.Hour < HoursPerDay {
+		if data.Hour >= 0 && data.Hour < apicore.HoursPerDay {
 			hourlyCountsArray[data.Hour] = data.Count
 		}
 	}
@@ -889,7 +931,7 @@ func (c *Controller) GetHourlyAnalytics(ctx echo.Context) error {
 		"total":   total,
 	}
 
-	c.logInfoIfEnabled("Hourly analytics retrieved",
+	c.LogInfoIfEnabled("Hourly analytics retrieved",
 		logger.String("date", date),
 		logger.String("species", speciesParam),
 		logger.Int("total", total),
@@ -934,7 +976,7 @@ func (c *Controller) GetDailyAnalytics(ctx echo.Context) error {
 		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
 	}
 
-	c.logInfoIfEnabled("Retrieving daily analytics",
+	c.LogInfoIfEnabled("Retrieving daily analytics",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.String("species", speciesParam),
@@ -998,7 +1040,7 @@ func (c *Controller) GetDailyAnalytics(ctx echo.Context) error {
 	}
 	response.Total = totalCount
 
-	c.logInfoIfEnabled("Daily analytics retrieved",
+	c.LogInfoIfEnabled("Daily analytics retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.String("species", speciesParam),
@@ -1044,7 +1086,7 @@ func (c *Controller) GetSpeciesDiversity(ctx echo.Context) error {
 		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
 	}
 
-	c.logInfoIfEnabled("Retrieving species diversity data",
+	c.LogInfoIfEnabled("Retrieving species diversity data",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("source_id_count", len(sourceIDs)),
@@ -1096,7 +1138,7 @@ func (c *Controller) GetSpeciesDiversity(ctx echo.Context) error {
 	}
 	response.MaxDiversity = maxDiversity
 
-	c.logInfoIfEnabled("Species diversity data retrieved",
+	c.LogInfoIfEnabled("Species diversity data retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("data_points", len(response.Data)),
@@ -1160,7 +1202,7 @@ func (c *Controller) ListAnalyticsSources(ctx echo.Context) error {
 		})
 	}
 
-	c.logInfoIfEnabled("Analytics sources listed",
+	c.LogInfoIfEnabled("Analytics sources listed",
 		logger.Int("count", len(resp.Sources)),
 		logger.String("path", ctx.Request().URL.Path),
 		logger.String("ip", ctx.RealIP()),
@@ -1242,7 +1284,7 @@ func (c *Controller) GetActivityHeatmap(ctx echo.Context) error {
 		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
 	}
 
-	c.logInfoIfEnabled("Retrieving activity heatmap",
+	c.LogInfoIfEnabled("Retrieving activity heatmap",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.String("species", speciesParam),
@@ -1277,7 +1319,7 @@ func (c *Controller) GetActivityHeatmap(ctx echo.Context) error {
 		return c.writeActivityHeatmapCSV(ctx, &data)
 	}
 
-	c.logInfoIfEnabled("Activity heatmap retrieved",
+	c.LogInfoIfEnabled("Activity heatmap retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("slot_resolution_minutes", data.SlotResolutionMinutes),
@@ -1350,11 +1392,561 @@ func newSpeciesHourlyDistributionResponse(data []datastore.SpeciesHourlyDistribu
 	return items
 }
 
+// dawnChorusOnsetItem is one calendar day's row in the dawn-chorus onset wire payload (design spec
+// section 6.3). OnsetRelMinutes is the onset minute-of-day minus civil dawn's minute-of-day
+// (negative = before civil dawn); it is null when the day had too few detections or civil dawn is
+// undefined for the date, which the client renders as a gap (its trend line breaks over nulls
+// rather than interpolating across them). DetectionCount is the day's detection count, shown in the
+// tooltip.
+type dawnChorusOnsetItem struct {
+	Date            string `json:"date"`
+	OnsetRelMinutes *int   `json:"onsetRelMinutes"`
+	DetectionCount  int    `json:"detectionCount"`
+}
+
+// newDawnChorusOnsetResponse maps the datastore aggregation onto the wire payload as a JSON array
+// (never null), preserving the ascending-date order.
+func newDawnChorusOnsetResponse(data []datastore.DailyActivityOnset) []dawnChorusOnsetItem {
+	items := make([]dawnChorusOnsetItem, 0, len(data))
+	for i := range data {
+		items = append(items, dawnChorusOnsetItem{
+			Date:            data[i].Date,
+			OnsetRelMinutes: data[i].OnsetRelMinutes,
+			DetectionCount:  data[i].DetectionCount,
+		})
+	}
+	return items
+}
+
+// GetDawnChorusOnset handles GET /api/v2/analytics/time/dawn-onset
+// Returns, per calendar day in the range, the dawn-chorus onset relative to civil dawn (in minutes;
+// negative = before civil dawn), powering the dawn-chorus onset tracker (design spec section 6.3).
+func (c *Controller) GetDawnChorusOnset(ctx echo.Context) error {
+	const operation = "dawn chorus onset"
+
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+	speciesParam := ctx.QueryParam("species")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	// Resolve a localized common name to its scientific name so this endpoint matches the
+	// detections/search path and the sibling time endpoints; a scientific name or unresolved
+	// term passes through. Only the datastore query uses the resolved value.
+	querySpecies := speciesParam
+	if resolved, hit := c.resolveSpeciesToScientific(speciesParam); hit {
+		querySpecies = resolved
+	}
+
+	c.LogInfoIfEnabled("Retrieving dawn chorus onset",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.String("species", speciesParam),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetDailyActivityOnset(ctxWithTimeout, startDate, endDate, querySpecies)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Dawn chorus onset", "Failed to get dawn chorus onset",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.String("species", speciesParam),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.LogInfoIfEnabled("Dawn chorus onset retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("day_count", len(data)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newDawnChorusOnsetResponse(data))
+}
+
+// Nocturnal activity clock sun endpoint constants (design spec section 6.4).
+const (
+	sunNoonHour       = 12 // anchor a date at local noon before a SunCalc lookup (see GetAnalyticsSun)
+	sunHoursPerDay    = 24 // for the range-midpoint day count
+	sunMinutesPerHour = 60 // minute-of-day conversion
+)
+
+// analyticsSunResponse is the sun-times payload for the nocturnal activity clock (design spec
+// section 6.4). Each event field is the minute-of-day (0..1439) in the server's local timezone,
+// the same frame the hourly-distribution endpoint buckets detections in, so the chart's daytime
+// arc aligns with its hourly bars. A nil field means the event does not occur for the date (polar
+// day/night) or SunCalc is unavailable. CivilDawn/CivilDusk are nil unless a genuine civil
+// twilight occurs (SunCalc substitutes sunrise/sunset when it cannot be computed at high
+// latitudes). Available is false when no sun calculator is configured or the sun never rises/sets
+// on the date, signalling the client to render the bars without day/night shading rather than
+// erroring the card.
+type analyticsSunResponse struct {
+	Date      string `json:"date"`
+	Sunrise   *int   `json:"sunrise"`
+	Sunset    *int   `json:"sunset"`
+	CivilDawn *int   `json:"civilDawn"`
+	CivilDusk *int   `json:"civilDusk"`
+	Available bool   `json:"available"`
+}
+
+// localMinuteOfDay expresses an absolute instant as its minute-of-day (0..1439) in the server's
+// local timezone, matching the frame the hourly-distribution endpoint buckets detections in.
+func localMinuteOfDay(t time.Time) int {
+	lt := t.In(time.Local)
+	return lt.Hour()*sunMinutesPerHour + lt.Minute()
+}
+
+// resolveSunRepresentativeDate picks the single date the nocturnal clock's sun times represent.
+// A multi-day range collapses to its calendar midpoint (the chart notes this in its tooltip); a
+// single `date` (or a lone `start_date`) is used directly; absent all three, today is used. The
+// range bounds are parsed in UTC so every day is exactly 24h (DST-free), making the day count
+// exact; the midpoint is then a pure calendar offset (AddDate), and only its Y-M-D is used
+// downstream. Inputs are pre-validated by the handler.
+func resolveSunRepresentativeDate(dateParam, startDate, endDate string) string {
+	switch {
+	case dateParam != "":
+		return dateParam
+	case startDate != "" && endDate != "":
+		start, errS := time.Parse(time.DateOnly, startDate)
+		end, errE := time.Parse(time.DateOnly, endDate)
+		if errS != nil || errE != nil {
+			return startDate // defensive: handler validated both already
+		}
+		days := int(end.Sub(start).Hours()) / sunHoursPerDay
+		return start.AddDate(0, 0, days/2).Format(time.DateOnly)
+	case startDate != "":
+		return startDate
+	default:
+		return time.Now().In(time.Local).Format(time.DateOnly)
+	}
+}
+
+// GetAnalyticsSun handles GET /api/v2/analytics/sun
+// Returns the sunrise/sunset/civil-dawn/civil-dusk times (minute-of-day, server-local) for a
+// representative date, powering the nocturnal activity clock's day/night shading (design spec
+// section 6.4). Accepts ?date for a single day or ?start_date&end_date for a range (collapsed to
+// its midpoint); defaults to today. Sun data is separate from the (unchanged) hourly-distribution
+// endpoint so that endpoint's response shape stays backward compatible.
+func (c *Controller) GetAnalyticsSun(ctx echo.Context) error {
+	const operation = "analytics sun times"
+
+	dateParam := ctx.QueryParam("date")
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+
+	// All date params are optional (default is today); validate any that are present.
+	if err := c.validateDateFormatStrictWithResponse(ctx, dateParam, "date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+	// The strict format check is a regex, so a well-formed but impossible date (e.g. 2026-02-31)
+	// slips through; reject it explicitly rather than letting it surface later as a misleading
+	// available:false. (start_date/end_date already get this via validateDateRangeWithResponse.)
+	if dateParam != "" {
+		if _, err := time.Parse(time.DateOnly, dateParam); err != nil {
+			_ = c.HandleError(ctx, err, "Invalid date parameters", http.StatusBadRequest)
+			return ErrResponseHandled
+		}
+	}
+	// A lone end_date has no start to pair with and would otherwise be silently ignored (the result
+	// would default to today), which is misleading; require start_date alongside it.
+	if dateParam == "" && startDate == "" && endDate != "" {
+		_ = c.HandleError(ctx, nil, "start_date is required when end_date is provided", http.StatusBadRequest)
+		return ErrResponseHandled
+	}
+
+	repDate := resolveSunRepresentativeDate(dateParam, startDate, endDate)
+
+	c.LogInfoIfEnabled("Retrieving analytics sun times",
+		logger.String("date", repDate),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	resp := analyticsSunResponse{Date: repDate}
+
+	// SunCalc may be unconfigured (e.g. not started yet). Degrade gracefully so the clock still
+	// renders its hourly bars without day/night shading rather than erroring the whole card.
+	if c.SunCalc == nil {
+		return ctx.JSON(http.StatusOK, resp)
+	}
+
+	// Anchor the date at local noon before the lookup: SunCalc re-derives the calendar day in its
+	// own coordinate-derived zone, so passing midnight could land on the adjacent day. Noon keeps
+	// the intended calendar day for any real timezone offset (same approach as the dawn-onset
+	// tracker). repDate is validated/derived above, so a parse failure is treated as no sun data.
+	repTime, err := time.ParseInLocation(time.DateOnly, repDate, time.Local)
+	if err != nil {
+		return ctx.JSON(http.StatusOK, resp)
+	}
+	// Construct local calendar noon directly (not midnight + 12h, which lands at 11:00/13:00 across a
+	// DST transition) so the anchor is always mid-day on the intended calendar date.
+	anchor := time.Date(repTime.Year(), repTime.Month(), repTime.Day(), sunNoonHour, 0, 0, 0, repTime.Location())
+
+	times, err := c.SunCalc.GetSunEventTimes(anchor)
+	if err != nil {
+		// Polar day/night: the sun never rises/sets, so there is no daytime arc to shade. Return
+		// available:false (not 500) so the client renders the bars without shading.
+		c.LogInfoIfEnabled("Sun times unavailable for date (polar day/night)",
+			logger.String("date", repDate),
+			logger.String("ip", ctx.RealIP()),
+		)
+		return ctx.JSON(http.StatusOK, resp)
+	}
+
+	sunrise := localMinuteOfDay(times.Sunrise)
+	sunset := localMinuteOfDay(times.Sunset)
+	resp.Sunrise = &sunrise
+	resp.Sunset = &sunset
+	resp.Available = true
+
+	// Civil dawn/dusk only when a genuine civil twilight occurs. SunCalc substitutes sunrise/sunset
+	// (exact equality) when civil twilight cannot be computed at high latitudes (white nights), so a
+	// genuine dawn is strictly before sunrise and a genuine dusk strictly after sunset; the equality
+	// fallback is omitted. Both read the already-fetched times (no second SunCalc lookup), and the
+	// dawn check mirrors suncalc.GetCivilDawn's own genuine-twilight test.
+	if times.CivilDawn.Before(times.Sunrise) {
+		civilDawn := localMinuteOfDay(times.CivilDawn)
+		resp.CivilDawn = &civilDawn
+	}
+	if times.CivilDusk.After(times.Sunset) {
+		civilDusk := localMinuteOfDay(times.CivilDusk)
+		resp.CivilDusk = &civilDusk
+	}
+
+	c.LogInfoIfEnabled("Analytics sun times retrieved",
+		logger.String("date", repDate),
+		logger.Bool("available", resp.Available),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, resp)
+}
+
+// serveTopNHourlyChart is the shared request flow for the top-N-by-volume hour-of-day analytics
+// endpoints (who-sings-when ridgeline, acoustic succession): require and strictly validate
+// start_date/end_date, default the end to a 30-day window, parse and clamp the limit, run the query
+// under the analytics timeout (mapping a deadline to HTTP 408), and serialize the response as a JSON
+// array. The endpoints differ only in their limit bounds, the datastore query, and the response
+// shape, which are passed in; operation names the endpoint in validation/error messages and logs.
+func serveTopNHourlyChart[T any](
+	c *Controller,
+	ctx echo.Context,
+	operation string,
+	defaultLimit, maxLimit int,
+	query func(context.Context, string, string, int) ([]T, error),
+	respond func([]T) any,
+) error {
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	limit := apicore.ParsePaginationLimit(ctx.QueryParam("limit"), defaultLimit, maxLimit)
+
+	c.LogInfoIfEnabled("Retrieving "+operation,
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("limit", limit),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := query(ctxWithTimeout, startDate, endDate, limit)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, operation, "Failed to get "+operation,
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.Int("limit", limit),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.LogInfoIfEnabled(operation+" retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("species_count", len(data)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, respond(data))
+}
+
 // GetSpeciesHourlyDistribution handles GET /api/v2/analytics/time/distribution/species
 // Returns the normalized hour-of-day activity distribution for the top N species by detection
 // volume over the date range, powering the who-sings-when ridgeline (design spec section 6.2).
 func (c *Controller) GetSpeciesHourlyDistribution(ctx echo.Context) error {
-	const operation = "species hourly distribution"
+	return serveTopNHourlyChart(c, ctx, "species hourly distribution",
+		defaultSpeciesRidgelineLimit, maxSpeciesRidgelineLimit,
+		c.DS.GetHourlyDistributionBySpecies,
+		func(data []datastore.SpeciesHourlyDistribution) any {
+			return newSpeciesHourlyDistributionResponse(data)
+		},
+	)
+}
+
+// acousticSuccessionItem is one species' row in the acoustic-succession wire payload: the stable
+// scientific-name key, its 24 raw hour-of-day detection counts (index = station-local hour 0..23),
+// and the total detection count. The localized common name is resolved client-side (the v2 label
+// schema stores no common name), matching the sibling species charts.
+type acousticSuccessionItem struct {
+	ScientificName string  `json:"scientificName"`
+	Counts         [24]int `json:"counts"`
+	Total          int     `json:"total"`
+}
+
+// newAcousticSuccessionResponse maps the datastore aggregation onto the wire payload as a JSON array
+// (never null), preserving the descending-volume order.
+func newAcousticSuccessionResponse(data []datastore.SpeciesHourlyCounts) []acousticSuccessionItem {
+	items := make([]acousticSuccessionItem, 0, len(data))
+	for i := range data {
+		items = append(items, acousticSuccessionItem{
+			ScientificName: data[i].ScientificName,
+			Counts:         data[i].Counts,
+			Total:          data[i].Total,
+		})
+	}
+	return items
+}
+
+// GetAcousticSuccession handles GET /api/v2/analytics/time/succession
+// Returns the per-species raw hour-of-day detection counts for the top-N species by volume, powering
+// the acoustic succession streamgraph in the Activity Patterns tab (design spec #1155, Tier-2). The
+// counts are unnormalized so the frontend can stack them into a streamgraph whose band width is
+// detection volume.
+func (c *Controller) GetAcousticSuccession(ctx echo.Context) error {
+	return serveTopNHourlyChart(c, ctx, "acoustic succession",
+		defaultSpeciesSuccessionLimit, maxSpeciesSuccessionLimit,
+		c.DS.GetAcousticSuccession,
+		func(data []datastore.SpeciesHourlyCounts) any { return newAcousticSuccessionResponse(data) },
+	)
+}
+
+// confidenceDistributionItem is one species' row in the confidence-distribution wire payload: its
+// scientific-name key, its normalized confidence bins (each the fraction of the species' detections
+// in that bin, summing to ~1.0), and the raw detection count. The localized common name is resolved
+// client-side (the v2 label schema stores no common name), matching the sibling species charts.
+type confidenceDistributionItem struct {
+	ScientificName string    `json:"scientificName"`
+	Bins           []float64 `json:"bins"`
+	Total          int       `json:"total"`
+}
+
+// newConfidenceDistributionResponse maps the datastore aggregation onto the wire payload as a JSON
+// array (never null), preserving the descending-volume order. Each species' Bins is emitted as a
+// non-nil array so the client can read it without a null guard.
+func newConfidenceDistributionResponse(data []datastore.SpeciesConfidenceHistogram) []confidenceDistributionItem {
+	items := make([]confidenceDistributionItem, 0, len(data))
+	for i := range data {
+		bins := data[i].Bins
+		if bins == nil {
+			bins = []float64{}
+		}
+		items = append(items, confidenceDistributionItem{
+			ScientificName: data[i].ScientificName,
+			Bins:           bins,
+			Total:          data[i].Total,
+		})
+	}
+	return items
+}
+
+// clampConfidenceBins parses the optional bins query param, falling back to the default and clamping
+// to [minConfidenceBins, maxConfidenceBins] so a malformed or extreme value can neither break the
+// binning nor produce an unreadably fine or coarse histogram.
+func clampConfidenceBins(value string) int {
+	bins, err := strconv.Atoi(value)
+	if err != nil {
+		return defaultConfidenceBins
+	}
+	if bins < minConfidenceBins {
+		return minConfidenceBins
+	}
+	if bins > maxConfidenceBins {
+		return maxConfidenceBins
+	}
+	return bins
+}
+
+// GetConfidenceDistribution handles GET /api/v2/analytics/confidence/distribution
+// Returns the per-species confidence-score distribution, powering the confidence distribution chart
+// in the Review & Accuracy tab (design spec section 6.5). The datastore method is named
+// GetConfidenceHistogram (it computes a per-species histogram); this endpoint and the chart present
+// it as a distribution, hence the route/handler naming.
+func (c *Controller) GetConfidenceDistribution(ctx echo.Context) error {
+	const operation = "confidence distribution"
+
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+	speciesParam := ctx.QueryParam("species")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	// Resolve a localized common name to its scientific name so the optional species filter matches
+	// the detections/search path and the sibling time endpoints; a scientific name or unresolved term
+	// passes through unchanged. Only the datastore query uses the resolved value.
+	querySpecies := speciesParam
+	if resolved, hit := c.resolveSpeciesToScientific(speciesParam); hit {
+		querySpecies = resolved
+	}
+
+	bins := clampConfidenceBins(ctx.QueryParam("bins"))
+	limit := apicore.ParsePaginationLimit(ctx.QueryParam("limit"), defaultSpeciesRidgelineLimit, maxSpeciesRidgelineLimit)
+
+	c.LogInfoIfEnabled("Retrieving confidence distribution",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.String("species", speciesParam),
+		logger.Int("bins", bins),
+		logger.Int("limit", limit),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetConfidenceHistogram(ctxWithTimeout, startDate, endDate, querySpecies, bins, limit)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Confidence distribution", "Failed to get confidence distribution",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.String("species", speciesParam),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.LogInfoIfEnabled("Confidence distribution retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("species_count", len(data)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newConfidenceDistributionResponse(data))
+}
+
+// speciesAccumulationItem is one day on the wire payload for the species accumulation curve.
+// scientificName is intentionally absent: the curve is an all-species count, not a per-species series.
+type speciesAccumulationItem struct {
+	Date              string `json:"date"`
+	CumulativeSpecies int    `json:"cumulativeSpecies"`
+	NewSpecies        int    `json:"newSpecies"`
+}
+
+// newSpeciesAccumulationResponse maps the datastore aggregation onto the wire payload as a JSON array
+// (never null), one entry per calendar day in ascending date order.
+func newSpeciesAccumulationResponse(data []datastore.SpeciesAccumulationPoint) []speciesAccumulationItem {
+	items := make([]speciesAccumulationItem, 0, len(data))
+	for i := range data {
+		items = append(items, speciesAccumulationItem{
+			Date:              data[i].Date,
+			CumulativeSpecies: data[i].CumulativeSpecies,
+			NewSpecies:        data[i].NewSpecies,
+		})
+	}
+	return items
+}
+
+// GetSpeciesAccumulation handles GET /api/v2/analytics/species/accumulation
+// Returns the species accumulation curve (the biodiversity collector's curve): per calendar day, the
+// cumulative count of distinct species first detected within the selected range, powering the
+// accumulation chart in the Biodiversity tab. The metric is inherently all-species, so there is no
+// species filter; "first seen" is bounded to the queried window, not lifetime.
+func (c *Controller) GetSpeciesAccumulation(ctx echo.Context) error {
+	const operation = "species accumulation"
 
 	// Validate required parameter
 	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
@@ -1383,9 +1975,317 @@ func (c *Controller) GetSpeciesHourlyDistribution(ctx echo.Context) error {
 		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
 	}
 
-	limit := c.parsePaginationLimit(ctx.QueryParam("limit"), defaultSpeciesRidgelineLimit, maxSpeciesRidgelineLimit)
+	c.LogInfoIfEnabled("Retrieving species accumulation",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
 
-	c.logInfoIfEnabled("Retrieving species hourly distribution",
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetSpeciesAccumulation(ctxWithTimeout, startDate, endDate)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Species accumulation", "Failed to get species accumulation",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.LogInfoIfEnabled("Species accumulation retrieved",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.Int("days", len(data)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newSpeciesAccumulationResponse(data))
+}
+
+// analyticsSourceItem is one audio source on the analytics source/mic filter wire payload: a stable
+// opaque id (string form of the numeric source id), a display label (anonymized for unauthenticated
+// clients), and the source's in-range detection count.
+type analyticsSourceItem struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
+// analyticsSourceListResponse is the analytics source/mic filter's wire payload: the audio sources that
+// have detections in the range, most active first. Never null.
+type analyticsSourceListResponse struct {
+	Sources []analyticsSourceItem `json:"sources"`
+}
+
+// anonymizeHistoricalSourceName builds a non-identifying label for a historical audio source from its
+// type and opaque id, mirroring the vocabulary of getAnonymizedSourceName / getAnonymizedSourceNameFallback
+// used by the audio-level stream and /streams/sources: sound cards become "audio-source-N", network
+// streams "camera-N", file inputs "file-source-N", and anything else "source-N". The id suffix keeps
+// multiple sources of the same type distinguishable without revealing configured names, URIs, or node
+// identity.
+func anonymizeHistoricalSourceName(sourceType string, id uint) string {
+	switch entities.SourceType(sourceType) {
+	case entities.SourceTypeALSA, entities.SourceTypePulseAudio:
+		return fmt.Sprintf("audio-source-%d", id)
+	case entities.SourceTypeRTSP:
+		return fmt.Sprintf("camera-%d", id)
+	case entities.SourceTypeFile:
+		return fmt.Sprintf("file-source-%d", id)
+	default:
+		// SourceTypeUnknown and any future/unrecognized type get a generic, non-identifying label.
+		return fmt.Sprintf("source-%d", id)
+	}
+}
+
+// analyticsSourceLabel returns the user-facing label for an audio source in the analytics source/mic
+// filter. Authenticated clients see the configured display name (falling back to the node name, then a
+// generic id-suffixed label). Unauthenticated clients get a type-based anonymized label so the public
+// analytics page never leaks a source's configured name, URI, or node identity. The numeric id is
+// exposed in both cases (it is opaque and carries no PII), matching the anonymization contract of the
+// audio-level stream and /streams/sources.
+func analyticsSourceLabel(src *datastore.AudioSourceSummary, authenticated bool) string {
+	if authenticated {
+		switch {
+		case src.DisplayName != "":
+			return src.DisplayName
+		case src.NodeName != "":
+			return src.NodeName
+		default:
+			return fmt.Sprintf("source-%d", src.ID)
+		}
+	}
+	return anonymizeHistoricalSourceName(src.SourceType, src.ID)
+}
+
+// GetAnalyticsSources handles GET /api/v2/analytics/sources
+// Returns the audio sources that have at least one (false-positive-excluded) detection in the date
+// range, with per-source detection counts, most active first. When start_date/end_date are omitted it
+// covers all history. Powers the analytics hub's source/mic filter option list. The metric is v2only
+// (the legacy schema does not persist a detection's source); the legacy datastore returns an empty
+// list. Source names are anonymized for unauthenticated clients (the analytics page is public); the
+// opaque numeric id is safe to expose and is what the source filter round-trips in the URL.
+func (c *Controller) GetAnalyticsSources(ctx echo.Context) error {
+	const operation = "analytics sources"
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+
+	// Dates are optional (omitted = all history); validate only what is supplied.
+	if startDate != "" {
+		if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+			return err
+		}
+	}
+	if endDate != "" {
+		if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+			return err
+		}
+	}
+	if startDate != "" && endDate != "" {
+		if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+			return err
+		}
+	}
+
+	c.LogInfoIfEnabled("Retrieving analytics audio sources",
+		logger.String("start_date", startDate),
+		logger.String("end_date", endDate),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	sources, err := c.DS.GetAudioSources(ctxWithTimeout, startDate, endDate)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Analytics sources", "Failed to get audio sources",
+			logger.String("start_date", startDate),
+			logger.String("end_date", endDate),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	authenticated := c.isClientAuthenticated(ctx)
+	resp := analyticsSourceListResponse{Sources: make([]analyticsSourceItem, 0, len(sources))}
+	for i := range sources {
+		resp.Sources = append(resp.Sources, analyticsSourceItem{
+			ID:    strconv.FormatUint(uint64(sources[i].ID), 10),
+			Name:  analyticsSourceLabel(&sources[i], authenticated),
+			Count: sources[i].Count,
+		})
+	}
+
+	c.LogInfoIfEnabled("Analytics audio sources retrieved",
+		logger.Int("count", len(resp.Sources)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, resp)
+}
+
+// yearOverYearPointItem is one calendar position on the year-over-year tracker wire payload: the
+// current-year date (YYYY-MM-DD, for the x-axis), the year-independent MonthDay alignment key, the two
+// cumulative detection counts, and their delta (thisYear - lastYear).
+type yearOverYearPointItem struct {
+	Date     string `json:"date"`
+	MonthDay string `json:"monthDay"`
+	ThisYear int    `json:"thisYear"`
+	LastYear int    `json:"lastYear"`
+	Delta    int    `json:"delta"`
+}
+
+// yearOverYearResponse is the year-over-year tracker wire payload: the two compared calendar years and
+// one cumulative point per current-year day. currentYear/previousYear are at the root so the client can
+// label the legend without parsing a date. points is always a JSON array (never null).
+type yearOverYearResponse struct {
+	CurrentYear  int                     `json:"currentYear"`
+	PreviousYear int                     `json:"previousYear"`
+	Points       []yearOverYearPointItem `json:"points"`
+}
+
+// newYearOverYearResponse maps the datastore aggregation onto the wire payload, one entry per
+// current-year calendar day in ascending date order.
+func newYearOverYearResponse(data datastore.YearOverYearResult) yearOverYearResponse {
+	points := make([]yearOverYearPointItem, 0, len(data.Points))
+	for i := range data.Points {
+		points = append(points, yearOverYearPointItem{
+			Date:     data.Points[i].Date,
+			MonthDay: data.Points[i].MonthDay,
+			ThisYear: data.Points[i].ThisYear,
+			LastYear: data.Points[i].LastYear,
+			Delta:    data.Points[i].Delta,
+		})
+	}
+	return yearOverYearResponse{
+		CurrentYear:  data.CurrentYear,
+		PreviousYear: data.PreviousYear,
+		Points:       points,
+	}
+}
+
+// GetYearOverYear handles GET /api/v2/analytics/time/year-over-year
+// Returns the current year-to-date cumulative detection counts versus the same calendar span one year
+// earlier, with a per-day delta, powering the year-over-year tracker in the Trends tab. The single
+// optional `date` query param (station-local YYYY-MM-DD, default today) sets the inclusive end of both
+// windows; the metric is inherently all-species, so there is no species filter.
+func (c *Controller) GetYearOverYear(ctx echo.Context) error {
+	const operation = "year over year"
+
+	// date is optional (defaults to today in the station timezone). Validate both the YYYY-MM-DD shape
+	// and that it is a real calendar date: a regex-valid but non-existent date (e.g. 2026-13-45) would
+	// otherwise reach the datastore and surface as a 500, so reject it here with a 400, matching the
+	// sibling range endpoints. An empty value passes both checks (the datastore resolves the default).
+	date := ctx.QueryParam("date")
+	if err := c.validateDateFormatStrictWithResponse(ctx, date, "date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatWithResponse(ctx, date, "date", operation); err != nil {
+		return err
+	}
+
+	c.LogInfoIfEnabled("Retrieving year-over-year tracker",
+		logger.String("date", date),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	// Add timeout to prevent resource exhaustion
+	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
+	defer cancel()
+
+	data, err := c.DS.GetYearOverYear(ctxWithTimeout, date)
+	if err != nil {
+		return c.handleAnalyticsQueryError(ctx, err, "Year-over-year", "Failed to get year-over-year",
+			logger.String("date", date),
+			logger.String("ip", ctx.RealIP()),
+			logger.String("path", ctx.Request().URL.Path),
+		)
+	}
+
+	c.LogInfoIfEnabled("Year-over-year retrieved",
+		logger.String("date", date),
+		logger.Int("current_year", data.CurrentYear),
+		logger.Int("days", len(data.Points)),
+		logger.String("ip", ctx.RealIP()),
+		logger.String("path", ctx.Request().URL.Path),
+	)
+
+	return ctx.JSON(http.StatusOK, newYearOverYearResponse(data))
+}
+
+// speciesPhenologyItem is one species' residency row in the phenology wire payload: its
+// scientific-name key, its first and last station-local detection dates (YYYY-MM-DD), and the
+// in-range detection count. The localized common name is resolved client-side (the v2 label schema
+// stores no common name), matching the sibling species charts.
+type speciesPhenologyItem struct {
+	ScientificName string `json:"scientificName"`
+	FirstSeen      string `json:"firstSeen"`
+	LastSeen       string `json:"lastSeen"`
+	Count          int    `json:"count"`
+}
+
+// newSpeciesPhenologyResponse maps the datastore aggregation onto the wire payload as a JSON array
+// (never null), one entry per species in arrival order.
+func newSpeciesPhenologyResponse(data []datastore.SpeciesPhenologyPoint) []speciesPhenologyItem {
+	items := make([]speciesPhenologyItem, 0, len(data))
+	for i := range data {
+		items = append(items, speciesPhenologyItem{
+			ScientificName: data[i].ScientificName,
+			FirstSeen:      data[i].FirstSeen,
+			LastSeen:       data[i].LastSeen,
+			Count:          data[i].Count,
+		})
+	}
+	return items
+}
+
+// GetSpeciesPhenology handles GET /api/v2/analytics/species/phenology
+// Returns the arrival/departure phenology (residency spans) for the top-N species by detection
+// volume within the selected range: per species, the first and last detection date plus the in-range
+// detection count, powering the residency-bar Gantt in the Biodiversity tab. The metric is inherently
+// all-species top-N, so there is no species filter; spans are bounded to the queried window.
+func (c *Controller) GetSpeciesPhenology(ctx echo.Context) error {
+	const operation = "species phenology"
+
+	// Validate required parameter
+	if err := c.requireQueryParam(ctx, "start_date", operation); err != nil {
+		return err
+	}
+
+	startDate := ctx.QueryParam("start_date")
+	endDate := ctx.QueryParam("end_date")
+
+	// Validate date formats strictly using regex
+	if err := c.validateDateFormatStrictWithResponse(ctx, startDate, "start_date", operation); err != nil {
+		return err
+	}
+	if err := c.validateDateFormatStrictWithResponse(ctx, endDate, "end_date", operation); err != nil {
+		return err
+	}
+
+	// Validate date values and chronological order
+	if err := c.validateDateRangeWithResponse(ctx, startDate, endDate, operation); err != nil {
+		return err
+	}
+
+	// Default the end date to a 30-day window when omitted, matching the other range endpoints.
+	if endDate == "" {
+		startTime, _ := time.Parse(time.DateOnly, startDate) // Regex ensures this parse succeeds
+		endDate = startTime.AddDate(0, 0, defaultAnalyticsDays).Format(time.DateOnly)
+	}
+
+	limit := apicore.ParsePaginationLimit(ctx.QueryParam("limit"), defaultSpeciesPhenologyLimit, maxSpeciesPhenologyLimit)
+
+	c.LogInfoIfEnabled("Retrieving species phenology",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("limit", limit),
@@ -1397,18 +2297,17 @@ func (c *Controller) GetSpeciesHourlyDistribution(ctx echo.Context) error {
 	ctxWithTimeout, cancel := withAnalyticsTimeout(ctx)
 	defer cancel()
 
-	data, err := c.DS.GetHourlyDistributionBySpecies(ctxWithTimeout, startDate, endDate, limit)
+	data, err := c.DS.GetSpeciesPhenology(ctxWithTimeout, startDate, endDate, limit)
 	if err != nil {
-		return c.handleAnalyticsQueryError(ctx, err, "Species hourly distribution", "Failed to get species hourly distribution",
+		return c.handleAnalyticsQueryError(ctx, err, "Species phenology", "Failed to get species phenology",
 			logger.String("start_date", startDate),
 			logger.String("end_date", endDate),
-			logger.Int("limit", limit),
 			logger.String("ip", ctx.RealIP()),
 			logger.String("path", ctx.Request().URL.Path),
 		)
 	}
 
-	c.logInfoIfEnabled("Species hourly distribution retrieved",
+	c.LogInfoIfEnabled("Species phenology retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("species_count", len(data)),
@@ -1416,7 +2315,7 @@ func (c *Controller) GetSpeciesHourlyDistribution(ctx echo.Context) error {
 		logger.String("path", ctx.Request().URL.Path),
 	)
 
-	return ctx.JSON(http.StatusOK, newSpeciesHourlyDistributionResponse(data))
+	return ctx.JSON(http.StatusOK, newSpeciesPhenologyResponse(data))
 }
 
 // GetTimeOfDayDistribution handles GET /api/v2/analytics/time/distribution/hourly
@@ -1487,7 +2386,7 @@ func (c *Controller) GetNewSpeciesDetections(ctx echo.Context) error {
 	startDate, endDate := getDefaultDateRange(ctx.QueryParam("start_date"), ctx.QueryParam("end_date"), -30, 0)
 	sourceIDs := c.parseOptionalSourceIDs(ctx, "source_id")
 
-	c.logInfoIfEnabled("Retrieving new species detections",
+	c.LogInfoIfEnabled("Retrieving new species detections",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("source_id_count", len(sourceIDs)),
@@ -1524,7 +2423,7 @@ func (c *Controller) GetNewSpeciesDetections(ctx echo.Context) error {
 	// Build response with thumbnails
 	response := c.convertNewSpeciesToResponse(newSpeciesData)
 
-	c.logInfoIfEnabled("New species detections retrieved",
+	c.LogInfoIfEnabled("New species detections retrieved",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("count", len(response)),
@@ -1734,7 +2633,7 @@ func (c *Controller) GetBatchHourlySpeciesData(ctx echo.Context) error {
 
 	minConfidence := c.parseOptionalFloat(ctx, "min_confidence", 0.0, PercentageMultiplier)
 	sourceIDs := c.parseOptionalSourceIDs(ctx, "source_id")
-	c.logInfoIfEnabled("Retrieving batch hourly species data",
+	c.LogInfoIfEnabled("Retrieving batch hourly species data",
 		logger.String("date", date),
 		logger.Int("species_count", len(speciesParams)),
 		logger.Float64("min_confidence", minConfidence),
@@ -1791,7 +2690,7 @@ func (c *Controller) processHourlyBatchSpecies(ctx echo.Context, speciesParams [
 
 	for _, speciesItem := range speciesParams {
 		if err := reqCtx.Err(); err != nil {
-			c.logDebugIfEnabled("Batch hourly species data: client canceled request",
+			c.LogDebugIfEnabled("Batch hourly species data: client canceled request",
 				logger.String("species", speciesItem),
 				logger.Error(err),
 				logger.String("ip", ip),
@@ -1867,7 +2766,7 @@ func (c *Controller) GetBatchDailySpeciesData(ctx echo.Context) error {
 	}
 
 	sourceIDs := c.parseOptionalSourceIDs(ctx, "source_id")
-	c.logInfoIfEnabled("Retrieving batch daily species data",
+	c.LogInfoIfEnabled("Retrieving batch daily species data",
 		logger.String("start_date", startDate),
 		logger.String("end_date", endDate),
 		logger.Int("species_requested", len(speciesParams)),
@@ -1932,7 +2831,7 @@ func (c *Controller) processDailyBatchSpecies(ctx echo.Context, uniqueSpecies []
 
 	for _, speciesItem := range uniqueSpecies {
 		if err := reqCtx.Err(); err != nil {
-			c.logDebugIfEnabled("Batch daily species data: client canceled request",
+			c.LogDebugIfEnabled("Batch daily species data: client canceled request",
 				logger.String("species", speciesItem),
 				logger.Error(err),
 				logger.String("ip", ip),
@@ -1989,7 +2888,7 @@ func buildSpeciesDailyData(speciesName, startDate, endDate string, dailyData []d
 // handleBatchDailyResults logs and returns batch daily results
 func (c *Controller) handleBatchDailyResults(ctx echo.Context, results map[string]SpeciesDailyData, processingErrors []string, requestedCount, uniqueCount int, ip, path string) error {
 	if len(processingErrors) > 0 && len(results) > 0 {
-		c.logWarnIfEnabled("Batch daily species data completed with partial failures",
+		c.LogWarnIfEnabled("Batch daily species data completed with partial failures",
 			logger.Int("successful", len(results)),
 			logger.Int("failed", len(processingErrors)),
 			logger.Any("errors", processingErrors),
@@ -1999,7 +2898,7 @@ func (c *Controller) handleBatchDailyResults(ctx echo.Context, results map[strin
 	}
 
 	if len(results) == 0 {
-		c.logErrorIfEnabled("All species in batch daily request failed",
+		c.LogErrorIfEnabled("All species in batch daily request failed",
 			logger.Int("requested_species", requestedCount),
 			logger.Int("unique_species", uniqueCount),
 			logger.Any("errors", processingErrors),
@@ -2009,7 +2908,7 @@ func (c *Controller) handleBatchDailyResults(ctx echo.Context, results map[strin
 		return c.HandleError(ctx, fmt.Errorf("failed to process any requested species"), "Failed to process batch daily request", http.StatusInternalServerError)
 	}
 
-	c.logInfoIfEnabled("Batch daily species data retrieved",
+	c.LogInfoIfEnabled("Batch daily species data retrieved",
 		logger.Int("requested_species", requestedCount),
 		logger.Int("unique_species", uniqueCount),
 		logger.Int("successful_species", len(results)),

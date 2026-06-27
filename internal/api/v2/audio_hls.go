@@ -25,6 +25,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	authapi "github.com/tphakala/birdnet-go/internal/api/v2/auth"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 	"github.com/tphakala/birdnet-go/internal/audiocore/equalizer"
 	"github.com/tphakala/birdnet-go/internal/audiocore/ffmpeg"
@@ -219,7 +220,7 @@ func hlsPlaylistURL(token string) string {
 // initHLSRoutes registers HLS streaming endpoints
 func (c *Controller) initHLSRoutes() {
 	// Get authentication middleware
-	authMiddleware := c.authMiddleware
+	authMiddleware := c.AuthMiddleware
 
 	// HLS base group (no auth by default)
 	hlsGroup := c.Group.Group(hlsGroupPath)
@@ -242,7 +243,7 @@ func (c *Controller) initHLSRoutes() {
 
 	// Start the HLS activity sync goroutine (only once across all controller instances)
 	hlsMgr.activitySyncOnce.Do(func() {
-		ctx, cancel := context.WithCancel(c.ctx)
+		ctx, cancel := context.WithCancel(c.Context())
 		hlsMgr.activitySyncCancel = cancel
 		go runHLSActivitySync(ctx)
 	})
@@ -254,53 +255,11 @@ func (c *Controller) initHLSRoutes() {
 // to take effect immediately without a server restart.
 func (c *Controller) publicLiveAudioAuth(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(ctx echo.Context) error {
-		isPublic := c.currentSettings().Security.PublicAccess.LiveAudio
+		isPublic := c.CurrentSettings().Security.PublicAccess.LiveAudio
 		if isPublic {
 			return next(ctx)
 		}
-		return c.authMiddleware(next)(ctx)
-	}
-}
-
-// privateModeAuth is a dynamic middleware applied at the v2 API group level
-// that requires authentication for every endpoint when Security.PrivateMode
-// is enabled. A small set of paths stay public so the frontend can complete
-// the bootstrap and login flow and so the existing PublicAccess.LiveAudio
-// carve-out is preserved (those routes fall through to their own
-// publicLiveAudioAuth middleware which decides based on PublicAccess.LiveAudio).
-// The check runs per-request so the setting hot-reloads without a server
-// restart.
-func (c *Controller) privateModeAuth(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(ctx echo.Context) error {
-		// Read the live global snapshot (race-free, hot-reloading) via
-		// currentSettings() to match the sibling publicLiveAudioAuth middleware; the
-		// per-controller snapshot would miss out-of-band StoreSettings republishes.
-		privateMode := c.currentSettings().Security.PrivateMode
-
-		if !privateMode {
-			return next(ctx)
-		}
-		// Fail closed: if PrivateMode is requested but no auth middleware
-		// is configured the request must be rejected, not silently allowed.
-		// Auth middleware is always wired up in production; reaching this
-		// branch in a real deployment means the controller is misconfigured.
-		if c.authMiddleware == nil {
-			return c.HandleError(
-				ctx,
-				nil,
-				"Private mode is enabled but authentication is not configured",
-				http.StatusServiceUnavailable,
-			)
-		}
-		// Use ctx.Path() (the registered route pattern) rather than the raw
-		// request URL so the match is robust to trailing slashes, ingress
-		// prefixes, and other URL normalisation differences. The method is
-		// matched explicitly so that a future handler bound to the same
-		// path with a different verb does not inherit the public exemption.
-		if isPrivateModeExempt(ctx.Request().Method, ctx.Path()) {
-			return next(ctx)
-		}
-		return c.authMiddleware(next)(ctx)
+		return c.AuthMiddleware(next)(ctx)
 	}
 }
 
@@ -321,21 +280,22 @@ func (c *Controller) privateModeAuth(next echo.HandlerFunc) echo.HandlerFunc {
 // at one of these paths under a different verb is fail-closed by default.
 func isPrivateModeExempt(method, path string) bool {
 	// Compose the exempt paths from the same constants used at the route
-	// registration sites (see initHLSRoutes, initAuthRoutes and the app config
-	// route in initAppRoutes) so the allow-list cannot silently drift from the
-	// actual routes. TestPrivateModeExemptPathsAreRegisteredRoutes asserts this
-	// correspondence.
+	// registration sites (see initHLSRoutes, the auth domain's RegisterRoutes and
+	// the app config route in initAppRoutes) so the allow-list cannot silently
+	// drift from the actual routes. The auth route fragments are sourced from the
+	// authapi package, which both registers the routes and owns the constants.
+	// TestPrivateModeExemptPathsAreRegisteredRoutes asserts this correspondence.
 	const (
-		authBase     = apiV2Prefix + authGroupPath
+		authBase     = apiV2Prefix + authapi.AuthGroupPath
 		hlsBase      = apiV2Prefix + hlsGroupPath
 		hlsTokenBase = hlsBase + hlsTokenGroupPath
 	)
 	switch {
 	case method == http.MethodGet && path == apiV2Prefix+AppConfigEndpoint:
 		return true
-	case method == http.MethodPost && path == authBase+authLoginPath:
+	case method == http.MethodPost && path == authBase+authapi.AuthLoginPath:
 		return true
-	case method == http.MethodGet && path == authBase+authCallbackPath:
+	case method == http.MethodGet && path == authBase+authapi.AuthCallbackPath:
 		return true
 	case method == http.MethodPost && path == hlsBase+hlsStartPath:
 		return true
@@ -430,13 +390,13 @@ func (c *Controller) StartHLSStream(ctx echo.Context) error {
 		forceRestart = false
 	}
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "HLS stream start requested",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "HLS stream start requested",
 		logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 		logger.String("client_id", clientID),
 		logger.Bool("force_restart", forceRestart))
 
 	// Verify source exists by checking for a capture buffer
-	eng := c.engine.Load()
+	eng := c.Engine.Load()
 	if eng == nil {
 		return c.HandleError(ctx, nil, "Audio engine not initialized", http.StatusServiceUnavailable)
 	}
@@ -448,7 +408,7 @@ func (c *Controller) StartHLSStream(ctx echo.Context) error {
 	if existingStream := c.getHLSStream(sourceID); existingStream != nil && !forceRestart {
 		// Existing stream found - register client and reuse it
 		c.updateHLSActivity(sourceID, clientID, "stream_join", hlsNewStreamGracePeriod)
-		c.logAPIRequest(ctx, logger.LogLevelInfo, "Reusing existing HLS stream",
+		c.LogAPIRequest(ctx, logger.LogLevelInfo, "Reusing existing HLS stream",
 			logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 			logger.String("client_id", clientID))
 		return c.buildHLSStreamResponse(ctx, sourceID, existingStream)
@@ -462,7 +422,7 @@ func (c *Controller) StartHLSStream(ctx echo.Context) error {
 		stream, err = c.getOrCreateHLSStream(sourceID)
 	}
 	if err != nil {
-		c.logAPIRequest(ctx, logger.LogLevelError, "Failed to create HLS stream",
+		c.LogAPIRequest(ctx, logger.LogLevelError, "Failed to create HLS stream",
 			logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 			logger.Error(err))
 		return c.HandleError(ctx, err, "Failed to start audio stream", http.StatusInternalServerError)
@@ -504,7 +464,7 @@ func (c *Controller) buildHLSStreamResponse(ctx echo.Context, sourceID string, s
 	status := "starting"
 	if isReady {
 		status = "ready"
-		c.logAPIRequest(ctx, logger.LogLevelInfo, "HLS stream ready",
+		c.LogAPIRequest(ctx, logger.LogLevelInfo, "HLS stream ready",
 			logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 			logger.String("stream_token", token[:8]+"..."),
 			logger.String("playlist_url", playlistURL))
@@ -576,7 +536,7 @@ func (c *Controller) StopHLSStream(ctx echo.Context) error {
 
 	clientID := c.resolveClientID(ctx, req.SessionID)
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "HLS stream stop requested",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "HLS stream stop requested",
 		logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 		logger.String("client_id", clientID))
 
@@ -618,7 +578,7 @@ func (c *Controller) HLSHeartbeat(ctx echo.Context) error {
 	// Validate stream exists
 	if !c.hlsStreamExists(sourceID) {
 		if hlsMgr.verboseLogging {
-			c.logAPIRequest(ctx, logger.LogLevelWarn, "Heartbeat for non-existent stream",
+			c.LogAPIRequest(ctx, logger.LogLevelWarn, "Heartbeat for non-existent stream",
 				logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)))
 		}
 		return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -1063,7 +1023,7 @@ func (c *Controller) setHLSHeaders(ctx echo.Context) {
 
 // getEffectiveSegmentLength returns the configured segment length with defaults and limits applied
 func (c *Controller) getEffectiveSegmentLength() int {
-	segmentLength := c.currentSettings().WebServer.LiveStream.SegmentLength
+	segmentLength := c.CurrentSettings().WebServer.LiveStream.SegmentLength
 	switch {
 	case segmentLength < hlsMinSegmentLen:
 		return hlsDefaultSegmentLen // Default
@@ -1206,7 +1166,7 @@ func (c *Controller) createHLSStream(sourceID string) (*HLSStreamInfo, error) {
 	// Create stream context from controller's lifecycle context, NOT from HTTP request context.
 	// Using request context would cause the stream to be cleaned up when the /start request completes.
 	// The stream must persist beyond the initial request lifetime.
-	streamCtx, streamCancel := context.WithCancel(c.ctx)
+	streamCtx, streamCancel := context.WithCancel(c.Context())
 
 	// Get HLS directory
 	hlsBaseDir, err := conf.GetHLSDirectory()
@@ -1235,7 +1195,7 @@ func (c *Controller) createHLSStream(sourceID string) (*HLSStreamInfo, error) {
 	}
 
 	// Validate FFmpeg path (defense-in-depth against ingress path contamination, see #2195)
-	ffmpegPath := c.currentSettings().Realtime.Audio.FfmpegPath
+	ffmpegPath := c.CurrentSettings().Realtime.Audio.FfmpegPath
 	if err := ffmpeg.ValidateFFmpegPath(ffmpegPath); err != nil {
 		streamCancel()
 		return nil, fmt.Errorf("invalid FFmpeg path: %w", err)
@@ -1433,7 +1393,7 @@ func (c *Controller) setupHLSFFmpeg(ctx context.Context, ffmpegPath, inputSource
 
 // buildFFmpegArgs constructs FFmpeg command line arguments
 func (c *Controller) buildFFmpegArgs(inputSource, outputDir, playlistPath string) []string {
-	settings := c.currentSettings().WebServer.LiveStream
+	settings := c.CurrentSettings().WebServer.LiveStream
 
 	// Apply defaults and limits
 	bitrate := 128
@@ -1693,7 +1653,7 @@ func (c *Controller) setupAudioCallback(sourceID string) (audioChan chan []byte,
 	consumerID := fmt.Sprintf("hls_%s_%s", privacy.SanitizeStreamUrl(sourceID), uuid.New().String()[:8])
 	// Use the configured live stream sample rate, falling back to the default HLS sample rate.
 	sampleRate := hlsDefaultSampleRate
-	liveStream := c.currentSettings().WebServer.LiveStream
+	liveStream := c.CurrentSettings().WebServer.LiveStream
 	if liveStream.SampleRate > 0 {
 		sampleRate = liveStream.SampleRate
 	}
@@ -1708,7 +1668,7 @@ func (c *Controller) setupAudioCallback(sourceID string) (audioChan chan []byte,
 	}
 
 	// Load the engine once for all registry/router operations in this section.
-	eng := c.engine.Load()
+	eng := c.Engine.Load()
 	if eng == nil {
 		return nil, nil, fmt.Errorf("audio engine not initialized")
 	}
@@ -2003,7 +1963,7 @@ func (c *Controller) handleHLSDisconnect(ctx echo.Context, sourceID, clientID st
 	if lastTime, exists := hlsMgr.clientActivity[sourceID+":"+clientID]; exists {
 		if time.Since(lastTime) < hlsPrematureDisconnectThreshold {
 			hlsMgr.activityMu.Unlock()
-			c.logAPIRequest(ctx, logger.LogLevelWarn, "Ignoring premature disconnect",
+			c.LogAPIRequest(ctx, logger.LogLevelWarn, "Ignoring premature disconnect",
 				logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)))
 			c.updateHLSActivity(sourceID, clientID, "continued-connection")
 			return ctx.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -2011,7 +1971,7 @@ func (c *Controller) handleHLSDisconnect(ctx echo.Context, sourceID, clientID st
 	}
 	hlsMgr.activityMu.Unlock()
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "Client announced disconnection",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "Client announced disconnection",
 		logger.String("source_id", privacy.SanitizeRTSPUrl(sourceID)),
 		logger.String("client_id", clientID))
 

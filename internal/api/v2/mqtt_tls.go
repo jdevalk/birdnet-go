@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	tlsapi "github.com/tphakala/birdnet-go/internal/api/v2/tls"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/logger"
 )
@@ -14,9 +15,9 @@ const mqttTLSServiceName = "mqtt"
 
 // MQTTTLSCertificateInfo represents the installation status of MQTT TLS certificates.
 type MQTTTLSCertificateInfo struct {
-	CA     *TLSCertificateInfo `json:"ca"`
-	Client *TLSCertificateInfo `json:"client"`
-	HasKey bool                `json:"hasKey"`
+	CA     *tlsapi.TLSCertificateInfo `json:"ca"`
+	Client *tlsapi.TLSCertificateInfo `json:"client"`
+	HasKey bool                       `json:"hasKey"`
 }
 
 // MQTTTLSCertificateUpload represents the request body for uploading MQTT TLS certificates.
@@ -31,11 +32,11 @@ type MQTTTLSCertificateUpload struct {
 // then falling back to TLSManager's managed directory.
 func (c *Controller) getMQTTCertPath(certType conf.TLSCertificateType) string {
 	// Check settings-configured paths first (covers manually configured certs).
-	// controllerSettings() can be nil on a standalone/test controller that never
+	// ControllerSettings() can be nil on a standalone/test controller that never
 	// stored a snapshot; in that case skip the configured paths and still allow
 	// the TLSManager-managed cert fallback below.
 	var settingsPath string
-	if settings := c.controllerSettings(); settings != nil {
+	if settings := c.ControllerSettings(); settings != nil {
 		mqttTLS := settings.Realtime.MQTT.TLS
 		switch certType {
 		case conf.TLSCertTypeCA:
@@ -68,21 +69,21 @@ func (c *Controller) getMQTTCertPath(certType conf.TLSCertificateType) string {
 // GetMQTTTLSCertificate handles GET /api/v2/integrations/mqtt/tls/certificate.
 func (c *Controller) GetMQTTTLSCertificate(ctx echo.Context) error {
 	result := &MQTTTLSCertificateInfo{
-		CA:     &TLSCertificateInfo{Installed: false},
-		Client: &TLSCertificateInfo{Installed: false},
+		CA:     &tlsapi.TLSCertificateInfo{Installed: false},
+		Client: &tlsapi.TLSCertificateInfo{Installed: false},
 		HasKey: false,
 	}
 
 	// Check CA certificate
 	if caPath := c.getMQTTCertPath(conf.TLSCertTypeCA); caPath != "" {
-		if info, err := ParseCertificateInfo(caPath); err == nil {
+		if info, err := tlsapi.ParseCertificateInfo(caPath); err == nil {
 			result.CA = info
 		}
 	}
 
 	// Check client certificate
 	if clientPath := c.getMQTTCertPath(conf.TLSCertTypeClient); clientPath != "" {
-		if info, err := ParseCertificateInfo(clientPath); err == nil {
+		if info, err := tlsapi.ParseCertificateInfo(clientPath); err == nil {
 			result.Client = info
 		}
 	}

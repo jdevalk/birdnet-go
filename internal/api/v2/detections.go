@@ -15,6 +15,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/patrickmn/go-cache"
+	"github.com/tphakala/birdnet-go/internal/api/v2/weather"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	detectionPkg "github.com/tphakala/birdnet-go/internal/detection"
@@ -36,12 +37,10 @@ func (e *dateValidationError) Error() string { return e.message }
 
 // Detection constants (file-local)
 const (
-	detectionCacheExpiry  = 5 * time.Minute  // Default cache expiration
-	detectionCacheCleanup = 10 * time.Minute // Cache cleanup interval
-	defaultNumResults     = 100              // Default number of results
-	maxNumResults         = 1000             // Maximum number of results
-	sunEventWindowMinutes = 30               // Minutes before/after sunrise/sunset
-	minHourRangeParts     = 2                // Minimum parts for hour range parsing
+	defaultNumResults     = 100  // Default number of results
+	maxNumResults         = 1000 // Maximum number of results
+	sunEventWindowMinutes = 30   // Minutes before/after sunrise/sunset
+	minHourRangeParts     = 2    // Minimum parts for hour range parsing
 
 	// queryType values for detection queries
 	queryTypeHourly  = "hourly"
@@ -50,6 +49,11 @@ const (
 
 	// Default sort order for non-hourly query types
 	sortByDateDesc = "date_desc"
+
+	// defaultModelType is returned when a detection's model type is unknown
+	// (e.g. the legacy datastore does not track it). The UI maps this to the
+	// default bird spectrogram frequency range.
+	defaultModelType = "bird"
 )
 
 // Regex to validate YYYY-MM-DD format and check for unwanted characters
@@ -134,11 +138,11 @@ func (c *Controller) initDetectionRoutes() {
 	// mode (NewWithOptions permits a nil datastore) by not registering this route group
 	// when there is no datastore, instead of registering handlers that would panic.
 	if c.DS == nil {
-		c.logWarnIfEnabled("Skipping detection routes: datastore is not available")
+		c.LogWarnIfEnabled("Skipping detection routes: datastore is not available")
 		return
 	}
 
-	// detectionCache is already initialized by the constructor (NewWithOptions); do not
+	// DetectionCache is already initialized by the constructor (NewWithOptions); do not
 	// re-create it here, which would orphan the constructor's cache (and its janitor).
 
 	// Detection endpoints - publicly accessible
@@ -152,7 +156,7 @@ func (c *Controller) initDetectionRoutes() {
 	c.Group.GET("/detections/:id/time-of-day", c.GetDetectionTimeOfDay)
 
 	// Protected detection management endpoints
-	detectionGroup := c.Group.Group("/detections", c.authMiddleware)
+	detectionGroup := c.Group.Group("/detections", c.AuthMiddleware)
 	detectionGroup.DELETE("/:id", c.DeleteDetection)
 	detectionGroup.POST("/:id/review", c.ReviewDetection)
 	detectionGroup.POST("/:id/lock", c.LockDetection)
@@ -190,6 +194,7 @@ type DetectionResponse struct {
 	ScientificName     string            `json:"scientificName"`
 	CommonName         string            `json:"commonName"`
 	Confidence         float64           `json:"confidence"`
+	ModelType          string            `json:"modelType,omitempty"` // AI model type (e.g. "bird", "bat"); drives the spectrogram frequency range
 	Verified           string            `json:"verified"`
 	Locked             bool              `json:"locked"`
 	Unlikely           bool              `json:"unlikely,omitempty"`
@@ -403,7 +408,7 @@ func (c *Controller) validateDateParameters(startDateStr, endDateStr string, ctx
 	// Validate individual date formats
 	for _, dp := range []struct{ value, name string }{{startDateStr, "start_date"}, {endDateStr, "end_date"}} {
 		if err := validateDateParam(dp.value, dp.name); err != nil {
-			c.logErrorIfEnabled("Invalid date parameter",
+			c.LogErrorIfEnabled("Invalid date parameter",
 				logger.String("parameter", dp.name),
 				logger.String("value", dp.value),
 				logger.String("path", ctx.Request().URL.Path),
@@ -414,7 +419,7 @@ func (c *Controller) validateDateParameters(startDateStr, endDateStr string, ctx
 
 	// Check date order
 	if err := validateDateOrder(startDateStr, endDateStr); err != nil {
-		c.logErrorIfEnabled("Invalid date range",
+		c.LogErrorIfEnabled("Invalid date range",
 			logger.String("start_date", startDateStr),
 			logger.String("end_date", endDateStr),
 			logger.String("path", ctx.Request().URL.Path),
@@ -431,12 +436,12 @@ func (c *Controller) parseNumResults(numResultsStr string) (int, error) {
 		return defaultNumResults, nil // Default value
 	}
 
-	c.logDebugIfEnabled("GetDetections: Raw numResults string",
+	c.LogDebugIfEnabled("GetDetections: Raw numResults string",
 		logger.String("value", numResultsStr),
 	)
 	numResults, err := strconv.Atoi(numResultsStr)
 	if err != nil {
-		c.logDebugIfEnabled("GetDetections: Invalid numResults string",
+		c.LogDebugIfEnabled("GetDetections: Invalid numResults string",
 			logger.String("value", numResultsStr),
 			logger.Error(err),
 		)
@@ -451,11 +456,11 @@ func (c *Controller) parseNumResults(numResultsStr string) (int, error) {
 		return 0, fmt.Errorf("Invalid numeric value for numResults: %w", err) //nolint:staticcheck // matches test expectations
 	}
 
-	c.logDebugIfEnabled("GetDetections: Parsed numResults value",
+	c.LogDebugIfEnabled("GetDetections: Parsed numResults value",
 		logger.Int("value", numResults),
 	)
 	if numResults <= 0 {
-		c.logDebugIfEnabled("GetDetections: Zero or negative numResults value",
+		c.LogDebugIfEnabled("GetDetections: Zero or negative numResults value",
 			logger.Int("value", numResults),
 		)
 		// Log the enhanced error for telemetry while returning a simpler error for HTTP response
@@ -470,7 +475,7 @@ func (c *Controller) parseNumResults(numResultsStr string) (int, error) {
 	}
 
 	if numResults > maxNumResults {
-		c.logDebugIfEnabled("GetDetections: Too large numResults value",
+		c.LogDebugIfEnabled("GetDetections: Too large numResults value",
 			logger.Int("value", numResults),
 		)
 		// Log the enhanced error for telemetry while returning a simpler error for HTTP response
@@ -493,12 +498,12 @@ func (c *Controller) parseOffset(offsetStr string) (int, error) {
 		return 0, nil // Default value
 	}
 
-	c.logDebugIfEnabled("GetDetections: Raw offset string",
+	c.LogDebugIfEnabled("GetDetections: Raw offset string",
 		logger.String("value", offsetStr),
 	)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
-		c.logDebugIfEnabled("GetDetections: Invalid offset string",
+		c.LogDebugIfEnabled("GetDetections: Invalid offset string",
 			logger.String("value", offsetStr),
 			logger.Error(err),
 		)
@@ -512,11 +517,11 @@ func (c *Controller) parseOffset(offsetStr string) (int, error) {
 		return 0, fmt.Errorf("Invalid numeric value for offset: %w", err) //nolint:staticcheck // matches test expectations
 	}
 
-	c.logDebugIfEnabled("GetDetections: Parsed offset value",
+	c.LogDebugIfEnabled("GetDetections: Parsed offset value",
 		logger.Int("value", offset),
 	)
 	if offset < 0 {
-		c.logDebugIfEnabled("GetDetections: Negative offset value",
+		c.LogDebugIfEnabled("GetDetections: Negative offset value",
 			logger.Int("value", offset),
 		)
 		// Log the enhanced error for telemetry
@@ -531,7 +536,7 @@ func (c *Controller) parseOffset(offsetStr string) (int, error) {
 
 	const maxOffset = 1000000
 	if offset > maxOffset {
-		c.logDebugIfEnabled("GetDetections: Too large offset value",
+		c.LogDebugIfEnabled("GetDetections: Too large offset value",
 			logger.Int("value", offset),
 		)
 		// Log the enhanced error for telemetry
@@ -553,7 +558,7 @@ func (c *Controller) GetDetections(ctx echo.Context) error {
 	// Parse and validate query parameters
 	params, err := c.parseDetectionQueryParams(ctx)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to parse query parameters",
+		c.LogErrorIfEnabled("Failed to parse query parameters",
 			logger.Error(err),
 			logger.String("path", ctx.Request().URL.Path),
 			logger.String("ip", ctx.RealIP()),
@@ -566,7 +571,7 @@ func (c *Controller) GetDetections(ctx echo.Context) error {
 	}
 
 	// Log the retrieval attempt
-	c.logInfoIfEnabled("Retrieving detections",
+	c.LogInfoIfEnabled("Retrieving detections",
 		logger.String("queryType", params.QueryType),
 		logger.String("date", params.Date),
 		logger.String("hour", params.Hour),
@@ -584,7 +589,7 @@ func (c *Controller) GetDetections(ctx echo.Context) error {
 	// Get notes based on query type
 	notes, totalResults, err := c.getDetectionsByQueryType(params)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to retrieve detections",
+		c.LogErrorIfEnabled("Failed to retrieve detections",
 			logger.String("queryType", params.QueryType),
 			logger.Error(err),
 			logger.String("path", ctx.Request().URL.Path),
@@ -601,7 +606,7 @@ func (c *Controller) GetDetections(ctx echo.Context) error {
 	response := c.createPaginatedResponse(detections, totalResults, params.NumResults, params.Offset)
 
 	// Log the successful response
-	c.logInfoIfEnabled("Detections retrieved successfully",
+	c.LogInfoIfEnabled("Detections retrieved successfully",
 		logger.String("queryType", params.QueryType),
 		logger.Int("count", len(detections)),
 		logger.Int64("total", response.Total),
@@ -752,6 +757,16 @@ func (c *Controller) noteToDetectionResponse(note *datastore.Note, includeWeathe
 	detection.Verified = c.mapVerificationStatus(note.Verified)
 	detection.Comments = extractNoteComments(note.Comments)
 
+	// Model type drives the UI spectrogram frequency range (bat detections span a
+	// much wider band than birds). It is carried on note.Model from the datastore's
+	// batch-loaded ai_models relation, so reading it here adds no extra query.
+	// Fall back to the default bird range when the model type is unknown (e.g. the
+	// legacy datastore does not track it).
+	detection.ModelType = note.Model.ModelType
+	if detection.ModelType == "" {
+		detection.ModelType = defaultModelType
+	}
+
 	if includeWeather {
 		c.populateWeatherData(&detection, note, weatherCache)
 	}
@@ -822,7 +837,7 @@ func (c *Controller) populateWeatherData(detection *DetectionResponse, note *dat
 	detectionTimeStr := note.Date + " " + note.Time
 	detectionTime, err := time.ParseInLocation("2006-01-02 15:04:05", detectionTimeStr, time.Local)
 	if err != nil {
-		c.logWarnIfEnabled("Failed to parse detection time for weather data",
+		c.LogWarnIfEnabled("Failed to parse detection time for weather data",
 			logger.String("time_str", detectionTimeStr),
 			logger.Error(err))
 		return
@@ -859,8 +874,8 @@ func (c *Controller) getWeatherForDetectionTime(detectionTime time.Time, date st
 		return nil
 	}
 
-	closestWeather := c.findClosestHourlyWeather(detectionTime, weatherData)
-	if closestWeather.WeatherIcon == "" {
+	closestWeather := weather.ClosestHourlyWeather(detectionTime, weatherData)
+	if closestWeather == nil || closestWeather.WeatherIcon == "" {
 		return nil
 	}
 
@@ -928,7 +943,7 @@ func (c *Controller) getHourlyDetections(date, hour string, duration, numResults
 	cacheKey := fmt.Sprintf("hourly:%s:%s:%d:%d:%d", date, hour, duration, numResults, offset)
 
 	// Check if data is in cache
-	if cachedData, found := c.detectionCache.Get(cacheKey); found {
+	if cachedData, found := c.DetectionCache.Get(cacheKey); found {
 		cachedResult := cachedData.(struct {
 			Notes []datastore.Note
 			Total int64
@@ -939,7 +954,7 @@ func (c *Controller) getHourlyDetections(date, hour string, duration, numResults
 	// If not in cache, query the database
 	notes, err := c.DS.GetHourlyDetections(date, hour, duration, numResults, offset)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to get hourly detections",
+		c.LogErrorIfEnabled("Failed to get hourly detections",
 			logger.String("date", date),
 			logger.String("hour", hour),
 			logger.Int("duration", duration),
@@ -952,7 +967,7 @@ func (c *Controller) getHourlyDetections(date, hour string, duration, numResults
 
 	totalCount, err := c.DS.CountHourlyDetections(date, hour, duration)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to count hourly detections",
+		c.LogErrorIfEnabled("Failed to count hourly detections",
 			logger.String("date", date),
 			logger.String("hour", hour),
 			logger.Int("duration", duration),
@@ -962,12 +977,12 @@ func (c *Controller) getHourlyDetections(date, hour string, duration, numResults
 	}
 
 	// Cache the results
-	c.detectionCache.Set(cacheKey, struct {
+	c.DetectionCache.Set(cacheKey, struct {
 		Notes []datastore.Note
 		Total int64
 	}{notes, totalCount}, cache.DefaultExpiration)
 
-	c.logInfoIfEnabled("Retrieved hourly detections",
+	c.LogInfoIfEnabled("Retrieved hourly detections",
 		logger.String("date", date),
 		logger.String("hour", hour),
 		logger.Int("duration", duration),
@@ -984,7 +999,7 @@ func (c *Controller) getSpeciesDetections(species, date, hour string, duration, 
 	cacheKey := fmt.Sprintf("species:%s:%s:%s:%d:%d:%d", species, date, hour, duration, numResults, offset)
 
 	// Check if data is in cache
-	if cachedData, found := c.detectionCache.Get(cacheKey); found {
+	if cachedData, found := c.DetectionCache.Get(cacheKey); found {
 		cachedResult := cachedData.(struct {
 			Notes []datastore.Note
 			Total int64
@@ -995,7 +1010,7 @@ func (c *Controller) getSpeciesDetections(species, date, hour string, duration, 
 	// If not in cache, query the database
 	notes, err := c.DS.SpeciesDetections(species, date, hour, duration, false, numResults, offset)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to get species detections",
+		c.LogErrorIfEnabled("Failed to get species detections",
 			logger.String("species", species),
 			logger.String("date", date),
 			logger.String("hour", hour),
@@ -1009,7 +1024,7 @@ func (c *Controller) getSpeciesDetections(species, date, hour string, duration, 
 
 	totalCount, err := c.DS.CountSpeciesDetections(species, date, hour, duration)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to count species detections",
+		c.LogErrorIfEnabled("Failed to count species detections",
 			logger.String("species", species),
 			logger.String("date", date),
 			logger.String("hour", hour),
@@ -1020,12 +1035,12 @@ func (c *Controller) getSpeciesDetections(species, date, hour string, duration, 
 	}
 
 	// Cache the results
-	c.detectionCache.Set(cacheKey, struct {
+	c.DetectionCache.Set(cacheKey, struct {
 		Notes []datastore.Note
 		Total int64
 	}{notes, totalCount}, cache.DefaultExpiration)
 
-	c.logInfoIfEnabled("Retrieved species detections",
+	c.LogInfoIfEnabled("Retrieved species detections",
 		logger.String("species", species),
 		logger.String("date", date),
 		logger.String("hour", hour),
@@ -1041,7 +1056,7 @@ func (c *Controller) getSpeciesDetections(species, date, hour string, duration, 
 func (c *Controller) getSearchDetectionsAdvanced(params *detectionQueryParams) ([]datastore.Note, int64, error) {
 	cacheKey := params.advancedSearchCacheKey()
 
-	if cachedData, found := c.detectionCache.Get(cacheKey); found {
+	if cachedData, found := c.DetectionCache.Get(cacheKey); found {
 		cachedResult := cachedData.(struct {
 			Notes []datastore.Note
 			Total int64
@@ -1053,14 +1068,14 @@ func (c *Controller) getSearchDetectionsAdvanced(params *detectionQueryParams) (
 
 	notes, totalCount, err := c.DS.SearchNotesAdvanced(&filters)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to perform advanced search",
+		c.LogErrorIfEnabled("Failed to perform advanced search",
 			logger.String("filters", fmt.Sprintf("%+v", filters)),
 			logger.Error(err),
 		)
 		return nil, 0, err
 	}
 
-	c.detectionCache.Set(cacheKey, struct {
+	c.DetectionCache.Set(cacheKey, struct {
 		Notes []datastore.Note
 		Total int64
 	}{notes, totalCount}, cache.DefaultExpiration)
@@ -1144,7 +1159,7 @@ func (c *Controller) getSearchDetections(search string, numResults, offset int) 
 	cacheKey := fmt.Sprintf("search:%s:%d:%d", search, numResults, offset)
 
 	// Check if data is in cache
-	if cachedData, found := c.detectionCache.Get(cacheKey); found {
+	if cachedData, found := c.DetectionCache.Get(cacheKey); found {
 		cachedResult := cachedData.(struct {
 			Notes []datastore.Note
 			Total int64
@@ -1155,7 +1170,7 @@ func (c *Controller) getSearchDetections(search string, numResults, offset int) 
 	// If not in cache, query the database
 	notes, totalCount, err := c.DS.SearchNotes(search, false, numResults, offset)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to search notes",
+		c.LogErrorIfEnabled("Failed to search notes",
 			logger.String("query", search),
 			logger.Int("limit", numResults),
 			logger.Int("offset", offset),
@@ -1165,12 +1180,12 @@ func (c *Controller) getSearchDetections(search string, numResults, offset int) 
 	}
 
 	// Cache the results
-	c.detectionCache.Set(cacheKey, struct {
+	c.DetectionCache.Set(cacheKey, struct {
 		Notes []datastore.Note
 		Total int64
 	}{notes, totalCount}, cache.DefaultExpiration)
 
-	c.logInfoIfEnabled("Retrieved search results",
+	c.LogInfoIfEnabled("Retrieved search results",
 		logger.String("query", search),
 		logger.Int("count", len(notes)),
 		logger.Int64("total", totalCount),
@@ -1185,7 +1200,7 @@ func (c *Controller) getAllDetections(numResults, offset int) ([]datastore.Note,
 	cacheKey := fmt.Sprintf("all:%d:%d", numResults, offset)
 
 	// Check if data is in cache
-	if cachedData, found := c.detectionCache.Get(cacheKey); found {
+	if cachedData, found := c.DetectionCache.Get(cacheKey); found {
 		cachedResult := cachedData.(struct {
 			Notes []datastore.Note
 			Total int64
@@ -1196,7 +1211,7 @@ func (c *Controller) getAllDetections(numResults, offset int) ([]datastore.Note,
 	// Use the datastore.SearchNotes method with an empty query to get all notes
 	notes, totalResults, err := c.DS.SearchNotes("", false, numResults, offset)
 	if err != nil {
-		c.logErrorIfEnabled("Failed to get all detections",
+		c.LogErrorIfEnabled("Failed to get all detections",
 			logger.Int("limit", numResults),
 			logger.Int("offset", offset),
 			logger.Error(err),
@@ -1205,12 +1220,12 @@ func (c *Controller) getAllDetections(numResults, offset int) ([]datastore.Note,
 	}
 
 	// Cache the results
-	c.detectionCache.Set(cacheKey, struct {
+	c.DetectionCache.Set(cacheKey, struct {
 		Notes []datastore.Note
 		Total int64
 	}{notes, totalResults}, cache.DefaultExpiration)
 
-	c.logInfoIfEnabled("Retrieved all detections",
+	c.LogInfoIfEnabled("Retrieved all detections",
 		logger.Int("count", len(notes)),
 		logger.Int64("total", totalResults),
 	)
@@ -1305,10 +1320,10 @@ var spectrogramWidths = []int{
 // are silently ignored, and other errors are logged as warnings without
 // affecting the caller.
 func (c *Controller) removeDetectionFiles(clipName string) {
-	log := c.apiLogger
+	log := c.APILogger
 
 	// Normalize the clip path to get a relative path within SecureFS
-	clipsPrefix := c.currentSettings().Realtime.Audio.Export.Path
+	clipsPrefix := c.CurrentSettings().Realtime.Audio.Export.Path
 	normalized := NormalizeClipPath(clipName, clipsPrefix)
 	if normalized == "" {
 		log.Warn("Cannot remove detection files: empty normalized clip path",
@@ -1339,24 +1354,37 @@ func (c *Controller) removeDetectionFiles(clipName string) {
 			logger.String("path", absClipPath))
 	}
 
-	// Remove all associated spectrogram files.
-	// Spectrograms follow the naming pattern: <basename>_<width>px.png
-	// and <basename>_<width>px-legend.png for each valid width.
+	// Remove all associated spectrogram files. buildSpectrogramPaths names them
+	// <basename>_<width>px<suffix>.png, where <suffix> encodes the visual style,
+	// dynamic range, frequency profile (e.g. "-bat-v2") and legend/raw variant - and a
+	// single clip can accumulate several of these as those settings change over time.
+	// Rather than enumerate every combination (and miss renders from styles no longer
+	// configured), scan the directory and remove any PNG whose name matches this
+	// clip's "<basename>_<width>px" prefix followed by ".png" or a "-"-prefixed
+	// suffix. The separator anchor after the width prevents matching a different clip
+	// whose basename merely shares this prefix.
 	ext := filepath.Ext(normalized)
-	basePath := strings.TrimSuffix(absClipPath, ext)
+	baseFilename := strings.TrimSuffix(filepath.Base(normalized), ext)
+	clipDir := filepath.Dir(absClipPath)
 
 	removed := 0
-	suffixes := []string{"%s_%dpx.png", "%s_%dpx-legend.png"}
-	for _, width := range spectrogramWidths {
-		for _, sfx := range suffixes {
-			path := fmt.Sprintf(sfx, basePath, width)
-			if err := os.Remove(path); err == nil {
-				removed++
-			} else if !os.IsNotExist(err) {
-				log.Warn("Failed to remove spectrogram file",
-					logger.String("path", path),
-					logger.Error(err))
-			}
+	entries, readErr := c.SFS.ReadDirRel(filepath.Dir(normalized))
+	if readErr != nil && !os.IsNotExist(readErr) {
+		log.Warn("Failed to scan directory for spectrogram files",
+			logger.String("dir", clipDir),
+			logger.Error(readErr))
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !isSpectrogramFileFor(entry.Name(), baseFilename) {
+			continue
+		}
+		path := filepath.Join(clipDir, entry.Name())
+		if err := c.SFS.Remove(path); err == nil {
+			removed++
+		} else if !os.IsNotExist(err) {
+			log.Warn("Failed to remove spectrogram file",
+				logger.String("path", path),
+				logger.Error(err))
 		}
 	}
 
@@ -1367,12 +1395,30 @@ func (c *Controller) removeDetectionFiles(clipName string) {
 	}
 }
 
+// isSpectrogramFileFor reports whether pngName is a spectrogram render of the clip
+// with the given base filename. It matches "<baseFilename>_<width>px" followed by
+// either ".png" or a "-"-prefixed suffix (style, dynamic-range, frequency-profile
+// and legend tokens), for any known render width. The "."/"-" anchor after the
+// width avoids matching a different clip whose base name merely shares this prefix.
+func isSpectrogramFileFor(pngName, baseFilename string) bool {
+	if !strings.HasSuffix(pngName, ".png") {
+		return false
+	}
+	for _, width := range spectrogramWidths {
+		prefix := fmt.Sprintf("%s_%dpx", baseFilename, width)
+		if pngName == prefix+".png" || strings.HasPrefix(pngName, prefix+"-") {
+			return true
+		}
+	}
+	return false
+}
+
 // invalidateDetectionCache clears the detection cache to ensure fresh data
 // is fetched on subsequent requests. This should be called after any
 // operation that modifies detection data.
 func (c *Controller) invalidateDetectionCache() {
 	// Clear all cached detection data to ensure fresh results
-	c.detectionCache.Flush()
+	c.DetectionCache.Flush()
 }
 
 // checkAndHandleLock verifies if a detection is locked and manages lock state
@@ -1458,7 +1504,7 @@ func (c *Controller) ReviewDetection(ctx echo.Context) error {
 
 	// Handle lock/unlock request separately
 	if req.LockDetection != note.Locked {
-		c.logInfoIfEnabled("Updating lock status",
+		c.LogInfoIfEnabled("Updating lock status",
 			logger.String("detection_id", idStr),
 			logger.Bool("current_locked", note.Locked),
 			logger.Bool("new_locked", req.LockDetection),
@@ -1468,7 +1514,7 @@ func (c *Controller) ReviewDetection(ctx echo.Context) error {
 		err = c.AddLock(note.ID, req.LockDetection)
 		if err != nil {
 			// Log the lock operation failure
-			c.logErrorIfEnabled("Failed to update lock status",
+			c.LogErrorIfEnabled("Failed to update lock status",
 				logger.String("detection_id", idStr),
 				logger.Bool("attempted_lock_state", req.LockDetection),
 				logger.Error(err),
@@ -1554,15 +1600,22 @@ func (c *Controller) IgnoreSpecies(ctx echo.Context) error {
 		return c.HandleError(ctx, nil, "Missing species name", http.StatusBadRequest)
 	}
 
+	// Canonicalize a localized common name to its scientific name so the
+	// per-detection exclusion filter can match it regardless of UI locale.
+	speciesToIgnore := c.resolveExcludeName(req.CommonName)
+
 	// Toggle the species in ignored list
-	action, isExcluded, err := c.toggleSpeciesInIgnoredList(req.CommonName)
+	action, isExcluded, err := c.toggleSpeciesInIgnoredList(speciesToIgnore)
 	if err != nil {
 		return c.HandleError(ctx, err, "Failed to update species filter", http.StatusInternalServerError)
 	}
 
-	// Log the action
-	c.logInfoIfEnabled("Species exclusion toggled",
+	// Log the action. "species" is the name the user supplied; "stored_species"
+	// is what actually landed in the exclude list, so support can tell the two
+	// apart when a localized name was resolved to a scientific name.
+	c.LogInfoIfEnabled("Species exclusion toggled",
 		logger.String("species", req.CommonName),
+		logger.String("stored_species", speciesToIgnore),
 		logger.String("action", action),
 		logger.Bool("is_excluded", isExcluded),
 		logger.String("ip", ctx.RealIP()),
@@ -1575,9 +1628,21 @@ func (c *Controller) IgnoreSpecies(ctx echo.Context) error {
 	})
 }
 
-// GetExcludedSpecies returns the list of excluded species
+// GetExcludedSpecies returns the list of excluded species, mapped to their
+// display common name. The exclude list is stored canonically as scientific
+// names (IgnoreSpecies/addToIgnoredSpecies resolve localized common names before
+// storing so the per-detection filter can match), but the detection cards key
+// their "ignored" badge on the localized common name. Reverse-resolving each
+// entry here keeps that badge state correct after a reload; entries with no
+// scientific->common mapping (legacy common-name entries, unresolvable names)
+// pass through unchanged.
 func (c *Controller) GetExcludedSpecies(ctx echo.Context) error {
-	species := slices.Clone(c.getSettingsOrFallback().Realtime.Species.Exclude)
+	excluded := c.getSettingsOrFallback().Realtime.Species.Exclude
+	nameMap := c.loadCommonNameMap()
+	species := make([]string, len(excluded))
+	for i, name := range excluded {
+		species[i] = resolveCommonName(nameMap, name)
+	}
 
 	return ctx.JSON(http.StatusOK, ExcludedSpeciesResponse{
 		Species: species,
@@ -1585,10 +1650,90 @@ func (c *Controller) GetExcludedSpecies(ctx echo.Context) error {
 	})
 }
 
+// resolveExcludeName canonicalizes a species name for the exclude list. A
+// localized common name is resolved to its scientific name so the per-detection
+// exclusion filter (which matches the non-localized common name or the scientific
+// name) works regardless of the UI locale. Input that does not map to a known
+// common name (already a scientific name, unknown, or an ambiguous common name
+// shared by multiple species) is returned unchanged.
+func (c *Controller) resolveExcludeName(name string) string {
+	if resolved, hit := c.resolveSpeciesToScientific(name); hit {
+		return resolved
+	}
+	return name
+}
+
+// excludeEntryMatches reports whether an existing exclude-list entry refers to
+// the same species as target (which callers pass already canonicalized via
+// resolveExcludeName). It matches case-insensitively and resolves the stored
+// entry too, so an entry persisted under a localized or common name (legacy data,
+// or a name typed into Settings) reconciles with the scientific-name form on
+// toggle/dedup instead of leaving an orphan that can never be removed.
+func (c *Controller) excludeEntryMatches(entry, target string) bool {
+	if strings.EqualFold(entry, target) {
+		return true
+	}
+	if resolved, hit := c.resolveSpeciesToScientific(entry); hit {
+		return strings.EqualFold(resolved, target)
+	}
+	return false
+}
+
+// canonicalizeExcludeList returns a copy of the species exclude list with every
+// entry resolved to its scientific name (via resolveExcludeName) and de-duplicated
+// case-insensitively, preserving first-occurrence order. Whitespace-only entries
+// are dropped. Settings-page saves persist the slice verbatim through the generic
+// reflection/JSON merge, so without this a localized or common name typed into the
+// Settings exclude editor would be stored in a non-canonical form; routing it
+// through the same resolution the detection endpoints use keeps the stored list in
+// a single scientific-name form that the per-detection filter (isSpeciesExcluded)
+// and the detection-card toggle both match regardless of the UI locale.
+//
+// It is idempotent: a list that is already canonical (all scientific, de-duplicated,
+// trimmed) is returned with identical contents, so reflect.DeepEqual-based change
+// detection (rangeFilterSettingsChanged) sees no diff and no spurious range-filter
+// rebuild is triggered. Ambiguous common names shared by multiple species are passed
+// through unchanged by resolveSpeciesToScientific, matching the detection-side paths.
+//
+// An empty result (empty input, or every entry dropped) returns nil rather than a
+// non-nil empty slice, so the stored list has a single canonical empty form. This
+// matters because rangeFilterSettingsChanged compares with reflect.DeepEqual and
+// DeepEqual(nil, []string{}) is false: returning a non-nil empty slice would spuriously
+// differ from a nil stored list and trigger a range-filter rebuild on an empty save.
+func (c *Controller) canonicalizeExcludeList(exclude []string) []string {
+	if len(exclude) == 0 {
+		return nil
+	}
+	canonical := make([]string, 0, len(exclude))
+	for _, entry := range exclude {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		resolved := c.resolveExcludeName(trimmed)
+		// Dedup with EqualFold for parity with excludeEntryMatches (both operands are
+		// already resolved here, so no second resolution is needed). Uses the same
+		// slices.ContainsFunc idiom the exclude-list toggle/add paths use; lists are
+		// small, so the linear scan is fine.
+		if slices.ContainsFunc(canonical, func(existing string) bool {
+			return strings.EqualFold(existing, resolved)
+		}) {
+			continue
+		}
+		canonical = append(canonical, resolved)
+	}
+	if len(canonical) == 0 {
+		// Every entry was whitespace; collapse to nil (see the doc comment) so an
+		// empty result matches a nil stored list under reflect.DeepEqual.
+		return nil
+	}
+	return canonical
+}
+
 // addToIgnoredSpecies handles the logic for adding species to the ignore list
 func (c *Controller) addToIgnoredSpecies(verified, ignoreSpecies string) error {
 	if verified == "false_positive" && ignoreSpecies != "" {
-		return c.addSpeciesToIgnoredList(ignoreSpecies)
+		return c.addSpeciesToIgnoredList(c.resolveExcludeName(ignoreSpecies))
 	}
 	return nil
 }
@@ -1611,12 +1756,14 @@ func (c *Controller) toggleSpeciesInIgnoredList(species string) (action string, 
 	// this controller owns it, so out-of-band StoreSettings calls are seen.
 	current := c.getSettingsOrFallback()
 
-	wasExcluded := slices.Contains(current.Realtime.Species.Exclude, species)
+	wasExcluded := slices.ContainsFunc(current.Realtime.Species.Exclude, func(s string) bool {
+		return c.excludeEntryMatches(s, species)
+	})
 
 	updated := conf.CloneSettings(current)
 	if wasExcluded {
 		updated.Realtime.Species.Exclude = slices.DeleteFunc(updated.Realtime.Species.Exclude, func(s string) bool {
-			return s == species
+			return c.excludeEntryMatches(s, species)
 		})
 		action = "removed"
 		isExcluded = false
@@ -1653,7 +1800,9 @@ func (c *Controller) addSpeciesToIgnoredList(species string) error {
 	defer c.settingsMutex.Unlock()
 
 	current := c.getSettingsOrFallback()
-	if slices.Contains(current.Realtime.Species.Exclude, species) {
+	if slices.ContainsFunc(current.Realtime.Species.Exclude, func(s string) bool {
+		return c.excludeEntryMatches(s, species)
+	}) {
 		return nil
 	}
 
@@ -1787,10 +1936,10 @@ func calculateTimeOfDay(detectionTime time.Time, sunEvents *suncalc.SunEventTime
 // Returns "imperial" for Fahrenheit or "metric" for Celsius to match frontend expectations.
 func (c *Controller) getWeatherUnits() string {
 	// Use dashboard temperature unit preference for display. Read the live
-	// snapshot (race-free, hot-reloading) via currentSettings() so out-of-band
+	// snapshot (race-free, hot-reloading) via CurrentSettings() so out-of-band
 	// global republishes are picked up, matching the rest of the Dashboard reads.
 	// All temperatures are now stored in Celsius internally.
-	switch c.currentSettings().Realtime.Dashboard.TemperatureUnit {
+	switch c.CurrentSettings().Realtime.Dashboard.TemperatureUnit {
 	case conf.TemperatureUnitFahrenheit:
 		return "imperial"
 	case conf.TemperatureUnitCelsius:

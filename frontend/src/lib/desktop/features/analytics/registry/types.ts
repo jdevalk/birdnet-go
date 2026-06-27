@@ -47,7 +47,7 @@ export interface AnalyticsParams {
   end: string;
   /** Selected species, by scientific name. Empty means none selected. */
   species: string[];
-  /** Selected audio source/mic id. Empty means all sources. Inert in PR0. */
+  /** Selected audio source/mic id. Empty means all sources. */
   source: string;
   /** Parsed range start (derived from range/start). */
   startDate: Date;
@@ -62,20 +62,15 @@ export interface ChartSupports {
 }
 
 /**
- * An audio-source option for the control bar's source filter.
- *
- * `value` is the comma-separated list of `audio_sources.id` values the selection
- * maps to (one display name can cover several underlying rows), and is what the
- * hub stores in `AnalyticsParams.source` and the registry fetchers forward as the
- * `source_id` query param. An empty `value` means "all sources" (no filter).
+ * One audio source option for the control bar's source/mic filter, as returned by
+ * `GET /api/v2/analytics/sources`. `id` is the opaque, stable source identifier the filter writes to
+ * `AnalyticsParams.source` (and the URL); `name` is the display label (already anonymized server-side
+ * for unauthenticated clients); `count` is the source's in-range detection volume.
  */
-export interface AnalyticsSourceOption {
-  /** Comma-separated `audio_sources.id` list; empty for "all sources". */
-  value: string;
-  /** Human-readable source/display name shown in the picker. */
-  label: string;
-  /** Total detections across the underlying source rows (for the picker hint). */
-  count?: number;
+export interface AudioSourceOption {
+  id: string;
+  name: string;
+  count: number;
 }
 
 /** Relative width a card occupies in the responsive grid. */

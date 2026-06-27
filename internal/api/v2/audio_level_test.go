@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 )
 
@@ -67,8 +69,8 @@ func TestAudioLevelSSEDataFormat(t *testing.T) {
 // TestIsSourceInactive tests the source inactivity detection logic
 func TestIsSourceInactive(t *testing.T) {
 	// Create a minimal controller for testing
-	controller := &Controller{}
-	controller.Settings.Store(newValidTestSettings())
+	controller := &Controller{Core: &apicore.Core{}}
+	controller.Settings.Store(apitest.NewValidTestSettings())
 
 	t.Run("new source is active", func(t *testing.T) {
 		lastUpdate := make(map[string]time.Time)
@@ -122,8 +124,8 @@ func TestIsSourceInactive(t *testing.T) {
 
 // TestCheckSourceActivity tests the source activity checking for multiple sources
 func TestCheckSourceActivity(t *testing.T) {
-	controller := &Controller{}
-	controller.Settings.Store(newValidTestSettings())
+	controller := &Controller{Core: &apicore.Core{}}
+	controller.Settings.Store(apitest.NewValidTestSettings())
 
 	t.Run("no inactive sources", func(t *testing.T) {
 		now := time.Now()
@@ -178,8 +180,8 @@ func TestCheckSourceActivity(t *testing.T) {
 
 // TestGetAnonymizedSourceNameFallback tests the fallback source name anonymization
 func TestGetAnonymizedSourceNameFallback(t *testing.T) {
-	controller := &Controller{}
-	controller.Settings.Store(newValidTestSettings())
+	controller := &Controller{Core: &apicore.Core{}}
+	controller.Settings.Store(apitest.NewValidTestSettings())
 
 	t.Run("audio card source", func(t *testing.T) {
 		name := controller.getAnonymizedSourceNameFallback("audio_card_default")

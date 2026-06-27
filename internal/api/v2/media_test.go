@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tphakala/birdnet-go/internal/api/middleware"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/audiocore/ffmpeg"
 	"github.com/tphakala/birdnet-go/internal/datastore/mocks"
 	"github.com/tphakala/birdnet-go/internal/imageprovider"
@@ -1258,7 +1259,7 @@ func TestSpeciesImageNotFound_Returns404(t *testing.T) {
 	e, _, controller := setupTestEnvironment(t)
 
 	// Replace the mock provider with one that returns ErrImageNotFound for unknown species
-	notFoundProvider := &TestImageProvider{
+	notFoundProvider := &apitest.TestImageProvider{
 		FetchFunc: func(scientificName string) (imageprovider.BirdImage, error) {
 			return imageprovider.BirdImage{}, imageprovider.ErrImageNotFound
 		},
@@ -1428,6 +1429,12 @@ func TestServeAudioClipWaitsForEncoding(t *testing.T) {
 func TestServeAudioClipReturns503AfterTimeout(t *testing.T) {
 	e, controller, tempDir := setupMediaTestEnvironment(t)
 
+	// Inject a short server-side wait so the 503-after-timeout path is exercised
+	// quickly. The final file never appears, so the wait deterministically expires
+	// regardless of the timeout value; the override only bounds the wait (default
+	// would be audioWaitTimeout).
+	controller.audioWaitTimeoutOverride = testFailFastTimeout
+
 	audioFilename := "slow-encoding.wav"
 	audioFilePath := filepath.Join(tempDir, audioFilename)
 	// Mirror the per-export unique temp name "<clip>.<pid>.<seq>.temp" the real
@@ -1435,7 +1442,7 @@ func TestServeAudioClipReturns503AfterTimeout(t *testing.T) {
 	// isAudioBeingEncoded rather than a fixed name that production never produces.
 	tempFilePath := audioFilePath + ".99999.1" + ffmpeg.TempExt
 
-	// Create only the temp file — final file never appears
+	// Create only the temp file; the final file never appears.
 	err := os.WriteFile(tempFilePath, []byte("temp encoding data"), 0o600)
 	require.NoError(t, err)
 
@@ -1619,6 +1626,7 @@ func TestBuildSpectrogramPathsWithStyle(t *testing.T) {
 		raw              bool
 		style            string
 		dynamicRange     string
+		freqSuffix       string
 		expectedFilename string
 	}{
 		{
@@ -1629,6 +1637,26 @@ func TestBuildSpectrogramPathsWithStyle(t *testing.T) {
 			style:            "default",
 			dynamicRange:     "100",
 			expectedFilename: "bird_1026px.png",
+		},
+		{
+			name:             "bat profile suffix raw",
+			relAudioPath:     "clips/2025/01/bird.wav",
+			width:            1026,
+			raw:              true,
+			style:            "default",
+			dynamicRange:     "100",
+			freqSuffix:       "bat",
+			expectedFilename: "bird_1026px-bat.png",
+		},
+		{
+			name:             "bat profile suffix with legend and style",
+			relAudioPath:     "clips/2025/01/bird.wav",
+			width:            1026,
+			raw:              false,
+			style:            "scientific_dark",
+			dynamicRange:     "100",
+			freqSuffix:       "bat",
+			expectedFilename: "bird_1026px-scientific_dark-bat-legend.png",
 		},
 		{
 			name:             "default style with legend",
@@ -1679,7 +1707,7 @@ func TestBuildSpectrogramPathsWithStyle(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, filename, fullPath := buildSpectrogramPaths(tt.relAudioPath, tt.width, tt.raw, tt.style, tt.dynamicRange)
+			_, _, filename, fullPath := buildSpectrogramPaths(tt.relAudioPath, tt.width, tt.raw, tt.style, tt.dynamicRange, tt.freqSuffix)
 			assert.Equal(t, tt.expectedFilename, filename)
 			assert.Equal(t, filepath.Join("clips", "2025", "01", tt.expectedFilename), fullPath)
 		})

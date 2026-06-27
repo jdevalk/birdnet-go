@@ -72,29 +72,37 @@ Lightweight connectivity check. Returns a minimal response with no database quer
 }
 ```
 
-### Authentication (`auth.go`)
+### Authentication (`auth/auth.go`)
 
-| Method | Route          | Handler         | Auth | Description                 |
-| ------ | -------------- | --------------- | ---- | --------------------------- |
-| POST   | `/auth/login`  | `Login`         | ❌   | User authentication         |
-| POST   | `/auth/logout` | `Logout`        | ✅   | End user session            |
-| GET    | `/auth/status` | `GetAuthStatus` | ✅   | Check authentication status |
+| Method | Route            | Handler         | Auth | Description                 |
+| ------ | ---------------- | --------------- | ---- | --------------------------- |
+| POST   | `/auth/login`    | `Login`         | ❌   | User authentication         |
+| GET    | `/auth/callback` | `OAuthCallback` | ❌   | Complete OAuth login flow   |
+| POST   | `/auth/logout`   | `Logout`        | ✅   | End user session            |
+| GET    | `/auth/status`   | `GetAuthStatus` | ✅   | Check authentication status |
 
 ### Analytics (`analytics.go`)
 
-| Method | Route                                  | Handler                        | Auth | Description                                                  |
-| ------ | -------------------------------------- | ------------------------------ | ---- | ------------------------------------------------------------ |
-| GET    | `/analytics/species/daily`             | `GetDailySpeciesSummary`       | ❌   | Daily species detection summary                              |
-| GET    | `/analytics/species/summary`           | `GetSpeciesSummary`            | ❌   | Overall species statistics                                   |
-| GET    | `/analytics/species/detections/new`    | `GetNewSpeciesDetections`      | ❌   | Recently detected new species                                |
-| GET    | `/analytics/species/thumbnails`        | `GetSpeciesThumbnails`         | ❌   | Species thumbnail images                                     |
-| GET    | `/analytics/species/diversity`         | `GetSpeciesDiversity`          | ❌   | Daily unique species counts                                  |
-| GET    | `/analytics/sources`                   | `ListAnalyticsSources`         | ❌   | Historical audio sources with detection counts (for filters) |
-| GET    | `/analytics/time/hourly`               | `GetHourlyAnalytics`           | ❌   | Hourly detection patterns                                    |
-| GET    | `/analytics/time/daily`                | `GetDailyAnalytics`            | ❌   | Daily detection patterns                                     |
-| GET    | `/analytics/time/distribution/hourly`  | `GetTimeOfDayDistribution`     | ❌   | Time-of-day detection distribution                           |
-| GET    | `/analytics/time/distribution/species` | `GetSpeciesHourlyDistribution` | ❌   | Who-sings-when ridgeline: per-species hour-of-day distribution for the top N species by volume. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 5, max 8) |
-| GET    | `/analytics/time/heatmap`              | `GetActivityHeatmap`           | ❌   | Seasonal density heatmap (date x intra-day slot; `?format=csv`) |
+| Method | Route                                 | Handler                    | Auth | Description                        |
+| ------ | ------------------------------------- | -------------------------- | ---- | ---------------------------------- |
+| GET    | `/analytics/species/daily`            | `GetDailySpeciesSummary`   | ❌   | Daily species detection summary    |
+| GET    | `/analytics/species/summary`          | `GetSpeciesSummary`        | ❌   | Overall species statistics         |
+| GET    | `/analytics/species/detections/new`   | `GetNewSpeciesDetections`  | ❌   | Recently detected new species      |
+| GET    | `/analytics/species/thumbnails`       | `GetSpeciesThumbnails`     | ❌   | Species thumbnail images           |
+| GET    | `/analytics/species/diversity`        | `GetSpeciesDiversity`      | ❌   | Daily unique species counts        |
+| GET    | `/analytics/species/accumulation`     | `GetSpeciesAccumulation`   | ❌   | Species accumulation curve (biodiversity collector's curve): per calendar day, the cumulative count of distinct species first detected within the range (false positives excluded; "first seen" is bounded to the window, not lifetime). All-species (no species filter). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days) |
+| GET    | `/analytics/species/phenology`        | `GetSpeciesPhenology`      | ❌   | Arrival/departure phenology (residency-bar Gantt): per species, the first and last detection date (station-local, false positives excluded) plus the in-range detection count, for the top-N species by volume. All-species top-N (no species filter). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 12, max 20) |
+| GET    | `/analytics/time/hourly`              | `GetHourlyAnalytics`       | ❌   | Hourly detection patterns          |
+| GET    | `/analytics/time/daily`               | `GetDailyAnalytics`        | ❌   | Daily detection patterns           |
+| GET    | `/analytics/time/distribution/hourly` | `GetTimeOfDayDistribution` | ❌   | Time-of-day detection distribution |
+| GET    | `/analytics/time/distribution/species` | `GetSpeciesHourlyDistribution` | ❌ | Who-sings-when ridgeline: per-species hour-of-day distribution for the top N species by volume. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 5, max 8) |
+| GET    | `/analytics/time/heatmap`             | `GetActivityHeatmap`       | ❌   | Seasonal density heatmap (date x intra-day slot; `?format=csv`) |
+| GET    | `/analytics/time/dawn-onset`          | `GetDawnChorusOnset`       | ❌   | Dawn-chorus onset tracker: per-day onset relative to civil dawn (minutes; negative = before civil dawn). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional |
+| GET    | `/analytics/time/succession`          | `GetAcousticSuccession`    | ❌   | Acoustic succession streamgraph: per species, the raw hour-of-day detection counts (24 buckets, false positives excluded) for the top-N species by volume, stacked into a streamgraph showing the diel acoustic handover. All-species top-N (no species filter). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 6, max 10) |
+| GET    | `/analytics/time/year-over-year`      | `GetYearOverYear`          | ❌   | Year-over-year tracker: current year-to-date cumulative detection counts versus the same calendar span one year earlier (false positives excluded), one point per current-year day with a per-day delta, aligned by calendar (month, day) with leap-day Feb 29 handled. All-species (no species filter). `date` optional (station-local YYYY-MM-DD; defaults to today) sets the inclusive end of both windows. Returns `{currentYear, previousYear, points[]}` |
+| GET    | `/analytics/sun`                      | `GetAnalyticsSun`          | ❌   | Sun times for the nocturnal activity clock's day/night shading: sunrise/sunset/civil-dawn/civil-dusk as minute-of-day in server-local time. `date` for a single day, or `start_date`/`end_date` for a range (collapsed to its midpoint); defaults to today. Returns `available:false` (not an error) on polar day/night or when SunCalc is unconfigured |
+| GET    | `/analytics/confidence/distribution`  | `GetConfidenceDistribution` | ❌  | Confidence distribution per species: per-species normalized histogram of detection confidence scores (Review & Accuracy tab). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional (single species filter; default is the top-N species by volume); `bins` optional (default 20, clamped to 5-50); `limit` optional (default 5, max 8) |
+| GET    | `/analytics/sources`                  | `GetAnalyticsSources`      | ❌   | Audio sources that have detections in range, powering the analytics hub's source/mic filter: each source's opaque id (string), display label, and in-range detection count (false positives excluded), most active first. `start_date`/`end_date` optional (omit both for all history). v2only (legacy schema does not persist a detection's source; legacy returns an empty list). Source names anonymized for unauthenticated clients. The hub forwards the selected id as `source_id` to the chart endpoints below, which scope results by it (see Per-Source Filtering). Joost's older `ListAnalyticsSources` handler is unrouted (safe to delete in cleanup) |
 
 #### Per-Source Filtering (`source_id` Query Parameter)
 
@@ -116,7 +124,7 @@ filter because the legacy schema has no `audio_sources` foreign key. Note that f
 selected sources when a filter is applied (so a species can appear as new-for-this-source
 even if it was detected earlier on another source).
 
-### Control Operations (`control.go`)
+### Control Operations (`control/control.go`)
 
 | Method | Route                         | Handler               | Auth | Description                            |
 | ------ | ----------------------------- | --------------------- | ---- | -------------------------------------- |
@@ -241,13 +249,13 @@ The `GET /settings/dashboard` endpoint is intentionally public so that unauthent
 - `startEvent` / `endEvent` (`"sunrise"` | `"sunset"`): Solar mode events
 - `startOffset` / `endOffset` (int, -180 to 180): Minutes offset from solar event
 
-### Filesystem (`filesystem.go`)
+### Filesystem (`filesystem/filesystem.go`)
 
 | Method | Route                | Handler            | Auth | Description                                              |
 | ------ | -------------------- | ------------------ | ---- | -------------------------------------------------------- |
 | GET    | `/filesystem/browse` | `BrowseFileSystem` | ✅   | Browse files and directories with secure path validation |
 
-### Species (`species.go`)
+### Species (`species/species.go`)
 
 | Method | Route                      | Handler               | Auth | Description                                                       |
 | ------ | -------------------------- | --------------------- | ---- | ----------------------------------------------------------------- |
@@ -422,7 +430,7 @@ HLS playlist and segment routes use token-based authentication instead of standa
 - `soundCardSuppressed`: true if the sound card is currently in quiet hours
 - `suppressedStreams`: map of stream URLs to their suppression state (only suppressed streams included)
 
-### Support (`support.go`)
+### Support (`support/support.go`)
 
 | Method | Route                   | Handler               | Auth | Description                      |
 | ------ | ----------------------- | --------------------- | ---- | -------------------------------- |
@@ -462,7 +470,7 @@ Registered under the system route group. All endpoints require authentication.
 - `GET /system/events/detections`: `date` (YYYY-MM-DD, defaults to today)
 - `GET /system/events/operational`: `date` (YYYY-MM-DD, defaults to today), `level` (DEBUG/INFO/WARN/ERROR, defaults to INFO)
 
-### Weather (`weather.go`)
+### Weather (`weather/weather.go`)
 
 | Method | Route                         | Handler                   | Auth | Description                         |
 | ------ | ----------------------------- | ------------------------- | ---- | ----------------------------------- |
@@ -538,7 +546,7 @@ Requires enhanced (v2) database. Returns 409 Conflict if not available.
 ]
 ```
 
-### TLS Certificate Management (`tls.go`)
+### TLS Certificate Management (`tls/tls.go`)
 
 | Method | Route                       | Handler                         | Auth | Description                                |
 | ------ | --------------------------- | ------------------------------- | ---- | ------------------------------------------ |
@@ -576,6 +584,15 @@ Requires enhanced (v2) database. Returns 409 Conflict if not available.
 | POST   | `/system/diagnostics/run`        | `RunDiagnostics`         | ✅   | Run full diagnostic suite      |
 | GET    | `/system/diagnostics/report/:id` | `GetDiagnosticsReport`   | ✅   | Retrieve completed report      |
 | GET    | `/system/diagnostics/errors`     | `GetRecentErrors`        | ✅   | Recent error log entries       |
+
+### Import (`import.go`)
+
+| Method | Route                          | Handler              | Auth | Description                              |
+| ------ | ------------------------------ | -------------------- | ---- | ---------------------------------------- |
+| POST   | `/import/birdnet-pi`           | `StartBirdNETPiImport` | ✅   | Start a BirdNET-Pi import (`db-only`, or `db-audio` to also copy clips) |
+| GET    | `/import/jobs/:jobId/progress` | `StreamImportProgress` | ✅   | SSE progress stream for import job      |
+| POST   | `/import/jobs/:jobId/cancel`   | `CancelImport`         | ✅   | Cancel a running import                 |
+| GET    | `/import/status`               | `GetImportStatus`      | ✅   | Get current import status (polling)     |
 
 **GET /api/v2/system/diagnostics/status** - Returns the overall health status and per-category breakdown from the most recent diagnostic run. Returns `{"status": "unknown"}` if no diagnostics have been run yet.
 

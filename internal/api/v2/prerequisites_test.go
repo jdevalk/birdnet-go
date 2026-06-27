@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	"github.com/tphakala/birdnet-go/internal/datastore/mocks"
 
@@ -152,7 +154,7 @@ func TestCheckLegacyAccessible_NilDS(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{DS: nil}
+	controller := &Controller{Core: &apicore.Core{DS: nil}}
 
 	check := controller.checkLegacyAccessible()
 
@@ -184,7 +186,7 @@ func TestCheckRecordCount_NilRepo(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{Repo: nil}
+	controller := &Controller{Core: &apicore.Core{Repo: nil}}
 
 	check := controller.checkRecordCount()
 
@@ -215,7 +217,7 @@ func TestCheckSQLiteIntegrity_NilDB(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{DS: nil}
+	controller := &Controller{Core: &apicore.Core{DS: nil}}
 
 	check := controller.checkSQLiteIntegrity()
 
@@ -238,7 +240,7 @@ func TestCheckSQLiteIntegrity_V2OnlyMode(t *testing.T) {
 	isV2OnlyMode = true
 	t.Cleanup(func() { isV2OnlyMode = prevV2Only })
 
-	controller := &Controller{DS: nil}
+	controller := &Controller{Core: &apicore.Core{DS: nil}}
 
 	check := controller.checkSQLiteIntegrity()
 
@@ -262,7 +264,7 @@ func TestCheckLegacyAccessible_V2OnlyMode(t *testing.T) {
 	isV2OnlyMode = true
 	t.Cleanup(func() { isV2OnlyMode = prevV2Only })
 
-	controller := &Controller{DS: nil}
+	controller := &Controller{Core: &apicore.Core{DS: nil}}
 
 	check := controller.checkLegacyAccessible()
 
@@ -286,7 +288,7 @@ func TestCheckRecordCount_V2OnlyMode(t *testing.T) {
 	isV2OnlyMode = true
 	t.Cleanup(func() { isV2OnlyMode = prevV2Only })
 
-	controller := &Controller{Repo: nil}
+	controller := &Controller{Core: &apicore.Core{Repo: nil}}
 
 	check := controller.checkRecordCount()
 
@@ -302,8 +304,8 @@ func TestCheckMemoryAvailable(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{}
-	controller.Settings.Store(newValidTestSettings())
+	controller := &Controller{Core: &apicore.Core{}}
+	controller.Settings.Store(apitest.NewValidTestSettings())
 
 	check := controller.checkMemoryAvailable()
 
@@ -319,7 +321,7 @@ func TestCheckExistingV2Data_NilManager(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{V2Manager: nil}
+	controller := &Controller{Core: &apicore.Core{V2Manager: nil}}
 
 	check := controller.checkExistingV2Data()
 
@@ -373,7 +375,7 @@ func TestCheckExistingV2Data_UsesManagerTablePrefix(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			controller := &Controller{V2Manager: newFakeV2ManagerWithTable(t, tt.tableName, tt.prefix, tt.count)}
+			controller := &Controller{Core: &apicore.Core{V2Manager: newFakeV2ManagerWithTable(t, tt.tableName, tt.prefix, tt.count)}}
 
 			check := controller.checkExistingV2Data()
 
@@ -438,7 +440,7 @@ func TestIsUsingMySQL_NilSettings(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{}
+	controller := &Controller{Core: &apicore.Core{}}
 
 	result := controller.isUsingMySQL()
 
@@ -465,10 +467,10 @@ func TestGetDatabaseDirectoryResolved_NilSettings(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{}
+	controller := &Controller{Core: &apicore.Core{}}
 	// Publish a nil global so currentSettings() falls back to the controller's
 	// nil c.Settings and exercises the "settings not available" path.
-	publishTestSettings(t, nil)
+	apitest.PublishTestSettings(t, nil)
 
 	_, err := controller.getDatabaseDirectoryResolved()
 
@@ -495,7 +497,7 @@ func TestGetLegacyGormDB_NilDS(t *testing.T) {
 	t.Attr("type", "unit")
 	t.Attr("feature", "prerequisites")
 
-	controller := &Controller{DS: nil}
+	controller := &Controller{Core: &apicore.Core{DS: nil}}
 
 	db := controller.getLegacyGormDB()
 
@@ -576,14 +578,9 @@ func setupPrerequisitesTestEnvironment(t *testing.T) (*echo.Echo, *Controller, *
 		db:            db,
 	}
 
-	controller := &Controller{
-		Echo:  e,
-		Group: e.Group("/api/v2"),
-		DS:    testDS,
-		Repo:  mockRepo,
-	}
+	controller := &Controller{Core: &apicore.Core{Echo: e, Group: e.Group("/api/v2"), DS: testDS, Repo: mockRepo}}
 	controller.Settings.Store(getTestSettings(t))
-	publishTestSettings(t, controller.Settings.Load())
+	apitest.PublishTestSettings(t, controller.Settings.Load())
 
 	return e, controller, sm
 }

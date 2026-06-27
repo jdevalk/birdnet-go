@@ -14,6 +14,8 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apitest"
 	"github.com/tphakala/birdnet-go/internal/testutil/containers"
 )
 
@@ -33,7 +35,7 @@ func TestCheckNtfyServer_RealContainer(t *testing.T) {
 	host := container.GetHost(ctx)
 
 	t.Run("http_reachable", func(t *testing.T) {
-		resp := probeNtfyServer(context.Background(), host)
+		resp := probeNtfyServer(context.Background(), host, ntfyServerCheckTimeout)
 
 		assert.Equal(t, "http", resp.Recommended, "container should be reachable via HTTP")
 		assert.True(t, resp.HTTP, "HTTP should be true")
@@ -46,7 +48,7 @@ func TestCheckNtfyServer_RealContainer(t *testing.T) {
 		require.NoError(t, err, "should parse host:port")
 
 		unreachableHost := fmt.Sprintf("%s:1", hostPart)
-		resp := probeNtfyServer(context.Background(), unreachableHost)
+		resp := probeNtfyServer(context.Background(), unreachableHost, ntfyServerCheckTimeout)
 
 		assert.Equal(t, "unreachable", resp.Recommended, "port 1 should be unreachable")
 	})
@@ -54,8 +56,8 @@ func TestCheckNtfyServer_RealContainer(t *testing.T) {
 	t.Run("handler_integration", func(t *testing.T) {
 		// Test the full CheckNtfyServer handler via Echo context
 		e := echo.New()
-		ctrl := &Controller{}
-		ctrl.Settings.Store(newValidTestSettings())
+		ctrl := &Controller{Core: &apicore.Core{}}
+		ctrl.Settings.Store(apitest.NewValidTestSettings())
 
 		req := httptest.NewRequest(http.MethodGet,
 			"/api/v2/notifications/check-ntfy-server?host="+host, http.NoBody)

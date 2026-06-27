@@ -14,6 +14,7 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/labstack/echo/v4"
+	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
 	"github.com/tphakala/birdnet-go/internal/classifier"
 	"github.com/tphakala/birdnet-go/internal/logger"
 )
@@ -23,7 +24,7 @@ const (
 	bnhmMagic      = "BNHM"
 	bnhmVersion    = 1
 	bnhmHeaderSize = 40
-	bnhmWeeks      = weeksPerYear // 48 BirdNET weeks, matches range.go
+	bnhmWeeks      = apicore.WeeksPerYear // 48 BirdNET weeks (shared BirdNET week model)
 )
 
 // Heatmap validation constraints
@@ -240,23 +241,23 @@ func (c *Controller) validateHeatmapParams(ctx echo.Context) (*heatmapParams, er
 		return nil, fmt.Errorf("species parameter is required")
 	}
 
-	south, err := parseFloat64(ctx.QueryParam("south"))
+	south, err := apicore.ParseFloat64(ctx.QueryParam("south"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid south parameter: %w", err)
 	}
-	north, err := parseFloat64(ctx.QueryParam("north"))
+	north, err := apicore.ParseFloat64(ctx.QueryParam("north"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid north parameter: %w", err)
 	}
-	west, err := parseFloat64(ctx.QueryParam("west"))
+	west, err := apicore.ParseFloat64(ctx.QueryParam("west"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid west parameter: %w", err)
 	}
-	east, err := parseFloat64(ctx.QueryParam("east"))
+	east, err := apicore.ParseFloat64(ctx.QueryParam("east"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid east parameter: %w", err)
 	}
-	resolution, err := parseFloat64(ctx.QueryParam("resolution"))
+	resolution, err := apicore.ParseFloat64(ctx.QueryParam("resolution"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid resolution parameter: %w", err)
 	}
@@ -442,12 +443,12 @@ func (c *Controller) GetHeatmapGrid(ctx echo.Context) error {
 
 	cached, _, hit := cache.get(cacheKey)
 	if hit {
-		c.logAPIRequest(ctx, logger.LogLevelDebug, "Heatmap cache hit", logger.String("species", params.species))
+		c.LogAPIRequest(ctx, logger.LogLevelDebug, "Heatmap cache hit", logger.String("species", params.species))
 		return ctx.Blob(http.StatusOK, "application/octet-stream", cached)
 	}
 
 	// Try the dedicated heatmap service (optimized path)
-	birdnet, err := c.getBirdNETInstance()
+	birdnet, err := c.GetBirdNETInstance()
 	if err != nil {
 		return c.HandleError(ctx, err, "BirdNET service not available", http.StatusInternalServerError)
 	}
@@ -499,7 +500,7 @@ func (c *Controller) getHeatmapOptimized(ctx echo.Context, service *classifier.H
 		if result.Err != nil {
 			return c.HandleError(ctx, result.Err, "Failed to compute heatmap grid", http.StatusInternalServerError)
 		}
-		c.logAPIRequest(ctx, logger.LogLevelInfo, "Heatmap grid computed (optimized)",
+		c.LogAPIRequest(ctx, logger.LogLevelInfo, "Heatmap grid computed (optimized)",
 			logger.String("species", params.species),
 			logger.Int("rows", params.rows),
 			logger.Int("cols", params.cols),
@@ -530,7 +531,7 @@ func (c *Controller) getHeatmapFallback(ctx echo.Context, birdnet *classifier.Or
 	encoded := encodeBNHM(params.cols, params.rows, float32(params.south), float32(params.west), float32(params.resolution), data)
 	cache.put(cacheKey, encoded, missGen)
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "Heatmap grid computed (fallback)",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "Heatmap grid computed (fallback)",
 		logger.String("species", params.species),
 		logger.Int("rows", params.rows),
 		logger.Int("cols", params.cols))
