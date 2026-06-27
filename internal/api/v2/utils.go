@@ -319,7 +319,7 @@ func (c *Controller) parseOptionalSourceIDs(ctx echo.Context, paramName string) 
 		}
 		v, err := strconv.ParseUint(p, 10, 32)
 		if err != nil || v == 0 {
-			c.logWarnIfEnabled("Skipping invalid source_id token",
+			c.LogWarnIfEnabled("Skipping invalid source_id token",
 				logger.String("parameter", paramName),
 				logger.String("value", p),
 				logger.String("ip", ctx.RealIP()),

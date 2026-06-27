@@ -122,7 +122,7 @@ func (c *Controller) CorrectDetectionSpecies(ctx echo.Context) error {
 	// version) so we can map to the ai_models row, and to confirm the
 	// model is actually loaded (we won't accept corrections naming a model
 	// the running server doesn't know about).
-	bn, err := c.getBirdNETInstance()
+	bn, err := c.GetBirdNETInstance()
 	if err != nil {
 		return c.HandleError(ctx, err,
 			"Classifier not available", http.StatusServiceUnavailable)
@@ -219,7 +219,7 @@ func (c *Controller) CorrectDetectionSpecies(ctx echo.Context) error {
 	})
 
 	if correctionErr != nil {
-		c.logAPIRequest(ctx, logger.LogLevelError, "Species correction failed",
+		c.LogAPIRequest(ctx, logger.LogLevelError, "Species correction failed",
 			logger.String("detection_id", idStr),
 			logger.String("model_id", req.ModelID),
 			logger.String("scientific_name", req.ScientificName),
@@ -238,7 +238,7 @@ func (c *Controller) CorrectDetectionSpecies(ctx echo.Context) error {
 	// resolver chain on the orchestrator covers both BirdNET's labels and
 	// the v3 geomodel taxonomy CSV companion (PR #3042 upstream), so this
 	// works for any species in either model's vocabulary in 24+ locales.
-	common := bn.ResolveName(req.ScientificName, c.currentSettings().BirdNET.Locale)
+	common := bn.ResolveName(req.ScientificName, c.CurrentSettings().BirdNET.Locale)
 
 	// Invalidate the detection-list cache so dashboards/species pages reflect
 	// the new label immediately. Without this, the 5-minute species-detection
@@ -249,7 +249,7 @@ func (c *Controller) CorrectDetectionSpecies(ctx echo.Context) error {
 	// Same pattern Delete, Review, and Lock handlers use.
 	c.invalidateDetectionCache()
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "Species correction applied",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "Species correction applied",
 		logger.String("detection_id", idStr),
 		logger.String("model_id", resolvedID),
 		logger.String("from_species", existing.ScientificName),

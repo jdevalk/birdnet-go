@@ -135,7 +135,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 			"No audio clip available for this detection", http.StatusNotFound)
 	}
 
-	bn, err := c.getBirdNETInstance()
+	bn, err := c.GetBirdNETInstance()
 	if err != nil {
 		return c.HandleError(ctx, err,
 			"Classifier not available", http.StatusServiceUnavailable)
@@ -152,7 +152,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 			http.StatusBadRequest)
 	}
 
-	relClipPath, err := c.normalizeAndValidatePathWithLogger(clipPath, c.apiLogger)
+	relClipPath, err := c.normalizeAndValidatePathWithLogger(clipPath, c.APILogger)
 	if err != nil {
 		return c.HandleError(ctx, err, "Invalid clip path", http.StatusBadRequest)
 	}
@@ -166,7 +166,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 		bySR[m.spec.SampleRate] = append(bySR[m.spec.SampleRate], m)
 	}
 
-	ffmpegPath := c.currentSettings().Realtime.Audio.FfmpegPath
+	ffmpegPath := c.CurrentSettings().Realtime.Audio.FfmpegPath
 
 	// Accumulator: scientific-name labels (or raw label strings) -> per-model
 	// max confidence. The label-string form survives until aggregation so
@@ -179,7 +179,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 		samples, err := decodeClipMonoPCM16(
 			ctx.Request().Context(), ffmpegPath, absClipPath, sr, reanalyzeMaxDurationSec)
 		if err != nil {
-			c.logAPIRequest(ctx, logger.LogLevelError, "Failed to decode clip for reanalysis",
+			c.LogAPIRequest(ctx, logger.LogLevelError, "Failed to decode clip for reanalysis",
 				logger.String("detection_id", idStr),
 				logger.String("clip_path", relClipPath),
 				logger.Int("sample_rate", sr),
@@ -198,7 +198,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 			scores, windowCount, err := reanalyzeSamples(
 				ctx.Request().Context(), bn.PredictModel, m.id, m.spec, samples)
 			if err != nil {
-				c.logAPIRequest(ctx, logger.LogLevelError, "Reanalysis inference failed",
+				c.LogAPIRequest(ctx, logger.LogLevelError, "Reanalysis inference failed",
 					logger.String("detection_id", idStr),
 					logger.String("model_id", m.id),
 					logger.Error(err))
@@ -245,7 +245,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 			ByModel:        perModel,
 		})
 	}
-	applyLocalizedCommonNamesV2(bn, predictions, c.currentSettings().BirdNET.Locale)
+	applyLocalizedCommonNamesV2(bn, predictions, c.CurrentSettings().BirdNET.Locale)
 
 	sort.Slice(predictions, func(i, j int) bool {
 		return predictions[i].MaxConfidence() > predictions[j].MaxConfidence()
@@ -254,7 +254,7 @@ func (c *Controller) ReanalyzeDetection(ctx echo.Context) error {
 		predictions = predictions[:reanalyzeTopN]
 	}
 
-	c.logAPIRequest(ctx, logger.LogLevelInfo, "Reanalysis complete",
+	c.LogAPIRequest(ctx, logger.LogLevelInfo, "Reanalysis complete",
 		logger.String("detection_id", idStr),
 		logger.Int("model_count", len(modelInfos)),
 		logger.Int("prediction_count", len(predictions)))
