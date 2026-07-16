@@ -195,7 +195,10 @@ var goldenRoutes = []string{
 	"POST /api/v2/control/restart-container",
 	"POST /api/v2/control/restart-server",
 	"POST /api/v2/control/restart-source/:id",
+	// Fork-local: per-row species correction + multi-model reanalyze (not upstream).
+	"POST /api/v2/detections/:id/correct-species",
 	"POST /api/v2/detections/:id/lock",
+	"POST /api/v2/detections/:id/reanalyze",
 	"POST /api/v2/detections/:id/review",
 	"POST /api/v2/detections/batch/delete",
 	"POST /api/v2/detections/batch/lock",
