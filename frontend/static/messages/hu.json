@@ -206,10 +206,19 @@
     "componentError": "Komponens betöltési hiba",
     "speciesAnalytics": "Faj elemzés",
     "detectionDetails": "Detektálás részletei",
-    "settingsNotAvailable": "Beállítások nem elérhetők"
+    "settingsNotAvailable": "Beállítások nem elérhetők",
+    "analyticsSummary": "Analytics - Summary",
+    "analyticsActivity": "Analytics - Activity Patterns",
+    "analyticsTrends": "Analytics - Trends",
+    "analyticsBiodiversity": "Analytics - Biodiversity",
+    "analyticsReview": "Analytics - Review & Accuracy",
+    "analyticsNocturnal": "Elemzés - Éjszakai aktivitás",
+    "analyticsWeather": "Elemzés - Időjárás-korreláció",
+    "analyticsSoundscape": "Elemzés - Hangkép"
   },
   "navigation": {
     "dashboard": "Irányítópult",
+    "liveAudio": "Élő hang",
     "settingsMenu": "Beállítások menü",
     "theme": "Téma",
     "github": "GitHub",
@@ -237,7 +246,13 @@
     "reportBugAriaLabel": "Hiba bejelentése a GitHubon (új ablakban nyílik meg)",
     "askQuestionAriaLabel": "Kérdés feltevése a GitHub Discussions oldalon (új ablakban nyílik meg)",
     "viewOnGithubAriaLabel": "BirdNET-Go megtekintése a GitHubon (új ablakban nyílik meg)",
-    "health": "Rendszerállapot"
+    "health": "Rendszerállapot",
+    "sections": {
+      "explore": "Felfedezés",
+      "patterns": "Minták",
+      "environment": "Környezet",
+      "dataQuality": "Adatminőség"
+    }
   },
   "about": {
     "title": "BirdNET-Go",
@@ -404,6 +419,7 @@
         "recalculatingThresholds": "Dinamikus küszöbértékek újraszámítása az új alapértékhez",
         "reconfiguringDynamicThresholds": "Dinamikus küszöbértékek újrakonfigurálása...",
         "webserverRestartRequired": "Webszerver beállítások megváltoztak. Újraindítás szükséges.",
+        "oauthRestartRequired": "Hitelesítési szolgáltató beállítások megváltoztak. Újraindítás szükséges.",
         "databaseRestartRequired": "Database settings changed. Restart required.",
         "loggingRestartRequired": "Logging settings changed. Restart required.",
         "reconfiguringSoundLevel": "Hangszint monitorozás frissítése...",
@@ -1177,110 +1193,161 @@
       "importExport": "Import / Export"
     },
     "importExport": {
-      "pageDescription": "Import data from other bird recording systems or export your detections.",
-      "available": "Available",
-      "comingSoon": "Coming soon",
-      "loading": "Loading...",
-      "runInBackground": "Close (import continues in background)",
-      "runInBackgroundTitle": "Dismiss this dialog. The import keeps running in the background.",
-      "stepAnnouncement": "Step {current} of {total}: {name}",
+      "available": "Elérhető",
+      "experimental": "Kísérleti",
+      "comingSoon": "Hamarosan",
+      "loading": "Betöltés...",
+      "runInBackground": "Bezárás (az importálás a háttérben folytatódik)",
+      "runInBackgroundTitle": "Zárja be ezt a párbeszédpanelt. Az importálás a háttérben folytatódik.",
+      "stepAnnouncement": "Lépés {current}/{total}: {name}",
       "steps": {
-        "source": "Source",
-        "mode": "Mode",
-        "confirm": "Confirm",
-        "progress": "Progress",
-        "done": "Done"
+        "source": "Forrás",
+        "mode": "Mód",
+        "confirm": "Megerősítés",
+        "progress": "Folyamat",
+        "done": "Kész"
       },
       "import": {
-        "sectionTitle": "Import"
+        "sectionTitle": "Importálás"
       },
       "export": {
-        "sectionTitle": "Export",
-        "cardTitle": "Export detections",
-        "cardDescription": "Export your detection data to CSV, JSON, or other formats.",
-        "startButton": "Export",
-        "disabledReason": "Export is not yet available. Check back in a future release."
+        "sectionTitle": "Exportálás",
+        "cardTitle": "Észlelések exportálása",
+        "cardDescription": "Exportálja az észlelési adatait CSV, JSON vagy más formátumba."
       },
       "birdnetPi": {
         "cardTitle": "BirdNET-Pi",
-        "cardDescription": "Import detection history from a BirdNET-Pi SQLite database (birds.db).",
-        "startButton": "Import from BirdNET-Pi",
-        "wizardTitle": "Import from BirdNET-Pi"
+        "cardDescription": "Importálja az észlelési előzményeket egy BirdNET-Pi SQLite-adatbázisból (birds.db).",
+        "startButton": "Importálás BirdNET-Pi-ből",
+        "wizardTitle": "Importálás BirdNET-Pi-ből",
+        "experimentalNotice": "A BirdNET-Pi importálás kísérleti, és még előfordulhatnak hibák.",
+        "reportBug": "Hiba jelentése a GitHubon"
+      },
+      "birdsDbUpload": {
+        "cardTitle": "birds.db feltöltése",
+        "cardDescription": "Töltsön fel egy BirdNET-Pi adatbázisfájlt közvetlenül a böngészőjéből."
+      },
+      "activity": {
+        "sectionTitle": "Importálási tevékenység",
+        "empty": {
+          "title": "Nincs importálási tevékenység",
+          "description": "Amikor egy importálás fut, a folyamata itt jelenik meg."
+        },
+        "openWizard": "Importálási varázsló megnyitása"
       },
       "wizard": {
-        "stepsLabel": "Import wizard steps"
+        "stepsLabel": "Az importálási varázsló lépései"
       },
       "sourceAccess": {
-        "pathLabel": "Path to birds.db (relative to mount root)",
-        "pathHelpText": "Enter the path relative to the external media mount root, e.g. birdnet-pi/birds.db",
-        "pathRequiredReason": "Enter the path to birds.db to continue",
-        "mountDescription": "Your BirdNET-Pi database should be on the external media mount.",
-        "mountRoot": "Mount root",
-        "nativeTitle": "External media mount required",
-        "nativeDescription": "BirdNET-Pi import requires an external media mount, which is only available when BirdNET-Go runs in a container. Native (non-containerized) installs cannot use this import feature.",
-        "nativeHowTo": "To import from BirdNET-Pi, run BirdNET-Go in a container with the BirdNET-Pi data directory mounted as the external media volume.",
-        "missingTitle": "External media mount not found",
-        "missingDescription": "BirdNET-Go is running in a container but the external media mount is not accessible. Follow the steps below to set it up.",
-        "setupStepsLabel": "Setup steps",
-        "recheckButton": "Re-check",
-        "recheckHint": "After completing the setup steps, click Re-check to continue."
+        "pathLabel": "A birds.db elérési útja (a csatolási gyökérhez képest)",
+        "pathHelpText": "Adja meg az elérési utat a külső média csatolási gyökeréhez képest, pl. birdnet-pi/birds.db",
+        "pathRequiredReason": "A folytatáshoz adja meg a birds.db elérési útját",
+        "mountDescription": "A BirdNET-Pi adatbázisának a külső média csatolásán kell lennie.",
+        "mountRoot": "Csatolási gyökér",
+        "nativeTitle": "Külső média csatolása szükséges",
+        "nativeDescription": "A BirdNET-Pi importálásához külső média csatolása szükséges, amely csak akkor érhető el, ha a BirdNET-Go konténerben fut. A natív (nem konténeres) telepítések nem használhatják ezt az importálási funkciót.",
+        "nativeHowTo": "A BirdNET-Pi-ből való importáláshoz futtassa a BirdNET-Go-t olyan konténerben, amelyben a BirdNET-Pi adatkönyvtára külső médiakötetként van csatolva.",
+        "missingTitle": "A külső média csatolása nem található",
+        "missingDescription": "A BirdNET-Go konténerben fut, de a külső média csatolása nem érhető el. A beállításához kövesse az alábbi lépéseket.",
+        "setupStepsLabel": "Beállítási lépések",
+        "recheckButton": "Újraellenőrzés",
+        "recheckHint": "A beállítási lépések elvégzése után a folytatáshoz kattintson az Újraellenőrzés gombra."
+      },
+      "source": {
+        "title": "Hol vannak a BirdNET-Pi adatai?",
+        "candidatesIntro": "A következő BirdNET-Pi adatbázisokat találtuk:",
+        "selectButton": "Kiválasztás",
+        "useThisButton": "Ezt használom",
+        "detectionsSummary": "{count} észlelés, eddig: {date}",
+        "kindLocal": "Ezen az eszközön",
+        "kindRemovable": "Cserélhető meghajtó",
+        "kindNetwork": "Hálózati hely",
+        "unreadableTitle": "Megtalálva, de a BirdNET-Go nem tudja beolvasni",
+        "unreadableOwner": "Ezek az adatok egy másik felhasználóhoz tartoznak ({owner}).",
+        "manualEntryLink": "Nem látja? Adja meg a helyet manuálisan",
+        "manualEntryLabel": "A BirdNET-Pi adatbázis helye",
+        "manualValidating": "Ellenőrzés...",
+        "manualValid": "{count} észlelés található.",
+        "manualNotFound": "Ott nem találtunk fájlt.",
+        "manualUnreadable": "Megtaláltuk, de a BirdNET-Go még nem tudja beolvasni.",
+        "manualInvalid": "Ez a fájl nem BirdNET-Pi adatbázis.",
+        "zeroTitle": "Nem sikerült automatikusan megtalálni",
+        "zeroDescription": "Csatlakoztassa a BirdNET-Pi adatait tartalmazó meghajtót, majd ellenőrizze újra.",
+        "checkAgainButton": "Ellenőrzés újra",
+        "showCommandsLabel": "Parancsok megjelenítése",
+        "containerUnreadableHint": "A BirdNET-Go (UID {uid} alatt fut) nem tudja beolvasni ezt a fájlt. Javítsa a jogosultságokat a gazdagépen úgy, hogy a(z) {uid} UID be tudja olvasni, majd ellenőrizze újra.",
+        "elevation": {
+          "copying": "Az adatai másolása...",
+          "passwordTitle": "A BirdNET-Go-nak engedélyre van szüksége az adatok beolvasásához",
+          "passwordDescription": "Adja meg az eszköz rendszergazdai jelszavát, hogy a BirdNET-Go másolhassa az adatokat.",
+          "passwordLabel": "Rendszergazdai jelszó",
+          "passwordRequiredReason": "A folytatáshoz adja meg a rendszergazdai jelszót",
+          "httpWarning": "Ez az oldal nem HTTPS-t használ. A rendszergazdai jelszó titkosítatlanul lesz elküldve a helyi hálózaton. Csak megbízható hálózaton folytassa.",
+          "submitButton": "Másolás és folytatás",
+          "fallbackTitle": "A hozzáférés megadásához futtassa ezt a parancsot",
+          "fallbackDescription": "A BirdNET-Go nem tudja automatikusan megemelni a jogosultságokat. Futtassa az alábbi parancsot, majd kattintson az Ellenőrzés újra gombra.",
+          "disabledNote": "Az alkalmazáson belüli jogosultságemelés ki van kapcsolva. A hozzáférés megadásához használja az alábbi parancsot.",
+          "failed": "Nem sikerült. Ellenőrizze a jelszót és próbálja újra, vagy használja az alábbi parancsot."
+        }
       },
       "mode": {
-        "label": "What do you want to import?",
+        "label": "Mit szeretne importálni?",
         "dbOnly": {
-          "label": "Database only",
-          "description": "Import detection records from birds.db. Audio clips are not imported."
+          "label": "Csak adatbázis",
+          "description": "Importálja az észlelési rekordokat a birds.db-ből. A hangklipek nem kerülnek importálásra."
         },
         "dbAudio": {
-          "label": "Database + audio clips",
-          "description": "Import detection records and associated audio recordings.",
-          "badge": "Not available",
-          "disabledReason": "Audio clip import is not yet available. Only database-only import is supported."
+          "label": "Adatbázis + hangklipek",
+          "description": "Importálja az észlelési rekordokat és a kapcsolódó hangfelvételeket.",
+          "badge": "Nem érhető el",
+          "disabledReason": "A hangklipek importálása még nem érhető el. Csak az adatbázis importálása támogatott."
         }
       },
       "confirm": {
-        "description": "Review your import settings before starting. Imported detections are tagged with the source birdnet-pi and duplicates are skipped automatically.",
-        "source": "Source path",
-        "mode": "Import mode",
-        "tagging": "Source tag",
-        "taggingValue": "birdnet-pi (auto-applied)",
-        "deduplicationNote": "Duplicate detections (same species, time, and date already in the database) are skipped automatically. Exact counts will be shown live during the import.",
-        "startButton": "Start import"
+        "description": "Indítás előtt tekintse át az importálási beállításokat. Az importált észlelések a birdnet-pi forrással lesznek megjelölve, a duplikátumok pedig automatikusan ki lesznek hagyva.",
+        "source": "Forrás elérési útja",
+        "mode": "Importálási mód",
+        "tagging": "Forráscímke",
+        "taggingValue": "birdnet-pi (automatikusan alkalmazva)",
+        "deduplicationNote": "A duplikált észlelések (azonos faj, idő és dátum, amelyek már szerepelnek az adatbázisban) automatikusan ki lesznek hagyva. A pontos számok élőben jelennek meg az importálás során.",
+        "startButton": "Importálás indítása"
       },
       "progress": {
-        "label": "Import progress",
-        "runningLabel": "Import running",
-        "progressLabel": "{percent}% complete",
-        "cancelButton": "Cancel",
-        "cancellingLabel": "Cancelling...",
-        "cancelledMessage": "Import was cancelled.",
-        "processed": "Processed",
-        "inserted": "Inserted",
-        "skipped": "Skipped",
-        "errors": "Errors",
+        "label": "Importálás folyamata",
+        "runningLabel": "Importálás folyamatban",
+        "progressLabel": "{percent}% kész",
+        "cancelButton": "Mégse",
+        "cancellingLabel": "Megszakítás...",
+        "cancelledMessage": "Az importálás megszakadt.",
+        "processed": "Feldolgozva",
+        "inserted": "Beszúrva",
+        "skipped": "Kihagyva",
+        "errors": "Hibák",
         "phase": {
-          "validate": "Validating",
-          "dedup": "Deduplicating",
-          "import": "Importing"
+          "validate": "Ellenőrzés",
+          "dedup": "Duplikátumok eltávolítása",
+          "import": "Importálás"
         }
       },
       "done": {
-        "successTitle": "Import complete",
-        "successDescription": "Your BirdNET-Pi detections have been imported successfully.",
-        "cancelledTitle": "Import cancelled",
-        "cancelledDescription": "The import was cancelled before completing.",
-        "errorTitle": "Import failed",
-        "viewDetectionsLink": "View imported detections",
-        "partialInserted": "{count} detections were imported before cancellation.",
-        "importAnother": "Import another"
+        "successTitle": "Importálás kész",
+        "successDescription": "A BirdNET-Pi észleléseit sikeresen importáltuk.",
+        "cancelledTitle": "Importálás megszakítva",
+        "cancelledDescription": "Az importálás a befejezés előtt megszakadt.",
+        "errorTitle": "Az importálás sikertelen",
+        "interruptedTitle": "Importálás félbeszakadt",
+        "interruptedDescription": "A szerverrel való kapcsolat megszakadt az importálás közben, ezért a végeredménye ismeretlen. Ellenőrizze az észleléseit, és szükség esetén indítsa újra az importálást.",
+        "viewDetectionsLink": "Importált észlelések megtekintése",
+        "partialInserted": "{count} észlelést importáltunk a megszakítás előtt.",
+        "importAnother": "Újabb importálása"
       },
       "errors": {
-        "loadFailed": "Failed to load import status. Please try again.",
-        "mediaLoadFailed": "Failed to check external media. Please try again.",
-        "alreadyRunning": "An import is already in progress. Please wait for it to complete.",
-        "startFailed": "Failed to start import. Please try again.",
-        "cancelFailed": "Failed to cancel import.",
-        "importFailed": "Import failed. Please check your configuration and try again."
+        "loadFailed": "Az importálás állapotának betöltése sikertelen. Kérjük, próbálja újra.",
+        "mediaLoadFailed": "A külső média ellenőrzése sikertelen. Kérjük, próbálja újra.",
+        "alreadyRunning": "Már folyamatban van egy importálás. Kérjük, várja meg, amíg befejeződik.",
+        "startFailed": "Az importálás indítása sikertelen. Kérjük, próbálja újra.",
+        "cancelFailed": "Az importálás megszakítása sikertelen.",
+        "importFailed": "Az importálás sikertelen. Kérjük, ellenőrizze a konfigurációt és próbálja újra."
       }
     },
     "database": {
@@ -1777,11 +1844,14 @@
   "analytics": {
     "hub": {
       "tabs": {
-        "overview": "Áttekintés",
         "patterns": "Tevékenységi minták",
         "trends": "Trendek",
         "biodiversity": "Biodiverzitás",
-        "quality": "Ellenőrzés és pontosság"
+        "quality": "Ellenőrzés és pontosság",
+        "summary": "Summary",
+        "nocturnal": "Éjszakai aktivitás",
+        "weather": "Időjárás",
+        "soundscape": "Hangkép"
       },
       "aria": {
         "tabs": "Elemzési szakaszok"
@@ -1801,13 +1871,25 @@
         "notEnoughDataHint": "Ehhez a diagramhoz legalább {min} adatpont szükséges. Folytassa a rögzítést, és nézzen vissza hamarosan.",
         "export": "Exportálás",
         "exportComingSoon": "A CSV-exportálás hamarosan érkezik."
-      },
-      "comingSoon": {
-        "description": "Ez a szakasz fejlesztés alatt áll, és egy közelgő frissítésben érkezik."
       }
     },
-    "title": "Áttekintés",
     "loadingError": "Néhány analitikai adat betöltése sikertelen. Próbálja később újra.",
+    "comingSoon": {
+      "badge": "Hamarosan",
+      "plannedTitle": "Tervezett funkciók",
+      "weather": {
+        "description": "Madárfelvételek a helyi időjárási viszonyokhoz mérve. Ez a nézet az észleléseket összekapcsolja a hőmérséklettel, széllel és csapadékkal.",
+        "feature1": "Észlelések korrelálása hőmérséklettel, széllel és csapadékkal",
+        "feature2": "Megmutatja, hogyan befolyásolják az időjárási frontok a fajok aktivitását",
+        "feature3": "Szezonális aktivitás összehasonlítása a historikus időjárási adatokkal"
+      },
+      "soundscape": {
+        "description": "Átfogó kép a környezet akusztikai karakteréről, akusztikai indexek segítségével összefoglalva a hangkép diverzitását az idő múlásával.",
+        "feature1": "Akusztikus indexek, amelyek összefoglalják a hangkép összetettségét",
+        "feature2": "A biodiverzitás nyomon követése a környezeti hang révén az idő múlásával",
+        "feature3": "Hajnali és esti kórusok azonosítása az akusztikai felvételekben"
+      }
+    },
     "stats": {
       "totalDetections": "Összes detektálás",
       "uniqueSpecies": "Egyedi fajok",
@@ -4887,7 +4969,8 @@
       "typesRequired": "Az objektum típus és trigger típus kötelező",
       "duplicateName": "Ezzel a névvel már létezik szabály",
       "invalidJSON": "Érvénytelen JSON",
-      "invalidEscalation": "Az eszkalációs lépések érvénytelenek"
+      "invalidEscalation": "Az eszkalációs lépések érvénytelenek",
+      "engineUnavailable": "Alerting engine is unavailable"
     },
     "detection": {
       "invalidDate": "Érvénytelen {paramName} formátum, használja az ÉÉÉÉ-HH-NN formátumot"
@@ -5251,6 +5334,7 @@
     "restartFailed": "Az újraindítás kezdeményezése sikertelen",
     "reasons": {
       "webserver": "Web server / network settings",
+      "oauth": "Authentication provider settings",
       "database": "Database settings",
       "logging": "Logging settings",
       "tlsCertificate": "TLS certificate"

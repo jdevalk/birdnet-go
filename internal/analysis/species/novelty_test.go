@@ -216,11 +216,11 @@ type noveltyHistoryDatastore struct {
 	previousDates  map[string]string
 }
 
-func (d *noveltyHistoryDatastore) GetNewSpeciesDetections(context.Context, string, string, int, int) ([]datastore.NewSpeciesData, error) {
+func (d *noveltyHistoryDatastore) GetNewSpeciesDetections(context.Context, string, string, int, int, ...uint) ([]datastore.NewSpeciesData, error) {
 	return d.lifetime, nil
 }
 
-func (d *noveltyHistoryDatastore) GetSpeciesFirstDetectionInPeriod(context.Context, string, string, int, int) ([]datastore.NewSpeciesData, error) {
+func (d *noveltyHistoryDatastore) GetSpeciesFirstDetectionInPeriod(context.Context, string, string, int, int, ...uint) ([]datastore.NewSpeciesData, error) {
 	return nil, nil
 }
 

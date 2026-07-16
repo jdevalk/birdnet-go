@@ -181,10 +181,11 @@ func NewBirdNET(settings *conf.Settings, modelInfo *ModelInfo) (*BirdNET, error)
 		bn.ModelInfo = defaultClassifierModelInfo(runtime.GOARCH, findModelPathInStandardPaths)
 	}
 
-	// On ONNX-only builds (notflite, the arm64 image), transparently remap a
-	// resolved v2.4 TFLite model (from version:"2.4" or the default) to the INT8
-	// ONNX entry so existing arm64 configs keep starting without a TFLite backend.
-	bn.ModelInfo = remapV24ForONNXOnly(&bn.ModelInfo, tfliteBackendAvailable, findModelPathInStandardPaths)
+	// On arm64 (container images ship the INT8-ARM ONNX model), transparently remap
+	// a resolved v2.4 TFLite model (from version:"2.4" or the default) to the INT8
+	// ONNX entry so arm64 keeps the reduced-memory ONNX default; the TFLite backend
+	// stays available for custom `.tflite` model paths (CustomPath, left untouched).
+	bn.ModelInfo = remapV24ToONNXOnARM64(&bn.ModelInfo, runtime.GOARCH, tfliteBackendAvailable, findModelPathInStandardPaths)
 
 	// Seed the runtime triplet from the resolved static metadata so a model that
 	// somehow loads without an initialize*Model path still reports a sane value.
@@ -530,8 +531,10 @@ func (bn *BirdNET) initializeMetaModel(settings *conf.Settings) error {
 
 	// Auto-select v3 geomodel for compatible classifiers when files exist on disk.
 	// Only applies locally for routing; does NOT publish settings to avoid
-	// inconsistency if the backend fails to initialize.
-	if rf.Model == "" && bn.modelsDir != "" && shouldAutoSelectV3Geomodel(bn.ModelInfo.ID, bn.modelsDir) {
+	// inconsistency if the backend fails to initialize. Skipped when an explicit
+	// rangefilter.modelpath is set, so a user-provided range-filter path is never
+	// overridden by the stock geomodel (mirrors the arm64 default gate below).
+	if shouldAutoSelectV3GeomodelForConfig(rf.Model, rf.ModelPath, bn.ModelInfo.ID, bn.modelsDir) {
 		localSettings := conf.CloneSettings(settings)
 		applyAutoSelectedGeomodelPaths(localSettings, bn.modelsDir)
 		settings = localSettings
@@ -542,21 +545,22 @@ func (bn *BirdNET) initializeMetaModel(settings *conf.Settings) error {
 	}
 
 	// On arm64 (container images ship the ONNX range filter instead of the TFLite
-	// MData models), prefer the ONNX MData range filter when no range filter is
-	// configured and the v3 geomodel was not auto-selected above. Gated to the
-	// BirdNET v2.4 family: the MData V2 model outputs the v2.4 species set, and the
-	// strict ONNX path (no labels file) requires the model output dimension to
-	// equal the classifier label count, so it only fits a v2.4-family classifier.
-	// Routed locally only; settings are not published.
-	if rf.Model == "" && rf.ModelPath == "" && isBirdNETV24Family(bn.ModelInfo.ID) {
-		if path, ok := defaultRangeFilterONNXPath(runtime.GOARCH, findModelPathInStandardPaths); ok {
-			localSettings := conf.CloneSettings(settings)
-			localSettings.BirdNET.RangeFilter.ModelPath = path
-			settings = localSettings
-			rf = settings.BirdNET.RangeFilter
-			log.Info("Selected ONNX range filter (arm64 default)",
-				logger.String("model_path", path))
-		}
+	// MData models), prefer the ONNX MData range filter when the range filter is left
+	// on auto-select ("" or the "latest" default), no explicit model path is set, and
+	// the v3 geomodel was not auto-selected above. Gated to the BirdNET v2.4 family:
+	// the MData V2 model outputs the v2.4 species set, and the strict ONNX path (no
+	// labels file) requires the model output dimension to equal the classifier label
+	// count, so it only fits a v2.4-family classifier. Without this, the "latest"
+	// default dead-ends at the TFLite backend, which has no model file on ONNX-only
+	// arm64 images, leaving the instance unfiltered (#3932). Routed locally only;
+	// settings are not published.
+	if path, ok := shouldSelectDefaultONNXRangeFilter(rf.Model, rf.ModelPath, bn.ModelInfo.ID, runtime.GOARCH, findModelPathInStandardPaths); ok {
+		localSettings := conf.CloneSettings(settings)
+		localSettings.BirdNET.RangeFilter.ModelPath = path
+		settings = localSettings
+		rf = settings.BirdNET.RangeFilter
+		log.Info("Selected ONNX range filter (arm64 default)",
+			logger.String("model_path", path))
 	}
 
 	switch resolveRangeFilterBackend(&rf) {
@@ -641,13 +645,25 @@ func (bn *BirdNET) initializeTFLiteMetaModel(settings *conf.Settings) error {
 func (bn *BirdNET) loadLabels() error {
 	bn.Settings.BirdNET.Labels = []string{} // Reset labels.
 
-	// Use embedded labels if no external label path is set
+	// Use embedded labels if no external label path is set, otherwise use external labels.
+	var err error
 	if bn.Settings.BirdNET.LabelPath == "" {
-		return bn.loadEmbeddedLabels()
+		err = bn.loadEmbeddedLabels()
+	} else {
+		err = bn.loadExternalLabels()
+	}
+	if err != nil {
+		return err
 	}
 
-	// Otherwise use external labels
-	return bn.loadExternalLabels()
+	// Refresh the cached ModelInfo.NumSpecies to the actually-loaded label count.
+	// ModelInfo is seeded from the registry template, whose NumSpecies is the stock
+	// catalog figure (e.g. 6523 for BirdNET v2.4) and can differ from the real label
+	// file (6522) or a custom/sliced label file. loadLabels is the single place the
+	// label set changes, so refreshing here keeps o.ModelInfo / PrimaryModelInfo()
+	// reporting the live count. bn.NumSpecies() already reads len(labels) directly.
+	bn.ModelInfo.NumSpecies = len(bn.Settings.BirdNET.Labels)
+	return nil
 }
 
 // loadEmbeddedLabels loads labels from the embedded label files
@@ -1273,12 +1289,12 @@ func (bn *BirdNET) reloadModelInternal() error {
 				Build()
 		}
 		newInfo.CustomPath = bn.Settings.BirdNET.ModelPath
-		// Mirror NewBirdNET (the remap at construction): on ONNX-only builds (notflite,
-		// arm64) a v2.4 TFLite model resolved from version:"2.4" is remapped to the INT8
-		// ONNX entry. Without this, a no-op reload re-resolves to the TFLite entry, and the
-		// identity check below misreads it as a model change requiring an orchestrator
-		// restart, so in-place hot-reloads fail and roll back.
-		newInfo = remapV24ForONNXOnly(&newInfo, tfliteBackendAvailable, findModelPathInStandardPaths)
+		// Mirror NewBirdNET (the remap at construction): on arm64 a v2.4 TFLite model
+		// resolved from version:"2.4" is remapped to the INT8 ONNX entry. Without this, a
+		// no-op reload re-resolves to the TFLite entry, and the identity check below
+		// misreads it as a model change requiring an orchestrator restart, so in-place
+		// hot-reloads fail and roll back.
+		newInfo = remapV24ToONNXOnARM64(&newInfo, runtime.GOARCH, tfliteBackendAvailable, findModelPathInStandardPaths)
 		if newInfo.ID != bn.ModelInfo.ID || newInfo.CustomPath != bn.ModelInfo.CustomPath {
 			rollback()
 			return errors.Newf("model identity changed from %s to %s: requires orchestrator restart", bn.ModelInfo.ID, newInfo.ID).
@@ -1458,8 +1474,11 @@ func (bn *BirdNET) GetSpeciesOccurrenceAtTime(species string, detectionTime time
 		}
 	}
 
-	// Fallback to calculating probable species if cache miss
-	day := detectionTime.Truncate(24 * time.Hour)
+	// Fallback to calculating probable species if cache miss. Anchor to the
+	// local calendar day (matching getCachedSpeciesScores, which keys on the
+	// local DateOnly of detectionTime) rather than UTC-truncating, so the
+	// fallback computes the same geomodel week as the cache path.
+	day := conf.LocalNoon(detectionTime)
 	speciesScores, err := bn.GetProbableSpecies(day, 0.0)
 	if err != nil {
 		bn.Debug("Error getting probable species for occurrence: %v", err)
@@ -1758,6 +1777,18 @@ func shouldAutoSelectV3Geomodel(modelID, modelsDir string) bool {
 		return false
 	}
 	return true
+}
+
+// shouldAutoSelectV3GeomodelForConfig reports whether initializeMetaModel should
+// auto-select the stock v3 geomodel for this range-filter config. It requires the
+// model to be auto-select ("" or the "latest" default), no explicit range-filter
+// modelpath (an explicit user path is never overridden), a known models dir, and a
+// compatible classifier with the stock geomodel files present on disk. The
+// modelpath guard mirrors shouldSelectDefaultONNXRangeFilter so both auto-select
+// gates honor an explicit path consistently.
+func shouldAutoSelectV3GeomodelForConfig(model, modelPath, classifierID, modelsDir string) bool {
+	return isAutoSelectRangeFilterModel(model) && modelPath == "" && modelsDir != "" &&
+		shouldAutoSelectV3Geomodel(classifierID, modelsDir)
 }
 
 // applyAutoSelectedGeomodelPaths configures the range filter settings to

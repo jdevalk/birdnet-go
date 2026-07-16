@@ -31,6 +31,7 @@ import (
 	"github.com/tphakala/birdnet-go/internal/mqtt"
 	"github.com/tphakala/birdnet-go/internal/notification"
 	"github.com/tphakala/birdnet-go/internal/observability"
+	"github.com/tphakala/birdnet-go/internal/openfauna"
 	"github.com/tphakala/birdnet-go/internal/privacy"
 	"github.com/tphakala/birdnet-go/internal/securefs"
 	"github.com/tphakala/birdnet-go/internal/spectrogram"
@@ -227,6 +228,18 @@ type PendingDetection struct {
 // merged into a single entry for cross-model consensus evaluation.
 func pendingDetectionKey(sourceID, speciesName string) string {
 	return sourceID + ":" + speciesName
+}
+
+// pendingKeyForDetection builds the pendingDetections map key for a detection,
+// keying on the scientific name rather than the common name. Ingestion already
+// normalized the scientific name to its canonical form (parseAndValidateSpecies),
+// so two models reporting one taxon under different legacy/modern names merge into
+// a single pending entry for cross-model consensus. Keying on the scientific name
+// also fixes a latent bug where two genuinely different species sharing a localized
+// common name were wrongly merged. The empty-scientific-name guard in processResults
+// drops invalid detections before this point.
+func pendingKeyForDetection(sourceID string, det *Detections) string {
+	return pendingDetectionKey(sourceID, strings.ToLower(det.Result.Species.ScientificName))
 }
 
 // suggestLevelForDisabledFilter provides smart recommendations for filter levels
@@ -709,7 +722,7 @@ func (p *Processor) processDetections(item classifier.Results) {
 		p.pendingMutex.Lock()
 
 		now := time.Now()
-		mapKey := pendingDetectionKey(item.Source.ID, commonName)
+		mapKey := pendingKeyForDetection(item.Source.ID, &det)
 
 		if existing, exists := p.pendingDetections[mapKey]; exists {
 			// Update the existing detection (may be from same or different model)
@@ -819,7 +832,7 @@ func (p *Processor) processResults(settings *conf.Settings, item classifier.Resu
 	// Process each result in item.Results
 	for _, result := range item.Results {
 		// Parse and validate species information
-		scientificName, commonName, speciesCode, speciesLowercase := p.parseAndValidateSpecies(settings, result, item)
+		scientificName, commonName, speciesCode, speciesLowercase, rawScientificName := p.parseAndValidateSpecies(settings, result, item)
 		// Skip if either scientific or common name is missing (partial/invalid parsing)
 		if scientificName == "" || commonName == "" {
 			if settings.Debug {
@@ -861,7 +874,7 @@ func (p *Processor) processResults(settings *conf.Settings, item classifier.Resu
 		}
 
 		// Create the detection
-		det := p.createDetection(settings, item, result, scientificName, commonName, speciesCode)
+		det := p.createDetection(settings, item, result, scientificName, commonName, speciesCode, rawScientificName)
 		detections = append(detections, det)
 	}
 
@@ -930,7 +943,7 @@ func (p *Processor) applyUltrasonicFilter(settings *conf.Settings, item classifi
 // parseAndValidateSpecies parses species information and validates it
 //
 //nolint:gocritic // hugeParam: Pass by value is intentional - avoids pointer dereferencing in hot path
-func (p *Processor) parseAndValidateSpecies(settings *conf.Settings, result datastore.Results, item classifier.Results) (scientificName, commonName, speciesCode, speciesLowercase string) {
+func (p *Processor) parseAndValidateSpecies(settings *conf.Settings, result datastore.Results, item classifier.Results) (scientificName, commonName, speciesCode, speciesLowercase, rawScientificName string) {
 	// Use BirdNET's EnrichResultWithTaxonomy to get species information
 	scientificName, commonName, speciesCode = p.Bn.EnrichResultWithTaxonomy(result.Species)
 
@@ -943,8 +956,16 @@ func (p *Processor) parseAndValidateSpecies(settings *conf.Settings, result data
 				logger.Float32("confidence", result.Confidence),
 				logger.String("operation", "species_format_validation"))
 		}
-		return "", "", "", ""
+		return "", "", "", "", ""
 	}
+
+	// Single ingestion chokepoint for species de-duplication: collapse taxonomic
+	// aliases to the canonical scientific name so the same taxon emitted by different
+	// models is stored under one identity. This runs AFTER the inclusion gate (already
+	// alias-aware via the range filter, PR #3725) and BEFORE the detection is created,
+	// so the canonical name flows into the pending-merge key, storage, and tracker.
+	// rawScientificName preserves the model's original name (empty when no alias applied).
+	scientificName, commonName, speciesCode, rawScientificName = canonicalizeSpecies(p.Bn, scientificName, commonName, speciesCode)
 
 	// Use scientific name as fallback when common name is not available.
 	if commonName == "" {
@@ -1056,8 +1077,16 @@ func (p *Processor) shouldFilterDetection(settings *conf.Settings, result datast
 // in the exclude list. Matching is case-insensitive and supports either name form, consistent
 // with the range filter's matchesSpecies logic (see birdnet/range_filter.go).
 func isSpeciesExcluded(commonName, scientificName string, excludeList []string) bool {
+	// Canonicalize the detection's scientific name once so an exclude entry the user
+	// keyed on a legacy/alias scientific name still matches a detection that now
+	// carries the canonical name (and vice versa). CanonicalName is identity for
+	// non-aliased names, so non-reclassified species behave exactly as before.
+	canonicalSci := openfauna.CanonicalName(scientificName)
 	for _, excluded := range excludeList {
-		if strings.EqualFold(commonName, excluded) || strings.EqualFold(scientificName, excluded) {
+		if strings.EqualFold(commonName, excluded) {
+			return true
+		}
+		if scientificName != "" && strings.EqualFold(canonicalSci, openfauna.CanonicalName(excluded)) {
 			return true
 		}
 	}
@@ -1067,18 +1096,13 @@ func isSpeciesExcluded(commonName, scientificName string, excludeList []string) 
 // createDetection creates a detection object with all necessary information
 //
 //nolint:gocritic // hugeParam: Pass by value is intentional - avoids pointer dereferencing in hot path
-func (p *Processor) createDetection(settings *conf.Settings, item classifier.Results, result datastore.Results, scientificName, commonName, speciesCode string) Detections {
-	// Create file name for audio clip
-	clipName := p.generateClipName(settings, scientificName, result.Confidence)
-
-	// Bat models at high sample rates need WAV when the configured format
-	// (MP3/Opus/AAC) cannot carry rates above 48kHz. Override the extension
-	// now so the database stores the same filename the export will write.
-	mInfo := classifier.DetectionModelInfoForID(item.ModelID)
-	sourceRate := p.resolveAudioSource(item.Source).SampleRate
-	if needsBatFormatFallback(mInfo.Name, mInfo.Version, sourceRate, settings.Realtime.Audio.Export.Type) {
-		clipName = replaceExtension(clipName, ".wav")
-	}
+func (p *Processor) createDetection(settings *conf.Settings, item classifier.Results, result datastore.Results, scientificName, commonName, speciesCode, rawScientificName string) Detections {
+	// Create file name for audio clip. When audio export is disabled the clip
+	// name is left empty so it stays a truthful per-detection signal: no file
+	// is or will be written, so nothing must reference one. The media API and
+	// the UI gate on a non-empty ClipName, and no SaveAudioAction is scheduled
+	// when export is off, so there is no async-export race to preserve here.
+	clipName := p.resolveClipName(settings, &item, scientificName, result.Confidence)
 
 	// Get capture length and pre-capture length for detection end time calculation
 	captureLength := time.Duration(settings.Realtime.Audio.Export.Length) * time.Second
@@ -1099,7 +1123,7 @@ func (p *Processor) createDetection(settings *conf.Settings, item classifier.Res
 	detectionResult := p.createDetectionResult(settings,
 		detectionTime,
 		beginTime, endTime,
-		scientificName, commonName, speciesCode,
+		scientificName, commonName, speciesCode, rawScientificName,
 		float64(result.Confidence),
 		item.Source, clipName,
 		item.ElapsedTime, occurrence,
@@ -1134,7 +1158,7 @@ func (p *Processor) createDetection(settings *conf.Settings, item classifier.Res
 func (p *Processor) createDetectionResult(settings *conf.Settings,
 	detectionTime time.Time,
 	beginTime, endTime time.Time,
-	scientificName, commonName, speciesCode string,
+	scientificName, commonName, speciesCode, rawScientificName string,
 	confidence float64,
 	source datastore.AudioSource, clipName string,
 	elapsedTime time.Duration, occurrence float64,
@@ -1151,9 +1175,10 @@ func (p *Processor) createDetectionResult(settings *conf.Settings,
 		BeginTime:   beginTime,
 		EndTime:     endTime,
 		Species: detection.Species{
-			ScientificName: scientificName,
-			CommonName:     commonName,
-			Code:           speciesCode,
+			ScientificName:    scientificName,
+			CommonName:        commonName,
+			Code:              speciesCode,
+			RawScientificName: rawScientificName,
 		},
 		Confidence:     math.Round(confidence*100) / 100,
 		Latitude:       settings.BirdNET.Latitude,
@@ -1217,7 +1242,12 @@ func convertToAdditionalResults(results []datastore.Results, primaryScientificNa
 	seen := make(map[string]int, len(results)) // scientificName → index in additional
 	for _, r := range results {
 		sp := detection.ParseSpeciesString(r.Species)
-		if sp.ScientificName == primaryScientificName {
+		// Canonicalize the candidate's scientific name so the primary species is
+		// excluded even when this prediction carries it under a legacy/alias name.
+		// primaryScientificName is the canonical name from parseAndValidateSpecies;
+		// without this the aliased primary would leak into the additional results under
+		// its legacy name and the same taxon would be stored twice for one detection.
+		if openfauna.CanonicalName(sp.ScientificName) == primaryScientificName {
 			continue
 		}
 		if idx, exists := seen[sp.ScientificName]; exists {
@@ -1328,6 +1358,38 @@ func (p *Processor) getBaseConfidenceThreshold(settings *conf.Settings, commonNa
 		return float32(settings.Bat.Threshold)
 	}
 	return float32(settings.BirdNET.Threshold)
+}
+
+// resolveClipName returns the clip filename to persist for a detection, or an
+// empty string when audio export is disabled. Keeping ClipName empty while
+// export is off makes it a truthful per-detection signal (no clip exists or is
+// being encoded), which the media endpoint and the frontend rely on to gate
+// audio playback per detection under runtime toggling of the export setting.
+func (p *Processor) resolveClipName(settings *conf.Settings, item *classifier.Results, scientificName string, confidence float32) string {
+	if !settings.Realtime.Audio.Export.Enabled {
+		return ""
+	}
+
+	clipName := p.generateClipName(settings, scientificName, confidence)
+	return p.applyBatFormatFallback(settings, clipName, item.ModelID, item.Source)
+}
+
+// applyBatFormatFallback overrides a clip name's extension to .wav when a bat model
+// at a high source sample rate is exported to a format (MP3/Opus/AAC) that cannot
+// carry rates above 48kHz, so the stored ClipName matches the file the exporter
+// actually writes. It is shared by the createDetection and extended-capture paths
+// so both persist the same fallback extension. An empty clip name is returned
+// unchanged.
+func (p *Processor) applyBatFormatFallback(settings *conf.Settings, clipName, modelID string, source datastore.AudioSource) string {
+	if clipName == "" {
+		return clipName
+	}
+	mInfo := classifier.DetectionModelInfoForID(modelID)
+	sourceRate := p.resolveAudioSource(source).SampleRate
+	if needsBatFormatFallback(mInfo.Name, mInfo.Version, sourceRate, settings.Realtime.Audio.Export.Type) {
+		return replaceExtension(clipName, ".wav")
+	}
+	return clipName
 }
 
 // generateClipName generates a clip name for the given scientific name and confidence.

@@ -145,6 +145,13 @@ func (s *StreamConfig) Validate() error {
 		return fmt.Errorf("invalid channel mode '%s' for '%s': must be downmix, left, or right", s.ChannelMode, s.Name)
 	}
 
+	// Validate gain range (NaN/Inf bypass < and > comparisons). Mirrors the
+	// AudioSourceConfig.Validate check so a hand-edited config.yaml or a non-UI
+	// API client cannot push an out-of-range gain past the frontend clamp.
+	if math.IsNaN(s.Gain) || math.IsInf(s.Gain, 0) || s.Gain < MinAudioGain || s.Gain > MaxAudioGain {
+		return fmt.Errorf("stream '%s': gain %.1f dB out of range [%.0f, +%.0f]", s.Name, s.Gain, MinAudioGain, MaxAudioGain)
+	}
+
 	// Validate URL scheme matches type
 	if err := s.validateURLScheme(); err != nil {
 		return err
@@ -387,10 +394,13 @@ func (s *AudioSettings) clearFfmpegMetadata() {
 	s.FfprobePath = ""
 }
 
-// applyFfmpegFormatFallback forces WAV export when FFmpeg is unavailable and
-// export is enabled. Does nothing when export is disabled.
+// applyFfmpegFormatFallback forces WAV export when FFmpeg is unavailable and an
+// FFmpeg-only format is configured. WAV and FLAC are encoded natively (no FFmpeg
+// dependency), so they are left as-is; only the lossy formats (MP3/AAC/Opus) need
+// FFmpeg. Does nothing when export is disabled.
 func (s *AudioSettings) applyFfmpegFormatFallback() {
-	if s.Export.Enabled && s.FfmpegPath == "" && s.Export.Type != AudioExportTypeWAV {
+	if s.Export.Enabled && s.FfmpegPath == "" &&
+		s.Export.Type != AudioExportTypeWAV && s.Export.Type != AudioExportTypeFLAC {
 		GetLogger().Warn("FFmpeg not available, forcing WAV format for audio export",
 			logger.String("previous_type", s.Export.Type))
 		s.Export.Type = AudioExportTypeWAV

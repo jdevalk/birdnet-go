@@ -24,6 +24,26 @@ const (
 	HoursPerDay   = 24                 // Hours in a day
 )
 
+// Spectrogram render sizes (image width in pixels) shared across api/v2 domains.
+// Widths are DFT_size + 2 (enabling fast FFT instead of brute-force DFT, ~20x
+// speedup) and are 2x height to maintain a ~2:1 aspect ratio. The media handler
+// renders spectrograms at these sizes and the detections handler matches
+// spectrogram PNG filenames against them when deleting a clip, so the contract
+// lives on the shared substrate to stay in sync.
+const (
+	SpectrogramSizeSm = 258  // height=129, DFT=256
+	SpectrogramSizeMd = 514  // height=257, DFT=512
+	SpectrogramSizeLg = 1026 // height=513, DFT=1024 (default render size)
+	SpectrogramSizeXl = 2050 // height=1025, DFT=2048
+)
+
+// StatusClientClosedRequest is Nginx's non-standard HTTP status code for a
+// client that closed the connection before the server responded. It is shared
+// across api/v2 domains: the media handler returns it when a client cancels an
+// audio/spectrogram request, and the analytics handler returns it when a client
+// cancels an analytics query, so the value lives on the shared substrate.
+const StatusClientClosedRequest = 499
+
 // GetBirdNETInstance returns the BirdNET orchestrator or an error if unavailable.
 // It snapshots the processor first to avoid a TOCTOU race. Shared by the range,
 // heatmap, and diagnostics handlers.
@@ -80,4 +100,24 @@ func ParsePaginationLimit(value string, defaultVal, maxVal int) int {
 		return defaultVal
 	}
 	return limit
+}
+
+// RedactedValue is the placeholder the settings API returns in place of stored
+// secrets. It lives on the shared substrate so the settings save flow (package
+// api) and the integrations test-connection handlers match the same sentinel and
+// cannot drift apart.
+const RedactedValue = "**********"
+
+// RestoreRedactedSecret replaces a redacted placeholder in an incoming secret
+// field with the current (real) value. It is the canonical single-field restore
+// primitive shared by the settings save flow (restoreRedactedSecrets) and the
+// integration test-connection handlers, so both paths match the same sentinel
+// against the same RedactedValue constant. A nil incoming pointer is a no-op.
+func RestoreRedactedSecret(current string, incoming *string) {
+	if incoming == nil {
+		return
+	}
+	if *incoming == RedactedValue {
+		*incoming = current
+	}
 }

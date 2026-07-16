@@ -97,9 +97,12 @@ type SSESoundLevelData struct {
 	EventType string `json:"eventType"`
 }
 
-// safeBaseName returns the filename component of a path, or empty string if the path is empty.
+// SafeBaseName returns the filename component of a path, or empty string if the path is empty.
 // Unlike filepath.Base("") which returns ".", this returns "" for empty inputs.
-func safeBaseName(path string) string {
+// It defines the clip-name privacy contract shared by the SSE feed and the REST
+// detection responses: only the basename is exposed, never the on-disk directory
+// layout, and an empty clip name stays empty (a truthful "no clip" signal).
+func SafeBaseName(path string) string {
 	if path == "" {
 		return ""
 	}
@@ -120,7 +123,7 @@ func NewSSEDetectionData(note *datastore.Note, birdImage *imageprovider.BirdImag
 		Confidence:     note.Confidence,
 		Latitude:       note.Latitude,
 		Longitude:      note.Longitude,
-		ClipName:       safeBaseName(note.ClipName),
+		ClipName:       SafeBaseName(note.ClipName),
 		Verified:       note.Verified,
 		Locked:         note.Locked,
 		Unlikely:       note.Unlikely,
@@ -170,6 +173,15 @@ type SSEClient struct {
 	Response       http.ResponseWriter
 	Done           chan struct{} // Signal-only buffered channel to prevent blocking
 	StreamType     string        // StreamTypeDetections, StreamTypeSoundLevels, or StreamTypeAll
+
+	// Authenticated records the client's authentication state, captured ONCE at
+	// connect time (mirroring StreamAudioLevel, which checks isClientAuthenticated
+	// per connection). The detection stream reads this to decide whether to expose
+	// the raw audio source DisplayName: unauthenticated subscribers receive only
+	// the stable Source.ID, since DisplayName can embed internal host details for
+	// stream sources without a user-configured name. Set before the read loop runs
+	// and never mutated afterwards, so concurrent broadcasts read it race-free.
+	Authenticated bool
 
 	// Health tracking for auto-disconnect of slow/blocked clients
 	// Uses atomic operations for thread-safe access during concurrent broadcasts
@@ -247,22 +259,26 @@ func (m *SSEManager) BroadcastDetection(detection *SSEDetectionData) {
 	var blockedClients []string
 
 	for clientID, client := range m.clients {
-		select {
-		case client.Channel <- *detection:
-			// Successfully sent to client - reset health counter atomically
-			client.consecutiveDrops.Store(0)
+		if client.StreamType == StreamTypeDetections || client.StreamType == StreamTypeAll {
+			if client.Channel != nil {
+				select {
+				case client.Channel <- *detection:
+					// Successfully sent to client - reset health counter atomically
+					client.consecutiveDrops.Store(0)
 
-		default:
-			// Channel full - drop this update, increment counter atomically
-			drops := client.consecutiveDrops.Add(1)
+				default:
+					// Channel full - drop this update, increment counter atomically
+					drops := client.consecutiveDrops.Add(1)
 
-			// Only log when reaching disconnect threshold to avoid log spam
-			if drops >= maxConsecutiveDrops {
-				GetLogger().Info("SSE client disconnected after consecutive drops",
-					logger.String("client_id", clientID),
-					logger.Int("consecutive_drops", int(drops)),
-				)
-				blockedClients = append(blockedClients, clientID)
+					// Only log when reaching disconnect threshold to avoid log spam
+					if drops >= maxConsecutiveDrops {
+						GetLogger().Info("SSE client disconnected after consecutive drops",
+							logger.String("client_id", clientID),
+							logger.Int("consecutive_drops", int(drops)),
+						)
+						blockedClients = append(blockedClients, clientID)
+					}
+				}
 			}
 		}
 	}

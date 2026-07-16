@@ -7,7 +7,34 @@ import (
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/logger"
+	"github.com/tphakala/birdnet-go/internal/openfauna"
 )
+
+// canonicalSci extracts the scientific-name portion of a species label
+// ("ScientificName_CommonName" or scientific-name only), resolves it through the
+// OpenFauna taxonomic alias map, and lowercases it. Building and querying the
+// included-species set through the same canonical key lets a legacy classifier
+// label (e.g. "Streptopelia senegalensis") match a geomodel that lists the
+// species under its current name ("Spilopelia senegalensis"): the range filter
+// maps the two by alias, so the inclusion gate must too, or the reclassified
+// species would be dropped here after passing the range filter. A non-aliased
+// name resolves to itself, so this is a no-op for species without a
+// reclassification.
+func canonicalSci(label string) string {
+	// Mirror detection.ExtractScientificName's sanitization (trim, strip CR, then
+	// split on the first underscore) so this key matches the one the range-filter
+	// species mapping builds for the same label, including labels that arrive with
+	// trailing whitespace or CRLF line endings. The logic is duplicated rather than
+	// shared because internal/detection imports internal/conf, so conf importing
+	// detection would create an import cycle.
+	label = strings.TrimSpace(label)
+	label = strings.ReplaceAll(label, "\r", "")
+	sci := label
+	if idx := strings.IndexByte(label, '_'); idx >= 0 {
+		sci = label[:idx]
+	}
+	return strings.ToLower(openfauna.CanonicalName(sci))
+}
 
 // speciesListMutex serializes clone-mutate-publish operations on range filter
 // fields (Species, LastUpdated) so that concurrent writers do not lose each
@@ -33,11 +60,7 @@ func UpdateIncludedSpecies(species []string) {
 
 	sciNames := make(map[string]struct{}, len(species))
 	for _, label := range species {
-		sci := label
-		if idx := strings.IndexByte(label, '_'); idx >= 0 {
-			sci = label[:idx]
-		}
-		sciNames[strings.ToLower(sci)] = struct{}{}
+		sciNames[canonicalSci(label)] = struct{}{}
 	}
 	updated.BirdNET.RangeFilter.IncludedScientificNames = sciNames
 
@@ -59,11 +82,9 @@ func (s *Settings) GetIncludedSpecies() []string {
 // when the map is empty (e.g. for snapshots loaded before this feature).
 func (s *Settings) IsSpeciesIncluded(result string) bool {
 	if len(s.BirdNET.RangeFilter.IncludedScientificNames) > 0 {
-		sci := result
-		if idx := strings.IndexByte(result, '_'); idx >= 0 {
-			sci = result[:idx]
-		}
-		_, found := s.BirdNET.RangeFilter.IncludedScientificNames[strings.ToLower(sci)]
+		// Query through the same canonical key the set was built with, so a legacy
+		// detection label resolves to its current name and matches.
+		_, found := s.BirdNET.RangeFilter.IncludedScientificNames[canonicalSci(result)]
 		return found
 	}
 	for _, fullSpeciesString := range s.BirdNET.RangeFilter.Species {
@@ -72,6 +93,17 @@ func (s *Settings) IsSpeciesIncluded(result string) bool {
 		}
 	}
 	return false
+}
+
+// LocalNoon returns 12:00:00 on the calendar day of t, evaluated in t's own time
+// zone. Range-filter date logic uses it to anchor "today" on the local calendar
+// day: time.Time.Truncate operates on absolute (UTC) time, so truncating to a 24h
+// boundary rounds to UTC midnight and, near the local day boundary on hosts with a
+// non-zero UTC offset, yields the wrong calendar day for the geomodel week lookup
+// (and rolls the daily-update marker over at UTC rather than local midnight). Using
+// noon rather than midnight also sidesteps zones whose DST transition is at 00:00.
+func LocalNoon(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 12, 0, 0, 0, t.Location())
 }
 
 // ShouldUpdateRangeFilterToday atomically checks whether the range filter
@@ -90,8 +122,15 @@ func ShouldUpdateRangeFilterToday() bool {
 		return false
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
-	if !current.BirdNET.RangeFilter.LastUpdated.Before(today) {
+	today := LocalNoon(time.Now())
+	// Compare local-day to local-day. UpdateIncludedSpecies stamps LastUpdated with
+	// the wall-clock time.Now() of the rebuild, which is earlier than today's noon
+	// anchor for any rebuild that finishes in the local morning. Comparing the raw
+	// stamp against noon would re-open this gate on every detection until local noon,
+	// triggering a full geomodel rebuild each time. Bucketing LastUpdated to its own
+	// local noon keeps the "only the first caller on a given local day gets true"
+	// guarantee (issue #1357) regardless of what time the last rebuild ran.
+	if !LocalNoon(current.BirdNET.RangeFilter.LastUpdated).Before(today) {
 		return false
 	}
 

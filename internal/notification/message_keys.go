@@ -42,6 +42,7 @@ const (
 	MsgSettingsRecalculatingThresholds        = "notifications.content.settings.recalculatingThresholds"
 	MsgSettingsReconfiguringDynamicThresholds = "notifications.content.settings.reconfiguringDynamicThresholds"
 	MsgSettingsWebserverRestart               = "notifications.content.settings.webserverRestartRequired"
+	MsgSettingsOauthRestart                   = "notifications.content.settings.oauthRestartRequired"
 	MsgSettingsDatabaseRestart                = "notifications.content.settings.databaseRestartRequired"
 	MsgSettingsLoggingRestart                 = "notifications.content.settings.loggingRestartRequired"
 
@@ -94,6 +95,7 @@ const (
 	MsgErrAlertDuplicateName     = "errors.alert.duplicateName"
 	MsgErrAlertInvalidJSON       = "errors.alert.invalidJSON"
 	MsgErrAlertInvalidEscalation = "errors.alert.invalidEscalation"
+	MsgErrAlertEngineUnavailable = "errors.alert.engineUnavailable"
 
 	// Detection errors
 	MsgErrDetectionInvalidDate = "errors.detection.invalidDate"

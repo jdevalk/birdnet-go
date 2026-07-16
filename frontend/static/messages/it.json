@@ -206,10 +206,19 @@
     "componentError": "Errore caricamento componente",
     "speciesAnalytics": "Analisi specie",
     "detectionDetails": "Dettagli rilevamento",
-    "settingsNotAvailable": "Impostazioni non disponibili"
+    "settingsNotAvailable": "Impostazioni non disponibili",
+    "analyticsSummary": "Analytics - Summary",
+    "analyticsActivity": "Analytics - Activity Patterns",
+    "analyticsTrends": "Analytics - Trends",
+    "analyticsBiodiversity": "Analytics - Biodiversity",
+    "analyticsReview": "Analytics - Review & Accuracy",
+    "analyticsNocturnal": "Analisi - Attività notturna",
+    "analyticsWeather": "Analisi - Correlazione meteo",
+    "analyticsSoundscape": "Analisi - Paesaggio sonoro"
   },
   "navigation": {
     "dashboard": "Dashboard",
+    "liveAudio": "Audio in diretta",
     "settingsMenu": "Menu impostazioni",
     "theme": "Tema",
     "github": "GitHub",
@@ -237,7 +246,13 @@
     "reportBugAriaLabel": "Segnala un bug su GitHub (si apre in una nuova finestra)",
     "askQuestionAriaLabel": "Fai una domanda su GitHub Discussions (si apre in una nuova finestra)",
     "viewOnGithubAriaLabel": "Visualizza BirdNET-Go su GitHub (si apre in una nuova finestra)",
-    "health": "Health"
+    "health": "Health",
+    "sections": {
+      "explore": "Esplora",
+      "patterns": "Modelli",
+      "environment": "Ambiente",
+      "dataQuality": "Qualità dei dati"
+    }
   },
   "about": {
     "title": "BirdNET-Go",
@@ -404,6 +419,7 @@
         "recalculatingThresholds": "Ricalcolo delle soglie dinamiche per il nuovo valore base",
         "reconfiguringDynamicThresholds": "Riconfigurazione delle soglie dinamiche...",
         "webserverRestartRequired": "Impostazioni del server web modificate. Riavvio necessario.",
+        "oauthRestartRequired": "Impostazioni del provider di autenticazione modificate. Riavvio necessario.",
         "databaseRestartRequired": "Database settings changed. Restart required.",
         "loggingRestartRequired": "Logging settings changed. Restart required.",
         "reconfiguringSoundLevel": "Aggiornamento del monitoraggio del livello sonoro...",
@@ -1177,110 +1193,161 @@
       "importExport": "Import / Export"
     },
     "importExport": {
-      "pageDescription": "Import data from other bird recording systems or export your detections.",
-      "available": "Available",
-      "comingSoon": "Coming soon",
-      "loading": "Loading...",
-      "runInBackground": "Close (import continues in background)",
-      "runInBackgroundTitle": "Dismiss this dialog. The import keeps running in the background.",
-      "stepAnnouncement": "Step {current} of {total}: {name}",
+      "available": "Disponibile",
+      "experimental": "Sperimentale",
+      "comingSoon": "Prossimamente",
+      "loading": "Caricamento...",
+      "runInBackground": "Chiudi (l'importazione continua in background)",
+      "runInBackgroundTitle": "Chiudi questa finestra di dialogo. L'importazione continua in background.",
+      "stepAnnouncement": "Passaggio {current} di {total}: {name}",
       "steps": {
-        "source": "Source",
-        "mode": "Mode",
-        "confirm": "Confirm",
-        "progress": "Progress",
-        "done": "Done"
+        "source": "Sorgente",
+        "mode": "Modalità",
+        "confirm": "Conferma",
+        "progress": "Avanzamento",
+        "done": "Fatto"
       },
       "import": {
-        "sectionTitle": "Import"
+        "sectionTitle": "Importazione"
       },
       "export": {
-        "sectionTitle": "Export",
-        "cardTitle": "Export detections",
-        "cardDescription": "Export your detection data to CSV, JSON, or other formats.",
-        "startButton": "Export",
-        "disabledReason": "Export is not yet available. Check back in a future release."
+        "sectionTitle": "Esportazione",
+        "cardTitle": "Esporta rilevamenti",
+        "cardDescription": "Esporta i tuoi dati di rilevamento in CSV, JSON o altri formati."
       },
       "birdnetPi": {
         "cardTitle": "BirdNET-Pi",
-        "cardDescription": "Import detection history from a BirdNET-Pi SQLite database (birds.db).",
-        "startButton": "Import from BirdNET-Pi",
-        "wizardTitle": "Import from BirdNET-Pi"
+        "cardDescription": "Importa la cronologia dei rilevamenti da un database SQLite di BirdNET-Pi (birds.db).",
+        "startButton": "Importa da BirdNET-Pi",
+        "wizardTitle": "Importa da BirdNET-Pi",
+        "experimentalNotice": "L'importazione da BirdNET-Pi è sperimentale e potrebbe ancora presentare problemi.",
+        "reportBug": "Segnala un bug su GitHub"
+      },
+      "birdsDbUpload": {
+        "cardTitle": "Caricamento di birds.db",
+        "cardDescription": "Carica un file di database BirdNET-Pi direttamente dal tuo browser."
+      },
+      "activity": {
+        "sectionTitle": "Attività di importazione",
+        "empty": {
+          "title": "Nessuna attività di importazione",
+          "description": "Quando un'importazione è in corso, il suo avanzamento viene mostrato qui."
+        },
+        "openWizard": "Apri la procedura guidata di importazione"
       },
       "wizard": {
-        "stepsLabel": "Import wizard steps"
+        "stepsLabel": "Passaggi della procedura guidata di importazione"
       },
       "sourceAccess": {
-        "pathLabel": "Path to birds.db (relative to mount root)",
-        "pathHelpText": "Enter the path relative to the external media mount root, e.g. birdnet-pi/birds.db",
-        "pathRequiredReason": "Enter the path to birds.db to continue",
-        "mountDescription": "Your BirdNET-Pi database should be on the external media mount.",
-        "mountRoot": "Mount root",
-        "nativeTitle": "External media mount required",
-        "nativeDescription": "BirdNET-Pi import requires an external media mount, which is only available when BirdNET-Go runs in a container. Native (non-containerized) installs cannot use this import feature.",
-        "nativeHowTo": "To import from BirdNET-Pi, run BirdNET-Go in a container with the BirdNET-Pi data directory mounted as the external media volume.",
-        "missingTitle": "External media mount not found",
-        "missingDescription": "BirdNET-Go is running in a container but the external media mount is not accessible. Follow the steps below to set it up.",
-        "setupStepsLabel": "Setup steps",
-        "recheckButton": "Re-check",
-        "recheckHint": "After completing the setup steps, click Re-check to continue."
+        "pathLabel": "Percorso di birds.db (relativo alla radice del montaggio)",
+        "pathHelpText": "Inserisci il percorso relativo alla radice del montaggio dei supporti esterni, ad es. birdnet-pi/birds.db",
+        "pathRequiredReason": "Inserisci il percorso di birds.db per continuare",
+        "mountDescription": "Il tuo database BirdNET-Pi dovrebbe trovarsi sul montaggio dei supporti esterni.",
+        "mountRoot": "Radice del montaggio",
+        "nativeTitle": "Montaggio di supporti esterni richiesto",
+        "nativeDescription": "L'importazione da BirdNET-Pi richiede un montaggio di supporti esterni, disponibile solo quando BirdNET-Go è in esecuzione in un container. Le installazioni native (non containerizzate) non possono usare questa funzione di importazione.",
+        "nativeHowTo": "Per importare da BirdNET-Pi, esegui BirdNET-Go in un container con la directory dei dati di BirdNET-Pi montata come volume dei supporti esterni.",
+        "missingTitle": "Montaggio di supporti esterni non trovato",
+        "missingDescription": "BirdNET-Go è in esecuzione in un container, ma il montaggio dei supporti esterni non è accessibile. Segui i passaggi seguenti per configurarlo.",
+        "setupStepsLabel": "Passaggi di configurazione",
+        "recheckButton": "Ricontrolla",
+        "recheckHint": "Dopo aver completato i passaggi di configurazione, fai clic su Ricontrolla per continuare."
+      },
+      "source": {
+        "title": "Dove si trovano i tuoi dati BirdNET-Pi?",
+        "candidatesIntro": "Abbiamo trovato questi database BirdNET-Pi:",
+        "selectButton": "Seleziona",
+        "useThisButton": "Usa questo",
+        "detectionsSummary": "{count} rilevamenti, fino al {date}",
+        "kindLocal": "Su questo dispositivo",
+        "kindRemovable": "Unità rimovibile",
+        "kindNetwork": "Percorso di rete",
+        "unreadableTitle": "Trovato, ma BirdNET-Go non può leggerlo",
+        "unreadableOwner": "Questi dati appartengono a un altro utente ({owner}).",
+        "manualEntryLink": "Non lo vedi? Inserisci la posizione manualmente",
+        "manualEntryLabel": "Posizione del database BirdNET-Pi",
+        "manualValidating": "Verifica in corso...",
+        "manualValid": "Trovati {count} rilevamenti.",
+        "manualNotFound": "Non abbiamo trovato alcun file lì.",
+        "manualUnreadable": "Trovato, ma BirdNET-Go non può ancora leggerlo.",
+        "manualInvalid": "Quel file non è un database BirdNET-Pi.",
+        "zeroTitle": "Non siamo riusciti a trovarlo automaticamente",
+        "zeroDescription": "Collega l'unità che contiene i tuoi dati BirdNET-Pi e ricontrolla.",
+        "checkAgainButton": "Ricontrolla",
+        "showCommandsLabel": "Mostra comandi",
+        "containerUnreadableHint": "BirdNET-Go (in esecuzione come UID {uid}) non può leggere questo file. Correggi i permessi sull'host in modo che l'UID {uid} possa leggerlo, quindi ricontrolla.",
+        "elevation": {
+          "copying": "Copia dei tuoi dati in corso...",
+          "passwordTitle": "BirdNET-Go ha bisogno dell'autorizzazione per leggere questi dati",
+          "passwordDescription": "Inserisci la password di amministratore di questo dispositivo per consentire a BirdNET-Go di copiare i dati.",
+          "passwordLabel": "Password di amministratore",
+          "passwordRequiredReason": "Inserisci la password di amministratore per continuare",
+          "httpWarning": "Questa pagina non usa HTTPS. La password di amministratore verrà inviata in chiaro sulla tua rete locale. Continua solo su una rete di cui ti fidi.",
+          "submitButton": "Copia e continua",
+          "fallbackTitle": "Esegui questo comando per concedere l'accesso",
+          "fallbackDescription": "BirdNET-Go non può elevare i privilegi automaticamente. Esegui il comando seguente, quindi fai clic su Ricontrolla.",
+          "disabledNote": "L'elevazione dei privilegi nell'app è disattivata. Usa il comando seguente per concedere l'accesso.",
+          "failed": "Non ha funzionato. Controlla la password e riprova, oppure usa il comando seguente."
+        }
       },
       "mode": {
-        "label": "What do you want to import?",
+        "label": "Cosa vuoi importare?",
         "dbOnly": {
-          "label": "Database only",
-          "description": "Import detection records from birds.db. Audio clips are not imported."
+          "label": "Solo database",
+          "description": "Importa i record di rilevamento da birds.db. I clip audio non vengono importati."
         },
         "dbAudio": {
-          "label": "Database + audio clips",
-          "description": "Import detection records and associated audio recordings.",
-          "badge": "Not available",
-          "disabledReason": "Audio clip import is not yet available. Only database-only import is supported."
+          "label": "Database + clip audio",
+          "description": "Importa i record di rilevamento e le registrazioni audio associate.",
+          "badge": "Non disponibile",
+          "disabledReason": "L'importazione dei clip audio non è ancora disponibile. È supportata solo l'importazione del database."
         }
       },
       "confirm": {
-        "description": "Review your import settings before starting. Imported detections are tagged with the source birdnet-pi and duplicates are skipped automatically.",
-        "source": "Source path",
-        "mode": "Import mode",
-        "tagging": "Source tag",
-        "taggingValue": "birdnet-pi (auto-applied)",
-        "deduplicationNote": "Duplicate detections (same species, time, and date already in the database) are skipped automatically. Exact counts will be shown live during the import.",
-        "startButton": "Start import"
+        "description": "Controlla le impostazioni di importazione prima di iniziare. I rilevamenti importati vengono contrassegnati con l'origine birdnet-pi e i duplicati vengono ignorati automaticamente.",
+        "source": "Percorso sorgente",
+        "mode": "Modalità di importazione",
+        "tagging": "Etichetta di origine",
+        "taggingValue": "birdnet-pi (applicata automaticamente)",
+        "deduplicationNote": "I rilevamenti duplicati (stessa specie, ora e data già presenti nel database) vengono ignorati automaticamente. Le quantità esatte verranno mostrate in tempo reale durante l'importazione.",
+        "startButton": "Avvia importazione"
       },
       "progress": {
-        "label": "Import progress",
-        "runningLabel": "Import running",
-        "progressLabel": "{percent}% complete",
-        "cancelButton": "Cancel",
-        "cancellingLabel": "Cancelling...",
-        "cancelledMessage": "Import was cancelled.",
-        "processed": "Processed",
-        "inserted": "Inserted",
-        "skipped": "Skipped",
-        "errors": "Errors",
+        "label": "Avanzamento dell'importazione",
+        "runningLabel": "Importazione in corso",
+        "progressLabel": "{percent}% completato",
+        "cancelButton": "Annulla",
+        "cancellingLabel": "Annullamento...",
+        "cancelledMessage": "L'importazione è stata annullata.",
+        "processed": "Elaborati",
+        "inserted": "Inseriti",
+        "skipped": "Ignorati",
+        "errors": "Errori",
         "phase": {
-          "validate": "Validating",
-          "dedup": "Deduplicating",
-          "import": "Importing"
+          "validate": "Convalida",
+          "dedup": "Rimozione duplicati",
+          "import": "Importazione"
         }
       },
       "done": {
-        "successTitle": "Import complete",
-        "successDescription": "Your BirdNET-Pi detections have been imported successfully.",
-        "cancelledTitle": "Import cancelled",
-        "cancelledDescription": "The import was cancelled before completing.",
-        "errorTitle": "Import failed",
-        "viewDetectionsLink": "View imported detections",
-        "partialInserted": "{count} detections were imported before cancellation.",
-        "importAnother": "Import another"
+        "successTitle": "Importazione completata",
+        "successDescription": "I tuoi rilevamenti BirdNET-Pi sono stati importati correttamente.",
+        "cancelledTitle": "Importazione annullata",
+        "cancelledDescription": "L'importazione è stata annullata prima del completamento.",
+        "errorTitle": "Importazione non riuscita",
+        "interruptedTitle": "Importazione interrotta",
+        "interruptedDescription": "La connessione al server è stata persa durante l'importazione, quindi il suo risultato finale è sconosciuto. Controlla i tuoi rilevamenti e riavvia l'importazione se necessario.",
+        "viewDetectionsLink": "Visualizza i rilevamenti importati",
+        "partialInserted": "{count} rilevamenti sono stati importati prima dell'annullamento.",
+        "importAnother": "Importa di nuovo"
       },
       "errors": {
-        "loadFailed": "Failed to load import status. Please try again.",
-        "mediaLoadFailed": "Failed to check external media. Please try again.",
-        "alreadyRunning": "An import is already in progress. Please wait for it to complete.",
-        "startFailed": "Failed to start import. Please try again.",
-        "cancelFailed": "Failed to cancel import.",
-        "importFailed": "Import failed. Please check your configuration and try again."
+        "loadFailed": "Impossibile caricare lo stato dell'importazione. Riprova.",
+        "mediaLoadFailed": "Impossibile controllare i supporti esterni. Riprova.",
+        "alreadyRunning": "Un'importazione è già in corso. Attendi il suo completamento.",
+        "startFailed": "Impossibile avviare l'importazione. Riprova.",
+        "cancelFailed": "Impossibile annullare l'importazione.",
+        "importFailed": "Importazione non riuscita. Controlla la configurazione e riprova."
       }
     },
     "database": {
@@ -1777,11 +1844,14 @@
   "analytics": {
     "hub": {
       "tabs": {
-        "overview": "Panoramica",
         "patterns": "Modelli di attività",
         "trends": "Tendenze",
         "biodiversity": "Biodiversità",
-        "quality": "Revisione e accuratezza"
+        "quality": "Revisione e accuratezza",
+        "summary": "Summary",
+        "nocturnal": "Attività notturna",
+        "weather": "Meteo",
+        "soundscape": "Paesaggio sonoro"
       },
       "aria": {
         "tabs": "Sezioni di analisi"
@@ -1801,13 +1871,25 @@
         "notEnoughDataHint": "Questo grafico richiede almeno {min} punti dati. Continua a registrare e torna presto.",
         "export": "Esporta",
         "exportComingSoon": "L'esportazione CSV arriverà presto."
-      },
-      "comingSoon": {
-        "description": "Questa sezione è in costruzione e arriverà in un prossimo aggiornamento."
       }
     },
-    "title": "Panoramica",
     "loadingError": "Impossibile caricare alcuni dati analitici. Riprova più tardi.",
+    "comingSoon": {
+      "badge": "Prossimamente",
+      "plannedTitle": "Funzionalità pianificate",
+      "weather": {
+        "description": "Attività degli uccelli correlata alle condizioni meteorologiche locali. Questa vista metterà in relazione le rilevazioni con temperatura, vento e pioggia.",
+        "feature1": "Correlare le rilevazioni con temperatura, vento e precipitazioni",
+        "feature2": "Vedere come i fronti meteorologici influenzano l'attività delle specie",
+        "feature3": "Confrontare l'attività stagionale con il meteo storico"
+      },
+      "soundscape": {
+        "description": "Uno sguardo al carattere acustico complessivo del proprio ambiente, utilizzando indici acustici per riassumere la diversità del paesaggio sonoro nel tempo.",
+        "feature1": "Indici acustici che riassumono la complessità del paesaggio sonoro",
+        "feature2": "Tracciare la biodiversità attraverso il suono ambientale nel tempo",
+        "feature3": "Individuare i cori dell'alba e del crepuscolo nel registro acustico"
+      }
+    },
     "stats": {
       "totalDetections": "Rilevamenti Totali",
       "uniqueSpecies": "Specie Uniche",
@@ -4887,7 +4969,8 @@
       "typesRequired": "Il tipo di oggetto e il tipo di attivazione sono obbligatori",
       "duplicateName": "Esiste già una regola con questo nome",
       "invalidJSON": "JSON non valido",
-      "invalidEscalation": "I passaggi di escalation non sono validi"
+      "invalidEscalation": "I passaggi di escalation non sono validi",
+      "engineUnavailable": "Alerting engine is unavailable"
     },
     "detection": {
       "invalidDate": "Formato {paramName} non valido, usare AAAA-MM-GG"
@@ -5251,6 +5334,7 @@
     "restartFailed": "Impossibile avviare il riavvio",
     "reasons": {
       "webserver": "Web server / network settings",
+      "oauth": "Authentication provider settings",
       "database": "Database settings",
       "logging": "Logging settings",
       "tlsCertificate": "TLS certificate"

@@ -92,6 +92,15 @@ log_message() { :; }
 log_command_result() { :; }
 command_exists() { command -v "$1" >/dev/null 2>&1; }
 
+# Deterministic stubs for the helpers generate_systemd_service_content calls: force
+# audio/thermal/Pi/GPU detection off and resolve the timezone to the passed value so the
+# generated unit is stable across hosts (a CI runner with an Intel iGPU must not add
+# --device /dev/dri to the baseline units; the GPU-passthrough test overrides this stub).
+resolve_host_timezone() { printf '%s' "${1:-UTC}"; }
+check_directory_exists() { return 1; }
+is_raspberry_pi() { return 1; }
+has_intel_gpu() { return 1; }
+
 # Globals the extracted functions reference (install.sh defines these at the top; the harness
 # only pulls function bodies, so under set -u they must exist here).
 RED=""; GREEN=""; YELLOW=""; NC=""; GRAY=""
@@ -108,13 +117,17 @@ for fn in \
     set_first_audio_source \
     _extract_bind_addr \
     load_existing_service_config \
+    generate_systemd_service_content \
     apply_tls_settings \
     ensure_internal_port_8080 \
     configure_rtsp_in_config \
     configure_audio_format \
     configure_locale \
     configure_auth \
-    rewrite_migrated_config_paths
+    rewrite_migrated_config_paths \
+    parse_ssh_dest \
+    remote_path_safe \
+    remote_default_app_path
 do
     load_fn "$fn"
 done
@@ -339,7 +352,8 @@ cat > "$unit" <<'EOF'
 ExecStart=/usr/bin/docker run --rm \
     --name birdnet-go \
     -p 127.0.0.1:9000:8080 \
-    -p 443:443 \
+    -p 80:8080 \
+    -p 443:8443 \
     -p 8090:8090 \
     --env TZ="Europe/Helsinki" \
     -v /home/pi/birdnet-go-app/config:/config \
@@ -351,8 +365,43 @@ load_existing_service_config "$unit"
 assert_eq "restored web port" "9000" "$WEB_PORT"
 assert_eq "restored web bind addr" "127.0.0.1" "$WEB_PORT_BIND_ADDR"
 assert_eq "restored TLS binding" "true" "$BIND_TLS_PORTS"
+assert_eq "restored TLS bind addr (none)" "" "$TLS_BIND_ADDR"
 assert_eq "restored metrics binding" "true" "$BIND_METRICS_PORT"
 assert_eq "restored timezone" "Europe/Helsinki" "$CONFIGURED_TZ"
+
+# A legacy (pre-fix) AutoTLS unit still maps the dead 80:80 / 443:443 ports. It must still
+# be detected as AutoTLS-enabled so a regenerate produces the corrected 443:8443 mapping
+# instead of silently dropping AutoTLS.
+cat > "$unit" <<'EOF'
+[Service]
+ExecStart=/usr/bin/docker run --rm \
+    -p 8080:8080 \
+    -p 80:80 \
+    -p 443:443 \
+    ghcr.io/tphakala/birdnet-go:nightly
+EOF
+WEB_PORT=""; WEB_PORT_BIND_ADDR=""; BIND_TLS_PORTS="false"; TLS_BIND_ADDR=""
+BIND_METRICS_PORT="false"; METRICS_BIND_ADDR=""; CONFIGURED_TZ=""
+load_existing_service_config "$unit"
+assert_eq "legacy 443:443: web port restored" "8080" "$WEB_PORT"
+assert_eq "legacy 443:443: TLS binding restored" "true" "$BIND_TLS_PORTS"
+assert_eq "legacy 443:443: TLS bind addr (none)" "" "$TLS_BIND_ADDR"
+
+# A localhost-bound AutoTLS mapping must preserve the host bind address so an update does
+# not silently re-expose it on all interfaces.
+cat > "$unit" <<'EOF'
+[Service]
+ExecStart=/usr/bin/docker run --rm \
+    -p 127.0.0.1:8080:8080 \
+    -p 127.0.0.1:80:8080 \
+    -p 127.0.0.1:443:8443 \
+    ghcr.io/tphakala/birdnet-go:nightly
+EOF
+WEB_PORT=""; WEB_PORT_BIND_ADDR=""; BIND_TLS_PORTS="false"; TLS_BIND_ADDR=""
+BIND_METRICS_PORT="false"; METRICS_BIND_ADDR=""; CONFIGURED_TZ=""
+load_existing_service_config "$unit"
+assert_eq "bind-addr: TLS binding restored" "true" "$BIND_TLS_PORTS"
+assert_eq "bind-addr: TLS bind addr preserved" "127.0.0.1" "$TLS_BIND_ADDR"
 
 # A unit with only the web port (no 80/443, no 8090) leaves TLS/metrics off.
 cat > "$unit" <<'EOF'
@@ -367,6 +416,66 @@ load_existing_service_config "$unit"
 assert_eq "web-only: port restored" "8080" "$WEB_PORT"
 assert_eq "web-only: TLS stays off" "false" "$BIND_TLS_PORTS"
 assert_eq "web-only: metrics stays off" "false" "$BIND_METRICS_PORT"
+
+# ===========================================================================
+# generate_systemd_service_content: AutoTLS maps host 80/443 to container 8080/8443
+# (never dead 443:443), adds no NET_BIND_SERVICE, and round-trips cleanly through the
+# parser (the new 80:8080 line must not be mistaken for the web-port mapping).
+# ===========================================================================
+it "generate_systemd_service_content AutoTLS ports"
+
+CONFIG_DIR="/home/pi/birdnet-go-app/config"
+DATA_DIR="/home/pi/birdnet-go-app/data"
+BIRDNET_GO_IMAGE="ghcr.io/tphakala/birdnet-go:nightly"
+WEB_PORT="9000"; WEB_PORT_BIND_ADDR=""
+BIND_TLS_PORTS="true"; TLS_BIND_ADDR=""
+BIND_METRICS_PORT="false"; METRICS_BIND_ADDR=""
+CONFIGURED_TZ="UTC"
+
+autotls_unit="${WORK}/autotls.service"
+generate_systemd_service_content > "$autotls_unit"
+assert_eq "AutoTLS unit maps host 80 -> container 8080" "1" "$(grep -c -- '-p 80:8080' "$autotls_unit")"
+assert_eq "AutoTLS unit maps host 443 -> container 8443" "1" "$(grep -c -- '-p 443:8443' "$autotls_unit")"
+assert_eq "AutoTLS unit has no dead 443:443 mapping" "0" "$(grep -c -- '443:443' "$autotls_unit")"
+assert_eq "AutoTLS unit still publishes the web port" "1" "$(grep -c -- '-p 9000:8080' "$autotls_unit")"
+assert_eq "AutoTLS unit adds no NET_BIND_SERVICE" "0" "$(grep -c 'NET_BIND_SERVICE' "$autotls_unit")"
+
+WEB_PORT=""; WEB_PORT_BIND_ADDR=""; BIND_TLS_PORTS="false"; TLS_BIND_ADDR=""
+BIND_METRICS_PORT="false"; METRICS_BIND_ADDR=""; CONFIGURED_TZ=""
+load_existing_service_config "$autotls_unit"
+assert_eq "round-trip: web port restored (not 80)" "9000" "$WEB_PORT"
+assert_eq "round-trip: TLS binding restored" "true" "$BIND_TLS_PORTS"
+assert_eq "round-trip: TLS bind addr empty" "" "$TLS_BIND_ADDR"
+
+# ===========================================================================
+# generate_systemd_service_content: Intel iGPU passthrough is gated on has_intel_gpu.
+# With detection stubbed off the unit must omit --device /dev/dri; when an Intel render
+# node is present it must map /dev/dri into the container so the OpenVINO GPU plugin
+# (bundled in the amd64 image) can reach it. Mirrors the /dev/snd audio gating.
+# ===========================================================================
+it "generate_systemd_service_content GPU passthrough"
+
+CONFIG_DIR="/home/pi/birdnet-go-app/config"
+DATA_DIR="/home/pi/birdnet-go-app/data"
+BIRDNET_GO_IMAGE="ghcr.io/tphakala/birdnet-go:nightly"
+WEB_PORT="9000"; WEB_PORT_BIND_ADDR=""
+BIND_TLS_PORTS="false"; TLS_BIND_ADDR=""
+BIND_METRICS_PORT="false"; METRICS_BIND_ADDR=""
+CONFIGURED_TZ="UTC"
+
+# Default stub (has_intel_gpu -> 1): no Intel render node, so no device mapping.
+nogpu_unit="${WORK}/nogpu.service"
+generate_systemd_service_content > "$nogpu_unit"
+assert_eq "no Intel GPU: unit omits --device /dev/dri" "0" "$(grep -c -- '--device /dev/dri' "$nogpu_unit")"
+
+# Intel render node present (has_intel_gpu -> 0): exactly one /dev/dri mapping is added,
+# and generation is otherwise intact (web port still published).
+has_intel_gpu() { return 0; }
+gpu_unit="${WORK}/gpu.service"
+generate_systemd_service_content > "$gpu_unit"
+assert_eq "Intel GPU: unit maps /dev/dri exactly once" "1" "$(grep -c -- '--device /dev/dri' "$gpu_unit")"
+assert_eq "Intel GPU: web port still published" "1" "$(grep -c -- '-p 9000:8080' "$gpu_unit")"
+has_intel_gpu() { return 1; }   # restore the deterministic default for subsequent tests
 
 # ===========================================================================
 # apply_tls_settings (full slate; mode switch must clear stale host)
@@ -509,6 +618,38 @@ ensure_internal_port_8080
 assert_eq "custom internal port normalized to 8080" '"8080"' "$(yaml_after "$cfg" '^webserver:' 2 port)"
 ensure_internal_port_8080
 assert_eq "already-8080 stays 8080 (idempotent)" '"8080"' "$(yaml_after "$cfg" '^webserver:' 2 port)"
+
+# ===========================================================================
+# parse_ssh_dest (validate the migration ssh destination)
+# ===========================================================================
+it "parse_ssh_dest"
+ssh_dest_out="$(parse_ssh_dest 'pi@raspi4.local')"; ssh_dest_rc=$?
+assert_eq "accepts user@host" "pi@raspi4.local" "$ssh_dest_out"
+assert_ok "user@host returns success rc" "$ssh_dest_rc"
+assert_eq "accepts bare alias" "oldpi" "$(parse_ssh_dest 'oldpi')"
+assert_eq "accepts underscore alias" "old_pi" "$(parse_ssh_dest 'old_pi')"
+parse_ssh_dest "" >/dev/null 2>&1; assert_nonzero "rejects empty" "$?"
+parse_ssh_dest "a b" >/dev/null 2>&1; assert_nonzero "rejects whitespace" "$?"
+# metachar WITHOUT whitespace: isolates the charset guard from the whitespace guard
+parse_ssh_dest 'a;b' >/dev/null 2>&1; assert_nonzero "rejects semicolon (no whitespace)" "$?"
+parse_ssh_dest 'host|nc' >/dev/null 2>&1; assert_nonzero "rejects pipe" "$?"
+parse_ssh_dest 'host$(id)' >/dev/null 2>&1; assert_nonzero "rejects command substitution chars" "$?"
+# colon is rejected: the transfer appends :$path itself, so the dest must not carry one
+parse_ssh_dest 'host:22' >/dev/null 2>&1; assert_nonzero "rejects colon" "$?"
+# leading dash must not be accepted (would be read as an ssh/rsync flag)
+parse_ssh_dest '-oProxyCommand=x' >/dev/null 2>&1; assert_nonzero "rejects leading-dash flag-like dest" "$?"
+
+it "remote_path_safe"
+remote_path_safe "/home/pi/birdnet-go-app"; assert_ok "accepts a normal path" "$?"
+remote_path_safe ""; assert_nonzero "rejects empty" "$?"
+remote_path_safe "/data'; rm -rf ~"; assert_nonzero "rejects embedded single quote" "$?"
+
+# ===========================================================================
+# remote_default_app_path (default remote birdnet-go-app location)
+# ===========================================================================
+it "remote_default_app_path"
+assert_eq "default app path from home" "/home/pi/birdnet-go-app" "$(remote_default_app_path /home/pi)"
+assert_eq "root home" "/root/birdnet-go-app" "$(remote_default_app_path /root)"
 
 # ===========================================================================
 # Result

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/analysis/species"
+	"github.com/tphakala/birdnet-go/internal/audiocore/audionorm"
 	"github.com/tphakala/birdnet-go/internal/audiocore/convert"
 	"github.com/tphakala/birdnet-go/internal/audiocore/ffmpeg"
 	"github.com/tphakala/birdnet-go/internal/audiocore/flac"
@@ -31,7 +32,8 @@ import (
 var errAudioExportDeferred = errors.NewStd("audio export deferred until capture tail is available")
 
 // Encoder tags recorded in the audio-export success log so the active encoder is
-// visible per clip while the native FLAC path is gated.
+// visible per clip (native go-flac or native WAV writer, or FFmpeg for the lossy
+// formats).
 const (
 	encoderFFmpeg     = "ffmpeg"
 	encoderNativeWAV  = "native-wav"
@@ -357,6 +359,19 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 		return nil
 	}
 
+	// Hot-reload race guard: a detection created while export was disabled carries
+	// an empty ClipName. If export was enabled between createDetection and this
+	// action running, there is no valid output path to write to
+	// (filepath.Join(Export.Path, "") collapses to the export directory itself),
+	// so skip the export rather than encode a clip onto the directory path.
+	if a.ClipName == "" {
+		GetLogger().Debug("Skipping audio export: empty clip name",
+			logger.String("component", "analysis.processor.actions"),
+			logger.String("detection_id", a.CorrelationID),
+			logger.String("operation", "audio_export_empty_clipname"))
+		return nil
+	}
+
 	// Deferred-read path: Extended Capture may schedule an export whose tail
 	// still has not been written to the ring buffer. buildSaveAudioAction
 	// populates bufferMgr/sourceID/beginTime/duration/readyAt and leaves
@@ -492,49 +507,73 @@ func (a *SaveAudioAction) Execute(ctx context.Context, _ any) error {
 }
 
 // encodeClip writes the captured PCM to outputPath in the resolved format,
-// dispatching to the native WAV writer, the native go-flac encoder (when the
-// BIRDNET_FLAC_ENCODER gate is on and no EBU R128 normalization is configured),
-// or the FFmpeg exporter. It returns the encoder tag for the success log.
+// dispatching to the native WAV writer, the native go-flac encoder, or the FFmpeg
+// exporter (non-FLAC formats only). It returns the encoder tag for the success log.
 //
-// Gain alone does not force FFmpeg; the native encoder applies it in Go.
-// Normalization is the only feature that requires FFmpeg's loudnorm.
+// FLAC is always encoded natively (go-flac); FFmpeg is never used for FLAC. Gain is
+// applied in Go. When normalization is enabled, EBU R128 loudness is measured and
+// applied via audionorm, with no FFmpeg loudnorm dependency.
 func (a *SaveAudioAction) encodeClip(ctx context.Context, exportRate int, exportFormat, outputPath string) (string, error) {
 	exportSettings := &a.Settings.Realtime.Audio.Export
 
-	switch {
-	case exportFormat == ffmpeg.FormatWAV:
+	switch exportFormat {
+	case ffmpeg.FormatWAV:
 		if err := convert.SavePCMDataToWAV(outputPath, a.pcmData, exportRate, conf.BitDepth); err != nil {
 			return "", err
 		}
 		return encoderNativeWAV, nil
 
-	case exportFormat == ffmpeg.FormatFLAC &&
-		flac.NativeEncoderEnabled() &&
-		!exportSettings.Normalization.Enabled &&
-		flac.SupportedBitDepth(conf.BitDepth):
+	case ffmpeg.FormatFLAC:
+		// FLAC always encodes natively via go-flac; FFmpeg is never used for FLAC.
+		gainDB := exportSettings.Gain
+		if exportSettings.Normalization.Enabled {
+			switch {
+			case flac.SupportedBitDepth(conf.BitDepth) &&
+				audionormSupportsTargets(exportSettings.Normalization.TargetLUFS, exportSettings.Normalization.TruePeak):
+				// Native FLAC + EBU R128 normalization via audionorm, no FFmpeg. The
+				// static Export.Gain is intentionally NOT applied on top: normalization
+				// takes precedence over gain (mirroring the old FFmpeg loudnorm path),
+				// so only the loudness gain is used. audionorm normalizes to the target
+				// integrated loudness under the true-peak ceiling; LoudnessRange is not
+				// consumed (no LRA/dynamic compression on this path).
+				var err error
+				gainDB, err = a.planNativeNormalizationGain(ctx, exportRate,
+					exportSettings.Normalization.TargetLUFS, exportSettings.Normalization.TruePeak)
+				if err != nil {
+					return "", err
+				}
+			default:
+				// Unreachable for a validated config: capture is 16-bit (conf.BitDepth)
+				// and settings validation clamps the loudness targets into audionorm's
+				// range. Defense-in-depth for unvalidated/legacy settings only. With
+				// FFmpeg FLAC removed there is no loudnorm fallback, so encode natively
+				// with the static gain and surface the skipped normalization at WARN.
+				reason := "normalization_targets_out_of_native_range"
+				if !flac.SupportedBitDepth(conf.BitDepth) {
+					reason = "unsupported_bit_depth"
+				}
+				GetLogger().Warn("Native FLAC normalization skipped; encoding without normalization",
+					logger.String("component", "analysis.processor.actions"),
+					logger.String("detection_id", a.CorrelationID),
+					logger.String("reason", reason),
+					logger.String("operation", "audio_export_flac_normalize_skip"))
+			}
+		}
 		if err := flac.EncodePCM(ctx, &flac.Options{
 			PCMData:    a.pcmData,
 			OutputPath: outputPath,
 			SampleRate: exportRate,
 			Channels:   conf.NumChannels,
 			BitDepth:   conf.BitDepth,
-			GainDB:     exportSettings.Gain,
+			GainDB:     gainDB,
 		}); err != nil {
 			return "", err
 		}
 		return encoderNativeFLAC, nil
 
 	default:
-		// Native FLAC was requested but EBU R128 normalization forces the FFmpeg
-		// path (loudnorm has no native equivalent). Logged so the fallback is
-		// visible while the gate exists.
-		if exportFormat == ffmpeg.FormatFLAC && flac.NativeEncoderEnabled() && exportSettings.Normalization.Enabled {
-			GetLogger().Debug("Native FLAC encoder requested but falling back to FFmpeg",
-				logger.String("component", "analysis.processor.actions"),
-				logger.String("detection_id", a.CorrelationID),
-				logger.String("reason", "normalization_enabled"),
-				logger.String("operation", "audio_export_flac_fallback"))
-		}
+		// FFmpeg for the remaining formats (MP3, AAC, Opus), including their
+		// EBU R128 loudnorm normalization. FLAC and WAV never reach this branch.
 		opts := &ffmpeg.ExportOptions{
 			PCMData:    a.pcmData,
 			OutputPath: outputPath,
@@ -557,6 +596,60 @@ func (a *SaveAudioAction) encodeClip(ctx context.Context, exportRate int, export
 		}
 		return encoderFFmpeg, nil
 	}
+}
+
+// audionormMinTargetLUFS is the exclusive lower bound of audionorm's valid target
+// loudness range (audionorm rejects targets <= -70 LUFS, the absolute gate).
+const audionormMinTargetLUFS = -70.0
+
+// audionormSupportsTargets reports whether the configured integrated-loudness
+// target and true-peak ceiling fall within audionorm's valid range
+// (-70 < TargetLUFS < 0, ceiling <= 0). Out-of-range configs (unreachable for a
+// validated config, whose targets are clamped) are encoded natively WITHOUT
+// normalization rather than fed values audionorm would mis-handle; FFmpeg is no
+// longer used for FLAC.
+func audionormSupportsTargets(targetLUFS, truePeakDBTP float64) bool {
+	return targetLUFS < 0 && targetLUFS > audionormMinTargetLUFS && truePeakDBTP <= 0
+}
+
+// planNativeNormalizationGain measures the clip's EBU R128 integrated loudness and
+// true peak with audionorm and returns the single linear gain (dB) that brings it
+// to targetLUFS without its true peak exceeding truePeakDBTP, clamped to
+// +/-audionorm.DefaultMaxGainDB. Silent or sub-400 ms input yields 0 (the clip is
+// left unchanged rather than boosted into noise), matching the BirdWeather native
+// path. The gain is applied by flac.EncodePCM during encoding; a.pcmData is not
+// modified here.
+func (a *SaveAudioAction) planNativeNormalizationGain(ctx context.Context, sampleRate int, targetLUFS, truePeakDBTP float64) (float64, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	// audionorm decodes the PCM bytes inline; a.pcmData is not mutated. Silence
+	// yields GainDB == 0 (audionorm returns -Inf LUFS); the clamp is the secondary
+	// guard for low-peak clips and for attenuation, applied silently on this path
+	// (the BirdWeather path logs its own limiting, hence the discarded flag).
+	gainDB, meas, res, _, err := audionorm.PlanClampedGainInt16Bytes(a.pcmData, audionorm.Options{
+		SampleRate:   sampleRate,
+		Channels:     conf.NumChannels,
+		TargetLUFS:   targetLUFS,
+		TruePeakDBTP: truePeakDBTP,
+	}, audionorm.DefaultMaxGainDB)
+	if err != nil {
+		return 0, errors.New(err).
+			Component("analysis.processor").
+			Category(errors.CategoryAudio).
+			Context("operation", "native_flac_normalize_measure").
+			Context("detection_id", a.CorrelationID).
+			Build()
+	}
+
+	GetLogger().Debug("Native FLAC loudness analysis (detection save)",
+		logger.Float64("measured_lufs", meas.IntegratedLUFS),
+		logger.Float64("true_peak_dbtp", meas.TruePeakDBTP),
+		logger.Float64("target_lufs", targetLUFS),
+		logger.Float64("gain_db", gainDB),
+		logger.Bool("peak_limited", res.PeakLimited),
+		logger.String("detection_id", a.CorrelationID))
+	return gainDB, nil
 }
 
 // resolveExportParams determines the export sample rate, format, and output

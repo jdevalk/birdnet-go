@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,15 +16,25 @@ import (
 	"github.com/tphakala/birdnet-go/internal/analysis/processor"
 	"github.com/tphakala/birdnet-go/internal/api/auth"
 	"github.com/tphakala/birdnet-go/internal/api/v2/alerts"
+	"github.com/tphakala/birdnet-go/internal/api/v2/analytics"
 	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/api/v2/app"
+	audioapi "github.com/tphakala/birdnet-go/internal/api/v2/audio"
 	authapi "github.com/tphakala/birdnet-go/internal/api/v2/auth"
 	"github.com/tphakala/birdnet-go/internal/api/v2/control"
+	"github.com/tphakala/birdnet-go/internal/api/v2/detections"
 	"github.com/tphakala/birdnet-go/internal/api/v2/dynamicthresholds"
 	"github.com/tphakala/birdnet-go/internal/api/v2/filesystem"
+	importsapi "github.com/tphakala/birdnet-go/internal/api/v2/imports"
+	"github.com/tphakala/birdnet-go/internal/api/v2/integrations"
+	mediaapi "github.com/tphakala/birdnet-go/internal/api/v2/media"
 	"github.com/tphakala/birdnet-go/internal/api/v2/models"
+	"github.com/tphakala/birdnet-go/internal/api/v2/notifications"
 	rangeapi "github.com/tphakala/birdnet-go/internal/api/v2/range"
 	"github.com/tphakala/birdnet-go/internal/api/v2/species"
+	"github.com/tphakala/birdnet-go/internal/api/v2/sse"
 	"github.com/tphakala/birdnet-go/internal/api/v2/support"
+	"github.com/tphakala/birdnet-go/internal/api/v2/system"
 	tlsapi "github.com/tphakala/birdnet-go/internal/api/v2/tls"
 	"github.com/tphakala/birdnet-go/internal/api/v2/weather"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
@@ -34,16 +43,12 @@ import (
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/datastore"
 	datastoreV2 "github.com/tphakala/birdnet-go/internal/datastore/v2"
-	"github.com/tphakala/birdnet-go/internal/datastore/v2/repository"
 	"github.com/tphakala/birdnet-go/internal/health"
 	"github.com/tphakala/birdnet-go/internal/imageprovider"
-	"github.com/tphakala/birdnet-go/internal/imports"
 	"github.com/tphakala/birdnet-go/internal/logger"
 	"github.com/tphakala/birdnet-go/internal/notification"
 	"github.com/tphakala/birdnet-go/internal/observability"
-	"github.com/tphakala/birdnet-go/internal/spectrogram"
 	"github.com/tphakala/birdnet-go/internal/suncalc"
-	"github.com/tphakala/birdnet-go/internal/sysinfo"
 )
 
 // apiV2Prefix is the base path prefix for all v2 API routes (the Echo group
@@ -73,6 +78,23 @@ type Controller struct {
 	// the facade's settings-save machinery (see NewWithOptions) because TLS writes
 	// mutate persisted settings.
 	tlsHandler *tlsapi.Handler
+
+	// integrations serves the /api/v2/integrations/* endpoints (MQTT status/test,
+	// MQTT TLS certificate management, BirdWeather/weather-provider/eBird
+	// connectivity tests, and the Home Assistant discovery trigger). Like the TLS
+	// handler it also holds the facade's settings-save machinery (see
+	// NewWithOptions) because the MQTT TLS certificate writes mutate persisted
+	// settings; the remaining deps (Metrics, Processor, settings accessors, and the
+	// error/log helpers) all promote from the shared *apicore.Core.
+	integrations *integrations.Handler
+
+	// detections serves the /api/v2/detections/* CRUD/review/lock/ignore/batch
+	// endpoints and POST /api/v2/search. Besides the shared *apicore.Core it holds
+	// the facade's settings-save machinery (the exclude-list mutation persists
+	// settings) plus facade-owned function dependencies still owned by package api
+	// until their domains are extracted: the auth check (isClientAuthenticated) and
+	// the cached name-map accessors (loadCommonNameMap/loadCommonToScientificMap).
+	detections *detections.Handler
 
 	// rangeHandler serves the /api/v2/range/* endpoints (range-filter status,
 	// species scores/count/list/CSV, test, rebuild). It is named rangeHandler
@@ -133,6 +155,17 @@ type Controller struct {
 	// internal/analysis owns and closes it).
 	control *control.Handler
 
+	// audio serves the audio/streaming domain: the live audio-level SSE stream and
+	// stream-source listing, the HLS streaming endpoints (incl. the bespoke
+	// stream-token playlist/segment serving and the publicLiveAudio dynamic auth
+	// gate), the stream health/test endpoints, quiet-hours status, the audio
+	// liveness health endpoint, and the /system/audio device/source endpoints.
+	// Beyond the shared *apicore.Core it owns the HLS manager and audio-level
+	// broadcaster singletons; the facade exposes RestartHLSStreams/SetAudioWatchdog/
+	// SetAudioLevelChan delegators for the internal/analysis and parent-server
+	// callers.
+	audio *audioapi.Handler
+
 	controlChan chan string
 
 	// DisableSaveSettings prevents persisting settings changes to disk.
@@ -143,8 +176,18 @@ type Controller struct {
 	isGlobalOwner       bool         // true when this controller owns the global settings singleton
 	settingsMutex       sync.RWMutex // Serializes the read-modify-write in settings update handlers; reads are lock-free via the atomic Settings pointer
 
-	startTime            *time.Time
-	spectrogramGenerator *spectrogram.Generator // Shared spectrogram generator (initialized after SFS)
+	startTime *time.Time
+
+	// media serves the media domain: media-file serving (audio clips and
+	// spectrogram images from the SecureFS sandbox), on-demand spectrogram
+	// generation, the ID-based audio/spectrogram endpoints (including the greedy
+	// GET /api/v2/audio/:id route on c.Echo), clip extraction and audio
+	// processing, the cached bird-image proxy (ServeSpeciesImageProxy, injected
+	// into the species handler), and the external-media mount-status endpoint.
+	// Beyond the shared *apicore.Core it owns the audio-processing cache and
+	// concurrency limiter and the spectrogram generator. It is constructed BEFORE
+	// the species handler because species injects c.media.ServeSpeciesImageProxy.
+	media *mediaapi.Handler
 
 	// authService is the authentication service injected from server (via the
 	// WithAuthService functional option). The facade keeps it as the injection
@@ -157,24 +200,43 @@ type Controller struct {
 	// are applied so authService reflects WithAuthService (see NewWithOptions).
 	authHandler *authapi.Handler
 
-	// notificationService is the notification service this controller uses. It is
-	// nil in production, where getNotificationService() falls back to the
-	// process-global singleton (notification.GetService()). Tests inject an
-	// isolated per-test instance via WithNotificationService so each test gets its
-	// own config and store without touching the global singleton.
+	// notificationService is the notification service the facade injects into the
+	// domain handlers. It is nil in production, where each handler's
+	// getNotificationService() accessor falls back to the process-global singleton
+	// (notification.GetService()). Tests inject an isolated per-test instance via
+	// WithNotificationService so each test gets its own config and store without
+	// touching the global singleton. The facade keeps this field because the toast
+	// helpers (toast_helpers.go) read it directly and the same value is handed to
+	// the notifications, imports, and app domain handlers below.
 	notificationService *notification.Service
 
-	// Audio processing fields
-	processingCache     *processingCache
-	processingSemaphore chan struct{}
+	// notifications serves the /api/v2/notifications/* endpoints (list, unread
+	// count, SSE notification+toast stream, per-item mutations, the test
+	// new-species trigger, and the NTFY connectivity probe). Beyond the shared
+	// *apicore.Core it receives the facade-injected notificationService and
+	// authService. It is constructed AFTER the functional options are applied so
+	// both services reflect WithNotificationService / WithAuthService (see
+	// NewWithOptions).
+	notifications *notifications.Handler
 
-	// probeStreamInfo probes a live stream's audio characteristics for the
-	// stream-test endpoint. Nil in production, where TestStream falls back to
-	// ffmpeg.ProbeStreamInfo; tests set it to stub probing without ffprobe.
-	probeStreamInfo probeStreamInfoFunc
+	// sse serves the SSE stream endpoints (/api/v2/detections/stream,
+	// /api/v2/soundlevels/stream, /api/v2/sse/status). It needs only the shared
+	// *apicore.Core: the SSE hub (SSEManager), the write primitives and the stream
+	// scaffolding (SendSSEHeartbeat/LogSSEConnection/SendConnectionMessage) all
+	// promote from the embedded core. The hub itself stays in apicore.
+	sse *sse.Handler
 
-	// Legacy cleanup state tracker
-	cleanupStatus *CleanupStatus
+	// imports serves the import/migration domain: the BirdNET-Pi import endpoints,
+	// the legacy->v2 migration endpoints and the background migration-worker control
+	// surface, the migration prerequisite checks, the async SQLite backup-job
+	// endpoints, and the legacy-database cleanup endpoints. Beyond the shared
+	// *apicore.Core it owns the import lifecycle manager, the import source-path
+	// root/factory, the legacy-cleanup tracker, and the facade-injected notification
+	// service. The facade calls c.imports.Shutdown() during teardown to stop the
+	// backup job manager's cleanup goroutine. The migration-worker package-level
+	// funcs (importsapi.SetMigration*/StopMigrationWorker) are driven by
+	// internal/analysis.
+	imports *importsapi.Handler
 
 	// Test synchronization fields (only populated when initializeRoutes is true)
 	// goroutinesStarted signals when all background goroutines have successfully started.
@@ -182,59 +244,53 @@ type Controller struct {
 	// Only created when routes are initialized (production mode or specific tests).
 	goroutinesStarted chan struct{} // signals when all background goroutines have started (nil if routes not initialized)
 
-	// externalMediaEnv and externalMediaProbe are injectable dependencies for
-	// the GET /api/v2/system/external-media endpoint. Both default to the real
-	// sysinfo implementations at request time when nil.
-	externalMediaEnv   sysinfo.EnvGetter
-	externalMediaProbe sysinfo.MountProber
-
-	// importMgr manages the one-at-a-time import lifecycle.
-	importMgr *importManager
-
-	// importSourceRoot is the directory under which import source paths must resolve.
-	// Defaults to sysinfo.DefaultExternalMountPath when empty.
-	importSourceRoot string
-
-	// importSourceFactory builds an import Source from a resolved path.
-	// Defaults to a BirdNET-Pi adapter when nil. Overridable in tests.
-	importSourceFactory func(path string) (imports.Source, error)
-
-	// ntfyCheckTimeoutOverride overrides the per-scheme ntfy connectivity probe
-	// timeout used by CheckNtfyServer. Zero in production, where the probe uses
-	// ntfyServerCheckTimeout. Tests set a short timeout so the unreachable-host
-	// path returns quickly instead of waiting the full default for each scheme.
-	ntfyCheckTimeoutOverride time.Duration
-
-	// audioWaitTimeoutOverride overrides the server-side wait for an in-progress
-	// audio encoding used by waitForAudioFile. Zero in production, where the wait
-	// uses audioWaitTimeout. Tests set a short timeout to exercise the
-	// 503-after-timeout path without waiting the full default.
-	audioWaitTimeoutOverride time.Duration
-
 	// Audio level channel for SSE streaming
 	// TODO: Consider moving to a dedicated audio manager
 	audioLevelChan chan audiocore.AudioLevelData
 
-	// Application metadata repository (initialized lazily in initAppRoutes)
-	appMetadataRepo repository.AppMetadataRepository
+	// appHandler serves the app/debug domain: the public /app/config bootstrap
+	// endpoint (which issues the frontend CSRF token via middleware.EnsureCSRFToken
+	// and returns the SPA configuration), the wizard dismiss endpoint, and the
+	// debug-mode-gated /debug/* endpoints. Beyond the shared *apicore.Core it
+	// receives the facade-injected authService and notificationService and owns the
+	// app-metadata repository (built lazily in RegisterAppRoutes). It is constructed
+	// AFTER the functional options are applied so both injected services reflect
+	// WithAuthService / WithNotificationService (see NewWithOptions).
+	appHandler *app.Handler
 
-	// Insights fields (initialized lazily in initInsightsRoutes)
-	insightsRepo repository.InsightsRepository
-	nameMaps     atomic.Value // stores *nameMaps; see internal/api/v2/insights.go
+	// Cached BirdNET name maps (facade-owned; see name_maps.go). They are shared
+	// infrastructure: the analytics, detections, and species domains read them via
+	// injected accessors, and internal/analysis drives them through
+	// UpdateCommonNameMap/SetNameResolver on *Controller.
+	nameMaps atomic.Value // stores *nameMaps; see internal/api/v2/name_maps.go
 	// nameResolver is the authoritative localized name source shared with the
 	// classifier orchestrator. Overrides label-derived names in the cached maps.
 	nameResolver atomic.Pointer[datastore.SpeciesNameResolver]
 
-	// Health check infrastructure for the diagnostics endpoints (initialized lazily
-	// in initDiagnosticsRoutes; healthErrors may be injected via WithHealthErrorBuffer).
-	// These stay on the facade: the diagnostics and metrics-history handlers own
-	// them, and HealthMetricsStore()/HealthEventBuffer() expose them to the analysis
-	// pipeline as exported accessor methods (which would collide with exported fields).
-	healthRegistry     *health.Registry
-	healthReports      *health.ReportStore
-	healthErrors       *health.ErrorRingBuffer
-	healthMetricsStore *observability.HealthMetricsStore
-	healthEvents       *observability.HealthEventBuffer
+	// analytics serves the /api/v2/analytics/* species/time/confidence/sun/sources
+	// endpoints, the geographic /range/heatmap endpoint, the /insights/* +
+	// /dashboard/kpis endpoints, and the auth-protected /system/database/overview
+	// endpoint. It owns the insights repository; the facade keeps the name-map
+	// plumbing (name_maps.go) and seeds the maps before registering insights routes.
+	analytics *analytics.Handler
+
+	// healthErrorBuf is the optional shared ErrorRingBuffer seed injected via
+	// WithHealthErrorBuffer. It is handed to the system domain handler at
+	// construction; the system handler owns the live diagnostics health
+	// infrastructure (registry, report store, error buffer, metrics store, event
+	// buffer) and exposes the metrics store / event buffer to the analysis pipeline
+	// through the HealthMetricsStore()/HealthEventBuffer() facade delegators.
+	healthErrorBuf *health.ErrorRingBuffer
+
+	// system serves the /api/v2/system/* information endpoints plus the events,
+	// diagnostics, metrics-history and terminal endpoints. Beyond the shared
+	// *apicore.Core it owns the diagnostics health infrastructure and receives the
+	// controller start time and the optional health-error-buffer seed by injection.
+	// The facade keeps the genuine-system route registration plus the cross-domain
+	// /system routes (audio devices, external-media, database overview/migration/
+	// backup/legacy) in initSystemRoutes (system_routes.go) until those domains are
+	// extracted.
+	system *system.Handler
 }
 
 // Option is a functional option for configuring the Controller.
@@ -299,11 +355,12 @@ func WithModelManager(mm *classifier.ModelManager) Option {
 }
 
 // WithHealthErrorBuffer injects a shared ErrorRingBuffer created at startup.
-// When set, initDiagnosticsRoutes uses this buffer instead of creating its own,
-// enabling the logger to feed errors into the same buffer the health checks read.
+// When set, the system handler's diagnostics initializer uses this buffer instead
+// of creating its own, enabling the logger to feed errors into the same buffer the
+// health checks read.
 func WithHealthErrorBuffer(buf *health.ErrorRingBuffer) Option {
 	return func(c *Controller) {
-		c.healthErrors = buf
+		c.healthErrorBuf = buf
 	}
 }
 
@@ -351,13 +408,18 @@ func NewWithOptions(e *echo.Echo, ds datastore.Interface, settings *conf.Setting
 		Core:          core,
 		controlChan:   controlChan,
 		isGlobalOwner: settings == conf.GetSettings(),
-		importMgr:     newImportManager(),
 	}
 
 	// Construct domain handlers around the shared core. They hold the same
 	// *apicore.Core pointer and register their routes in initRoutes.
 	c.weather = weather.New(c.Core)
 	c.rangeHandler = rangeapi.New(c.Core)
+	// The SSE handler receives the facade-owned auth check (isClientAuthenticated)
+	// so the public detection stream can anonymize the source DisplayName for
+	// unauthenticated subscribers (matching detections/analytics and the
+	// StreamAudioLevel precedent). The bound method value reads c.authService at
+	// call time, so the post-functional-option authService is observed per request.
+	c.sse = sse.New(c.Core, c.isClientAuthenticated)
 	// The TLS handler needs the facade's settings-save machinery: the shared
 	// settingsMutex (passed by pointer so TLS certificate writes serialize against
 	// the main settings update handlers) and the bound method values for reading,
@@ -366,12 +428,45 @@ func NewWithOptions(e *echo.Echo, ds datastore.Interface, settings *conf.Setting
 	// stable for the controller's lifetime.
 	c.tlsHandler = tlsapi.New(c.Core, &c.settingsMutex,
 		c.getSettingsOrFallback, c.publishAndSaveSettings, c.handleSettingsChanges)
-	// The species handler delegates to two facade-owned dependencies that have not
-	// been extracted into their own domains yet: loadCommonNameMap (the shared
-	// name-map read accessor) and ServeSpeciesImageProxy (the media image proxy the
-	// thumbnail endpoint forwards to). They are passed as bound method values; c is
-	// fully constructed here, so the method values are stable for its lifetime.
-	c.species = species.New(c.Core, c.loadCommonNameMap, c.ServeSpeciesImageProxy)
+	// The integrations handler needs the same facade settings-save machinery as the
+	// TLS handler: the MQTT TLS certificate writes mutate persisted settings, so it
+	// receives the shared &c.settingsMutex (so those writes serialize against the
+	// main settings update handlers) plus the bound publish/save/change method
+	// values. c is fully constructed here and these deps are stable for its
+	// lifetime, so this can be wired before the functional options loop (it needs no
+	// option-set dependency).
+	c.integrations = integrations.New(c.Core, &c.settingsMutex,
+		c.getSettingsOrFallback, c.publishAndSaveSettings, c.handleSettingsChanges)
+	// The detections handler needs the same facade settings-save machinery as the
+	// integrations/TLS handlers (the review/ignore exclude-list mutation persists
+	// settings) plus three more facade-owned function dependencies whose subsystems
+	// are not extracted yet: the auth check (isClientAuthenticated) and the cached
+	// name-map accessors (loadCommonNameMap/loadCommonToScientificMap). c is fully
+	// constructed here and these deps are stable for its lifetime; the method values
+	// read their backing fields at call time (so the post-option authService is
+	// observed), so this is wired before the functional options loop.
+	c.detections = detections.New(c.Core, &c.settingsMutex,
+		c.getSettingsOrFallback, c.publishAndSaveSettings, c.handleSettingsChanges,
+		c.isClientAuthenticated, c.loadCommonNameMap, c.loadCommonToScientificMap)
+	// The analytics handler is injected the same facade-owned dependencies as
+	// detections: the auth check (isClientAuthenticated, read per request so the
+	// public /analytics/sources response anonymizes source names) and the cached
+	// name-map accessors (loadCommonNameMap / loadCommonToScientificMap). It owns
+	// the insights repository, which it builds lazily in RegisterInsightsRoutes.
+	c.analytics = analytics.New(c.Core,
+		c.isClientAuthenticated, c.loadCommonNameMap, c.loadCommonToScientificMap)
+	// The media handler owns the audio-processing cache, the spectrogram
+	// generator, and the cache-cleanup goroutine (all built from the shared
+	// SecureFS in mediaapi.New). It is constructed BEFORE the species handler
+	// because species injects c.media.ServeSpeciesImageProxy (a method value on
+	// the media handler) for its thumbnail endpoint.
+	c.media = mediaapi.New(c.Core)
+	// The species handler delegates to two dependencies: loadCommonNameMap (the
+	// shared name-map read accessor, facade-owned in name_maps.go) and the media
+	// domain's species-image proxy handler
+	// (c.media.ServeSpeciesImageProxy). They are passed as bound method values; c
+	// is fully constructed here, so the method values are stable for its lifetime.
+	c.species = species.New(c.Core, c.loadCommonNameMap, c.media.ServeSpeciesImageProxy)
 	// The models handler needs only the shared core (ModelManager and the
 	// settings/error/log/goroutine helpers all promote from it).
 	c.models = models.New(c.Core)
@@ -397,28 +492,6 @@ func NewWithOptions(e *echo.Echo, ds datastore.Interface, settings *conf.Setting
 	// the error/log helpers) all promote from the shared core.
 	c.control = control.New(c.Core, c.controlChan)
 
-	// Initialize audio processing cache and concurrency limiter
-	cacheDir := filepath.Join(c.SFS.BaseDir(), ".processing-cache")
-	c.processingCache = newProcessingCache(cacheDir, processingCacheMaxFiles)
-	c.processingSemaphore = make(chan struct{}, 2)
-
-	// Start cache cleanup goroutine (tracked by the core wait group)
-	c.Go(func() {
-		ticker := time.NewTicker(processingCacheTickerInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-c.Context().Done():
-				return
-			case <-ticker.C:
-				c.processingCache.cleanExpired()
-			}
-		}
-	})
-
-	// Spectrogram generator (needs the media SecureFS)
-	c.spectrogramGenerator = spectrogram.NewGenerator(settings, c.SFS, getSpectrogramLogger())
-
 	// Apply functional options (auth middleware and service injected from server)
 	for _, opt := range opts {
 		opt(c)
@@ -434,6 +507,47 @@ func NewWithOptions(e *echo.Echo, ds datastore.Interface, settings *conf.Setting
 	// it uses for the protected logout/status group promotes from c.Core and is
 	// read at RegisterRoutes time (after this), so it is also populated.
 	c.authHandler = authapi.New(c.Core, c.authService)
+
+	// Construct the notifications domain handler AFTER the functional options are
+	// applied, for the same reason as the auth handler: both WithNotificationService
+	// and WithAuthService set their fields in the loop above. The handler captures
+	// the injected services (notificationService falls back to the global singleton
+	// when nil; authService is nil-guarded). Neither changes after this point, so
+	// capturing the post-option values is behaviorally identical to the monolith's
+	// per-request reads. The facade keeps c.notificationService because the toast
+	// helpers read it directly and it is handed to the notifications, imports, and
+	// app domain handlers, each of which resolves the service via its own
+	// getNotificationService() accessor.
+	c.notifications = notifications.New(c.Core, c.notificationService, c.authService)
+
+	// Construct the import/migration domain handler AFTER the functional options
+	// are applied so it captures the post-option notificationService (the migration
+	// and legacy-cleanup completion notifications resolve the service through it,
+	// falling back to the process-global singleton when nil), mirroring the
+	// notifications handler above. Its import lifecycle manager is created in New;
+	// the legacy-cleanup tracker is created lazily in RegisterLegacyCleanupRoutes.
+	c.imports = importsapi.New(c.Core, c.notificationService)
+
+	// Construct the app/debug domain handler AFTER the functional options are
+	// applied so it captures the post-option authService (the /app/config
+	// accessAllowed check reads it, nil-guarded) and notificationService (the debug
+	// trigger-notification/status handlers resolve the service through it, falling
+	// back to the process-global singleton when nil), mirroring the notifications
+	// and imports handlers above. Neither service changes after this point, so
+	// capturing the post-option values is behaviorally identical to the monolith's
+	// per-request reads. Its app-metadata repository is built lazily in
+	// RegisterAppRoutes from the V2Manager promoted off c.Core.
+	c.appHandler = app.New(c.Core, c.authService, c.notificationService)
+
+	// Construct the audio/streaming domain handler AFTER the functional options are
+	// applied so it captures the post-option authService (used by the public
+	// audio-level stream and quiet-hours status to anonymize source names / stream
+	// URLs for unauthenticated callers; nil-guarded). authService never changes
+	// after this point, so capturing it is behaviorally identical to the monolith's
+	// per-request reads. The audio Engine/AudioWatchdog atomic pointers and the
+	// Settings/AuthMiddleware helpers promote from c.Core; the live audio-level
+	// channel is wired later via SetAudioLevelChan.
+	c.audio = audioapi.New(c.Core, c.authService)
 
 	// Log auth configuration status
 	log := GetLogger()
@@ -463,6 +577,13 @@ func NewWithOptions(e *echo.Echo, ds datastore.Interface, settings *conf.Setting
 	// Initialize start time for uptime tracking
 	now := time.Now()
 	c.startTime = &now
+
+	// Construct the system domain handler AFTER the functional options are applied
+	// (so the WithHealthErrorBuffer seed in c.healthErrorBuf is observed) and after
+	// c.startTime is set (the diagnostics uptime check captures the pointer). It
+	// owns the diagnostics health infrastructure; its routes are registered in
+	// initRoutes below.
+	c.system = system.New(c.Core, c.startTime, c.healthErrorBuf, audioapi.LatestAudioLevels)
 
 	// Initialize routes if requested (skip in tests to avoid starting background goroutines)
 	if initializeRoutes {
@@ -497,40 +618,41 @@ func (c *Controller) initRoutes() {
 		name string
 		fn   func()
 	}{
-		{"app routes", c.initAppRoutes},
-		{"search routes", c.initSearchRoutes},
-		{"detection routes", c.initDetectionRoutes},
-		{"analytics routes", c.initAnalyticsRoutes},
+		{"app routes", func() { c.appHandler.RegisterAppRoutes(c.Group) }},
+		{"search routes", func() { c.detections.RegisterSearchRoutes(c.Group) }},
+		{"detection routes", func() { c.detections.RegisterDetectionRoutes(c.Group) }},
+		{"analytics routes", func() { c.analytics.RegisterAnalyticsRoutes(c.Group) }},
 		{"weather routes", func() { c.weather.RegisterRoutes(c.Group) }},
 		{"system routes", c.initSystemRoutes},
-		{"terminal routes", c.initTerminalRoutes},
+		{"audio device routes", func() { c.audio.RegisterAudioDeviceRoutes(c.Group) }},
+		{"terminal routes", func() { c.system.RegisterTerminalRoutes(c.Group) }},
 		{"settings routes", c.initSettingsRoutes},
 		{"filesystem routes", func() { c.filesystem.RegisterRoutes(c.Group) }},
-		{"stream health routes", c.initStreamHealthRoutes},
-		{"stream test routes", c.initStreamTestRoutes},
-		{"audio health routes", c.initAudioHealthRoutes},
-		{"quiet hours routes", c.initQuietHoursRoutes},
-		{"audio level routes", c.initAudioLevelRoutes},
-		{"hls streaming routes", c.initHLSRoutes},
-		{"integration routes", c.initIntegrationsRoutes},
+		{"stream health routes", func() { c.audio.RegisterStreamHealthRoutes(c.Group) }},
+		{"stream test routes", func() { c.audio.RegisterStreamTestRoutes(c.Group) }},
+		{"audio health routes", func() { c.audio.RegisterAudioHealthRoutes(c.Group) }},
+		{"quiet hours routes", func() { c.audio.RegisterQuietHoursRoutes(c.Group) }},
+		{"audio level routes", func() { c.audio.RegisterAudioLevelRoutes(c.Group) }},
+		{"hls streaming routes", func() { c.audio.RegisterHLSRoutes(c.Group) }},
+		{"integration routes", func() { c.integrations.RegisterRoutes(c.Group) }},
 		{"control routes", func() { c.control.RegisterRoutes(c.Group) }},
 		{"auth routes", func() { c.authHandler.RegisterRoutes(c.Group) }},
-		{"media routes", c.initMediaRoutes},
+		{"media routes", func() { c.media.RegisterRoutes(c.Group) }},
 		{"range routes", func() { c.rangeHandler.RegisterRoutes(c.Group) }},
-		{"heatmap routes", c.initHeatmapRoutes},
-		{"sse routes", c.initSSERoutes},
-		{"diagnostics routes", c.initDiagnosticsRoutes},
-		{"metrics history routes", c.initMetricsHistoryRoutes},
-		{"notification routes", c.initNotificationRoutes},
+		{"heatmap routes", func() { c.analytics.RegisterHeatmapRoutes(c.Group) }},
+		{"sse routes", func() { c.sse.RegisterRoutes(c.Group) }},
+		{"diagnostics routes", func() { c.system.RegisterDiagnosticsRoutes(c.Group) }},
+		{"metrics history routes", func() { c.system.RegisterMetricsHistoryRoutes(c.Group) }},
+		{"notification routes", func() { c.notifications.RegisterRoutes(c.Group) }},
 		{"support routes", func() { c.support.RegisterRoutes(c.Group) }},
-		{"debug routes", c.initDebugRoutes},
+		{"debug routes", func() { c.appHandler.RegisterDebugRoutes(c.Group) }},
 		{"species routes", func() { c.species.RegisterRoutes(c.Group) }},
 		{"dynamic threshold routes", func() { c.dynamicThresholds.RegisterRoutes(c.Group) }},
 		{"alert routes", func() { c.alerts.RegisterRoutes(c.Group) }},
 		{"model routes", func() { c.models.RegisterRoutes(c.Group) }},
 		{"insights routes", c.initInsightsRoutes},
 		{"tls routes", func() { c.tlsHandler.RegisterRoutes(c.Group) }},
-		{"import routes", c.initImportRoutes},
+		{"import routes", func() { c.imports.RegisterImportRoutes(c.Group) }},
 	}
 
 	for _, initializer := range routeInitializers {
@@ -614,7 +736,7 @@ func (c *Controller) HealthCheck(ctx echo.Context) error {
 	systemMetrics := make(map[string]any)
 
 	// CPU usage from cached background sampler
-	cpuPercent := GetCachedCPUUsage()
+	cpuPercent := apicore.GetCachedCPUUsage()
 	if len(cpuPercent) > 0 {
 		systemMetrics["cpu_usage"] = cpuPercent[0]
 	} else {
@@ -688,9 +810,11 @@ func (c *Controller) Shutdown() {
 		}
 	}
 
-	// Shutdown the backup job manager to stop its cleanup goroutine
-	if backupJobManager != nil {
-		backupJobManager.Shutdown()
+	// Shut down the import/migration domain (stops the backup job manager's cleanup
+	// goroutine). The migration worker is stopped separately by internal/analysis as
+	// part of the datastore lifecycle.
+	if c.imports != nil {
+		c.imports.Shutdown()
 	}
 
 	// Flush all log writers (the main writer plus every module writer, including

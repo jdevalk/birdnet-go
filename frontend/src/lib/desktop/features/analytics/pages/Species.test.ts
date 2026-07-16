@@ -72,10 +72,9 @@ describe('Species (analytics page)', () => {
 
     globalThis.fetch = mockFetchSequence({
       '/api/v2/analytics/species/summary': () => summary,
-      '/api/v2/analytics/species/thumbnails': () => ({}),
-      // Page mounts fetchAudioSources(); without a mock the catch handler
-      // calls loggers.analytics.error(), which is undefined in this test
-      // env and throws an unhandled TypeError.
+      // Fork-local: the page mounts fetchAudioSources() for the per-source
+      // filter. Without a mock the catch handler calls loggers.analytics.error(),
+      // which is undefined in this test env and throws an unhandled TypeError.
       '/api/v2/analytics/sources': () => ({ sources: [] }),
     });
 
@@ -93,48 +92,6 @@ describe('Species (analytics page)', () => {
     );
 
     expect(img.getAttribute('src')).toBe('/birdnet/api/v2/media/image/Cardellina%20pusilla');
-  });
-
-  it('also prefixes URLs returned by the batched thumbnails endpoint', async () => {
-    setBasePath('/birdnet');
-
-    const summary: SpeciesSummary[] = [
-      {
-        common_name: 'Northern Cardinal',
-        scientific_name: 'Cardinalis cardinalis',
-        count: 7,
-        avg_confidence: 0.91,
-        max_confidence: 0.99,
-        first_heard: '2026-04-10',
-        last_heard: '2026-04-26',
-        // No thumbnail_url here — the page's loadThumbnailsAsync() should
-        // populate it from the batch endpoint.
-      },
-    ];
-
-    globalThis.fetch = mockFetchSequence({
-      '/api/v2/analytics/species/summary': () => summary,
-      '/api/v2/analytics/species/thumbnails': () => ({
-        'Cardinalis cardinalis': '/api/v2/media/image/Cardinalis%20cardinalis',
-      }),
-      // Same reason as the first test — fetchAudioSources fires on mount.
-      '/api/v2/analytics/sources': () => ({ sources: [] }),
-    });
-
-    const { container } = speciesTest.render({});
-
-    const img = await waitFor(
-      () => {
-        const found = container.querySelector('img');
-        if (!found?.getAttribute('src')?.includes('Cardinalis')) {
-          throw new Error('thumbnail not yet rendered');
-        }
-        return found;
-      },
-      { timeout: 2000 }
-    );
-
-    expect(img.getAttribute('src')).toBe('/birdnet/api/v2/media/image/Cardinalis%20cardinalis');
   });
 });
 
@@ -184,10 +141,9 @@ describe('Species (analytics page) — sortable column headers', () => {
     vi.clearAllMocks();
     globalThis.fetch = mockFetchSequence({
       '/api/v2/analytics/species/summary': () => summary,
-      '/api/v2/analytics/species/thumbnails': () => ({}),
-      // The page mounts fetchAudioSources(); without this mock the catch handler
-      // calls loggers.analytics.error(), which is undefined in this test env and
-      // throws an unhandled TypeError. Matches the first describe block above.
+      // Fork-local: the page mounts fetchAudioSources() for the per-source
+      // filter. Without a mock the catch handler calls loggers.analytics.error(),
+      // which is undefined in this test env and throws an unhandled TypeError.
       '/api/v2/analytics/sources': () => ({ sources: [] }),
     });
     window.localStorage.clear();
