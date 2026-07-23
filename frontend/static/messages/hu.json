@@ -3486,6 +3486,13 @@
         "typeLabel": "Stream típus",
         "typeHelp": "Stream protokoll - automatikusan észlelve az URL-ből",
         "transportLabel": "Protokoll",
+        "mediaModeLabel": "Médiamód",
+        "mediaModeHelp": "A teljes adatfolyam hangot és videót is kér (a videót dekódolás után eldobja), és a legtöbb kamerával működik. Az Auto először csak hanggal próbálkozik, és a teljes adatfolyamra vált, ha a kamera nem tud önmagában hangot szolgáltatni. A csak hang soha nem foglal le videohelyet a kamerán, de sikertelen, ha a kamera nem tudja önállóan szolgáltatni a hangsávot.",
+        "mediaMode": {
+          "auto": "Auto",
+          "audioOnly": "Csak hang",
+          "fullStream": "Teljes adatfolyam"
+        },
         "summary": "{count} stream konfigurálva",
         "healthy": "egészséges",
         "unhealthy": "nem egészséges",
@@ -3658,8 +3665,6 @@
         "normalizationDisabled": "A hang normalizáció le van tiltva",
         "targetLUFSLabel": "Cél hangosság (LUFS)",
         "targetLUFSHelp": "Integrált hangosság cél értéke LUFS-ben (Loudness Units relative to Full Scale). A -23 LUFS az EBU R128 broadcast szabvány. Tartomány: -40 és -10 LUFS között.",
-        "loudnessRangeLabel": "Hangosság tartomány (LU)",
-        "loudnessRangeHelp": "Maximális hangerő variáció a mintában (0-20 LU). Az alacsonyabb értékek konzisztensebb hangerőt hoznak létre, de csökkenthetik a dinamikát.",
         "truePeakLabel": "True Peak limit (dBTP)",
         "truePeakHelp": "Maximális true peak szint a digitális clipping megelőzéséhez (-10 és 0 dBTP között). A -2 dBTP biztonságos tartalékot biztosít a legtöbb lejátszó rendszerhez.",
         "normalizationNote": "EBU R128 szabvány",
@@ -3697,6 +3702,7 @@
         "typeHelp": "Hang formátum a mentett klipekhez. A WAV és FLAC veszteségmentes (legjobb minőség, nagyobb fájlok). Az MP3, AAC és Opus veszteséges (kisebb fájlok, enyhe minőségvesztés).",
         "bitrateLabel": "Bitráta",
         "bitrateHelp": "Hang tömörítési bitráta a veszteséges formátumokhoz. Tartomány: {min}-{max} kbps. A magasabb értékek jobb minőséget, de nagyobb fájlokat eredményeznek.",
+        "losslessBitrateValue": "N/A - Lossless",
         "losslessNote": "A veszteségmentes formátumok megőrzik az eredeti hangminőséget tömörítési artefaktusok nélkül."
       },
       "audioNormalization": {
@@ -3708,8 +3714,6 @@
         "requiresRecording": "Engedélyezze a klips rögzítést a Rögzítés lapon a hang normalizáció használatához.",
         "targetLUFSLabel": "Cél hangosság (LUFS)",
         "targetLUFSHelp": "Integrált hangosság cél értéke LUFS-ben (Loudness Units relative to Full Scale). A -23 LUFS az EBU R128 broadcast szabvány. Tartomány: -40 és -10 LUFS között.",
-        "loudnessRangeLabel": "Hangosság tartomány (LU)",
-        "loudnessRangeHelp": "Maximális hangerő variáció a mintában (0-20 LU). Az alacsonyabb értékek konzisztensebb hangerőt hoznak létre, de csökkenthetik a dinamikát.",
         "truePeakLabel": "True Peak limit (dBTP)",
         "truePeakHelp": "Maximális true peak szint a digitális clipping megelőzéséhez (-10 és 0 dBTP között). A -2 dBTP biztonságos tartalékot biztosít a legtöbb lejátszó rendszerhez.",
         "noteTitle": "EBU R128 szabvány",

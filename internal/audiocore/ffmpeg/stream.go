@@ -232,6 +232,11 @@ type StreamConfig struct {
 	// Values: "downmix" (default), "left", "right".
 	ChannelMode string
 
+	// MediaMode controls which RTSP media is requested from the camera.
+	// Values: "auto", "audio-only", "full-stream" (empty = full-stream). Only
+	// applied for RTSP sources.
+	MediaMode string
+
 	// FFmpegPath is the absolute path to the FFmpeg binary.
 	FFmpegPath string
 
@@ -771,8 +776,10 @@ func (s *Stream) Run(parentCtx context.Context) {
 				isSilenceTimeout := strings.Contains(errorMsg, "silence timeout")
 
 				// Publish stream event for alerting rules.
-				// EOF returns nil from handleReadError and never reaches here,
-				// so only silence timeouts are classified as disconnections.
+				// A normal EOF (audio already seen) or a canceled context returns
+				// nil from handleReadError and never reaches here; a data-less EOF
+				// timeout surfaces as a generic stream error. Only silence timeouts
+				// are classified as disconnections.
 				eventName := alerting.EventStreamError
 				if isSilenceTimeout {
 					eventName = alerting.EventStreamDisconnected
@@ -909,6 +916,7 @@ func (s *Stream) startProcess() error {
 		logger.String("url", s.config.safeURL()),
 		logger.Int("pid", s.cmd.Process.Pid),
 		logger.String("transport", s.config.Transport),
+		logger.String("media_mode", effectiveMediaMode(&s.config)),
 		logger.Int("target_sample_rate", s.config.SampleRate),
 		logger.Int("source_sample_rate", s.config.SourceSampleRate),
 		logger.Bool("ffmpeg_resampling", s.config.needsOutputResampling()),
@@ -922,11 +930,11 @@ func (s *Stream) startProcess() error {
 // buildFFmpegInputArgs constructs the FFmpeg input arguments for this stream.
 // It delegates argument construction to the shared buildInputArgs so the runtime
 // path builds the same argument structure as the unit-tested BuildFFmpegArgs.
-// The two differ only where this stream intends them to: BuildFFmpegArgs always
-// requests audio-only, whereas this path passes audioOnly=false once the stream
-// has latched into the full-stream fallback (issue #3902). Stream-specific
-// behavior is otherwise limited to surfacing an invalid user-supplied timeout as
-// a warning log (buildInputArgs silently falls back to the default).
+// Both derive the audio-only decision from the same resolveAudioOnly helper, so
+// they agree under every media mode; they differ only in that this path also
+// consults the live reactive fallback latch (auto mode) and surfaces an invalid
+// user-supplied timeout as a warning log (buildInputArgs silently falls back to
+// the default).
 func (s *Stream) buildFFmpegInputArgs(ffmpegParameters []string) []string {
 	if hasUserTimeout, userTimeoutValue := detectUserTimeout(ffmpegParameters); hasUserTimeout {
 		if err := validateTimeout(userTimeoutValue); err != nil {
@@ -938,9 +946,11 @@ func (s *Stream) buildFFmpegInputArgs(ffmpegParameters []string) []string {
 				logger.String("operation", "validate_timeout"))
 		}
 	}
-	// Request audio-only unless this stream has fallen back to the full stream
-	// because the camera cannot SETUP the audio track alone (issue #3902).
-	audioOnly := !s.audioOnlyFallback.Load()
+	// The media mode decides whether to request audio-only. In auto mode the
+	// reactive fallback (audioOnlyFallback) drops the restriction once the camera
+	// proves it cannot SETUP the audio track alone (issue #3902); audio-only and
+	// full-stream are deterministic and ignore the latch.
+	audioOnly := resolveAudioOnly(&s.config, s.audioOnlyFallback.Load())
 	return buildInputArgs(&s.config, ffmpegParameters, audioOnly)
 }
 
@@ -1157,6 +1167,25 @@ func (s *Stream) handleReadError(readErr error, startTime time.Time) error {
 	}
 
 	if errors.Is(readErr, io.EOF) || errors.Is(readErr, context.Canceled) {
+		// A data-less EOF while the context is still live means FFmpeg exited
+		// without ever delivering audio (e.g. an RTSP connection timeout past the
+		// quick-exit window). Surface it as an error so Run records the failure
+		// and can engage the audio-only fallback (issues #3902/#3936); a normal
+		// EOF (audio already seen) or a canceled context stays a clean stop.
+		if errors.Is(readErr, io.EOF) && s.ctx.Err() == nil {
+			s.bytesReceivedMu.RLock()
+			totalBytes := s.totalBytesReceived
+			s.bytesReceivedMu.RUnlock()
+			if totalBytes == 0 {
+				return errors.Newf("error reading from FFmpeg: stream ended without producing data").
+					Category(errors.CategoryRTSP).
+					Component("ffmpeg-stream").
+					Context("operation", "process_audio").
+					Context("url", s.config.safeURL()).
+					Context("runtime_seconds", time.Since(startTime).Seconds()).
+					Build()
+			}
+		}
 		return nil
 	}
 
@@ -1949,6 +1978,12 @@ func (s *Stream) maybeEngageAudioOnlyFallback() bool {
 	// Only RTSP carries the audio-only restriction; only act while it is still
 	// requested and the camera has never delivered audio under it.
 	if s.config.sourceType() != audiocore.SourceTypeRTSP {
+		return false
+	}
+	// The reactive fallback only applies in auto mode. A stream forced to
+	// audio-only must fail visibly instead of silently opening a video slot, and
+	// full-stream never requested audio-only in the first place.
+	if !mediaModeAllowsFallback(&s.config) {
 		return false
 	}
 	if s.audioOnlyFallback.Load() || s.receivedAudio.Load() {

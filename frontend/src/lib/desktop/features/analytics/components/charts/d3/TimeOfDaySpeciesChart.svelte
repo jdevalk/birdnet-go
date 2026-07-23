@@ -1,6 +1,6 @@
 <!-- Multi-Species Time of Day Chart -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { select } from 'd3-selection';
   import { line as d3Line, curveMonotoneX } from 'd3-shape';
   import { max, scaleLinear } from 'd3';
@@ -12,7 +12,8 @@
   import { createLinearScale } from './utils/scales';
   import { createAxis, styleAxis, addAxisLabel, createHourAxisFormatter } from './utils/axes';
   import { ChartTooltip, addCrosshair, createLegend } from './utils/interactions';
-  import { generateSpeciesColors, getCurrentTheme, type ChartTheme } from './utils/theme';
+  import { getCurrentTheme, type ChartTheme } from './utils/theme';
+  import { getSpeciesColor, registerChart } from './utils/speciesColor';
 
   interface HourlyData {
     hour: number;
@@ -41,6 +42,9 @@
   // all-zero range keeps zero at the bottom) plus a fixed headroom above the max.
   const MIN_Y_DOMAIN_MAX = 1;
   const Y_AXIS_HEADROOM = 1.1;
+  // Width reserved for the legend, inset from the plot's right edge. Doubles as the label budget:
+  // anything wider would overflow the plot rather than wrap.
+  const LEGEND_WIDTH = 150;
 
   // Component state
   let tooltip: ChartTooltip | null = null;
@@ -50,12 +54,10 @@
     if (!data.length) return [];
 
     const currentTheme = getCurrentTheme();
-    const colors = generateSpeciesColors(data.length, currentTheme);
 
-    return data.map((species, index) => ({
+    return data.map(species => ({
       ...species,
-      // eslint-disable-next-line security/detect-object-injection -- Safe: internal array access with controlled index
-      color: species.color || colors[index],
+      color: species.color ?? getSpeciesColor(species.species, currentTheme),
       visible: selectedSpecies.length === 0 || selectedSpecies.includes(species.species),
       // Visitor-locale display label. Computed here (inside the $derived) so the
       // repaint $effect that reads visibleData re-runs when the dictionary loads
@@ -331,8 +333,11 @@
     if (legendItems.length > 0) {
       createLegend(chartGroup, {
         items: legendItems,
-        position: { x: innerWidth - 150, y: 20 },
+        position: { x: innerWidth - LEGEND_WIDTH, y: 20 },
         itemHeight: 20,
+        // The legend is inset from the right edge by exactly its own width, so this is also the room
+        // a label has before it would overflow the plot; long species names are ellipsized to fit.
+        maxLabelWidth: LEGEND_WIDTH,
         onToggle: (id, visible) => {
           // Toggle visibility of the corresponding line and points
           chartGroup
@@ -373,6 +378,10 @@
       }
     }
   });
+
+  // Reference-count this chart so the shared species→color map clears when the
+  // last patterns chart unmounts (fresh colors per page view; no session growth).
+  onMount(() => registerChart());
 
   onDestroy(() => {
     tooltip?.destroy();

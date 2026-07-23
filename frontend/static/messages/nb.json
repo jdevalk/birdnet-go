@@ -3486,6 +3486,13 @@
         "typeLabel": "Strømtype",
         "typeHelp": "Strømprotokoll – automatisk detektert fra URL",
         "transportLabel": "Protokoll",
+        "mediaModeLabel": "Mediemodus",
+        "mediaModeHelp": "Full strøm ber om både lyd og video (videoen forkastes etter dekoding) og fungerer med de fleste kameraer. Auto prøver kun lyd først og bytter til full strøm hvis kameraet ikke kan levere lyd alene. Kun lyd åpner aldri en videoplass på kameraet, men mislykkes hvis kameraet ikke kan levere lydsporet på egen hånd.",
+        "mediaMode": {
+          "auto": "Auto",
+          "audioOnly": "Kun lyd",
+          "fullStream": "Full strøm"
+        },
         "summary": "{count} strøm(mer) konfigurert",
         "healthy": "sunn",
         "unhealthy": "usunn",
@@ -3658,8 +3665,6 @@
         "normalizationDisabled": "Lydnormalisering er deaktivert",
         "targetLUFSLabel": "Mål-lydstyrke (LUFS)",
         "targetLUFSHelp": "Integrert lydstyrkeintensitetsmål i LUFS. -23 LUFS er EBU R128 kringkastingsstandarden. Område: -40 til -10 LUFS.",
-        "loudnessRangeLabel": "Lydstyrkevariasjonsområde (LU)",
-        "loudnessRangeHelp": "Maksimal variasjon i lydstyrke innenfor klippet (0–20 LU). Lavere verdier skaper mer konsistent volum, men kan redusere dynamikken.",
         "truePeakLabel": "Sann toppgrense (dBTP)",
         "truePeakHelp": "Maksimalt sann toppnivå for å forhindre digital klipping (-10 til 0 dBTP). -2 dBTP gir trygg hodrom for de fleste avspillingssystemer.",
         "normalizationNote": "EBU R128-standard",
@@ -3697,6 +3702,7 @@
         "typeHelp": "Lydformat for lagrede klipp. WAV og FLAC er tapsfrie (best kvalitet, større filer). MP3, AAC og Opus er tapsbringende (mindre filer, litt kvalitetstap).",
         "bitrateLabel": "Bithastighet",
         "bitrateHelp": "Lydkompresjonsbithastighet for tapsbringende formater. Område: {min}–{max} kbps. Høyere verdier gir bedre kvalitet, men større filer.",
+        "losslessBitrateValue": "N/A - Lossless",
         "losslessNote": "Tapsfrie formater bevarer original lydkvalitet uten kompresjonartefakter."
       },
       "audioNormalization": {
@@ -3708,8 +3714,6 @@
         "requiresRecording": "Aktiver klippopptak i Opptak-fanen for å bruke lydnormalisering.",
         "targetLUFSLabel": "Mål-lydstyrke (LUFS)",
         "targetLUFSHelp": "Integrert lydstyrkeintensitetsmål i LUFS. -23 LUFS er EBU R128 kringkastingsstandarden. Område: -40 til -10 LUFS.",
-        "loudnessRangeLabel": "Lydstyrkevariasjonsområde (LU)",
-        "loudnessRangeHelp": "Maksimal variasjon i lydstyrke innenfor klippet (0–20 LU). Lavere verdier skaper mer konsistent volum, men kan redusere dynamikken.",
         "truePeakLabel": "Sann toppgrense (dBTP)",
         "truePeakHelp": "Maksimalt sann toppnivå for å forhindre digital klipping (-10 til 0 dBTP). -2 dBTP gir trygg hodrom for de fleste avspillingssystemer.",
         "noteTitle": "EBU R128-standard",

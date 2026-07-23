@@ -3486,6 +3486,13 @@
         "typeLabel": "Tipo de Stream",
         "typeHelp": "Protocolo do stream - detectado automaticamente da URL",
         "transportLabel": "Protocolo",
+        "mediaModeLabel": "Modo de mídia",
+        "mediaModeHelp": "O fluxo completo solicita áudio e vídeo (o vídeo é descartado após a decodificação) e funciona com a maioria das câmeras. Auto tenta primeiro apenas áudio e recorre ao fluxo completo se a câmera não conseguir fornecer áudio sozinha. Apenas áudio nunca ocupa um slot de vídeo da câmera, mas falha se a câmera não conseguir fornecer a faixa de áudio por conta própria.",
+        "mediaMode": {
+          "auto": "Auto",
+          "audioOnly": "Apenas áudio",
+          "fullStream": "Fluxo completo"
+        },
         "summary": "{count} stream(s) configurado(s)",
         "healthy": "saudável",
         "unhealthy": "com falha",
@@ -3658,8 +3665,6 @@
         "normalizationDisabled": "Normalização de áudio está desativada",
         "targetLUFSLabel": "Volume alvo (LUFS)",
         "targetLUFSHelp": "Alvo de volume integrado em LUFS (Unidades de Volume relativas à Escala Completa). -23 LUFS é o padrão de transmissão EBU R128. Intervalo: -40 a -10 LUFS.",
-        "loudnessRangeLabel": "Intervalo de volume (LU)",
-        "loudnessRangeHelp": "Variação máxima de volume dentro do clipe (0-20 LU). Valores mais baixos criam volume mais consistente, mas podem reduzir a dinâmica.",
         "truePeakLabel": "Limite de pico verdadeiro (dBTP)",
         "truePeakHelp": "Nível máximo de pico verdadeiro para evitar distorção digital (-10 a 0 dBTP). -2 dBTP fornece margem segura para a maioria dos sistemas de reprodução.",
         "normalizationNote": "Padrão EBU R128",
@@ -3697,6 +3702,7 @@
         "typeHelp": "Formato de áudio para clipes salvos. WAV e FLAC são sem perdas (melhor qualidade, arquivos maiores). MP3, AAC e Opus são com perdas (arquivos menores, pequena perda de qualidade).",
         "bitrateLabel": "Taxa de bits",
         "bitrateHelp": "Taxa de bits de compressão de áudio para formatos com perdas. Intervalo: {min}-{max} kbps. Valores mais altos fornecem melhor qualidade, mas arquivos maiores.",
+        "losslessBitrateValue": "N/A - Lossless",
         "losslessNote": "Formatos sem perdas preservam a qualidade de áudio original sem artefatos de compressão."
       },
       "audioNormalization": {
@@ -3708,8 +3714,6 @@
         "requiresRecording": "Ative a gravação de clipes na aba Gravação para usar a normalização de áudio.",
         "targetLUFSLabel": "Volume Alvo (LUFS)",
         "targetLUFSHelp": "Alvo de volume integrado em LUFS (Unidades de Volume relativas à Escala Completa). -23 LUFS é o padrão de transmissão EBU R128. Intervalo: -40 a -10 LUFS.",
-        "loudnessRangeLabel": "Intervalo de Volume (LU)",
-        "loudnessRangeHelp": "Variação máxima de volume dentro do clipe (0-20 LU). Valores mais baixos criam volume mais consistente, mas podem reduzir a dinâmica.",
         "truePeakLabel": "Limite de Pico Verdadeiro (dBTP)",
         "truePeakHelp": "Nível máximo de pico verdadeiro para evitar distorção digital (-10 a 0 dBTP). -2 dBTP fornece margem segura para a maioria dos sistemas de reprodução.",
         "noteTitle": "Padrão EBU R128",

@@ -145,6 +145,12 @@ func (s *StreamConfig) Validate() error {
 		return fmt.Errorf("invalid channel mode '%s' for '%s': must be downmix, left, or right", s.ChannelMode, s.Name)
 	}
 
+	// Validate media mode (empty defaults to full-stream, explicit values must be
+	// valid). Accepted on any stream type but only applied at runtime for RTSP.
+	if s.MediaMode != "" && !ValidMediaModes[s.MediaMode] {
+		return fmt.Errorf("invalid media mode '%s' for '%s': must be auto, audio-only, or full-stream", s.MediaMode, s.Name)
+	}
+
 	// Validate gain range (NaN/Inf bypass < and > comparisons). Mirrors the
 	// AudioSourceConfig.Validate check so a hand-edited config.yaml or a non-UI
 	// API client cannot push an out-of-range gain past the frontend clamp.
@@ -394,16 +400,39 @@ func (s *AudioSettings) clearFfmpegMetadata() {
 	s.FfprobePath = ""
 }
 
-// applyFfmpegFormatFallback forces WAV export when FFmpeg is unavailable and an
-// FFmpeg-only format is configured. WAV and FLAC are encoded natively (no FFmpeg
-// dependency), so they are left as-is; only the lossy formats (MP3/AAC/Opus) need
-// FFmpeg. Does nothing when export is disabled.
+// applyFfmpegFormatFallback forces WAV export when FFmpeg is unavailable and the
+// configured format has no encoder that can run without it. Does nothing when
+// export is disabled.
 func (s *AudioSettings) applyFfmpegFormatFallback() {
-	if s.Export.Enabled && s.FfmpegPath == "" &&
-		s.Export.Type != AudioExportTypeWAV && s.Export.Type != AudioExportTypeFLAC {
+	if s.Export.Enabled && s.FfmpegPath == "" && exportFormatNeedsFFmpeg(s.Export.Type) {
 		GetLogger().Warn("FFmpeg not available, forcing WAV format for audio export",
 			logger.String("previous_type", s.Export.Type))
 		s.Export.Type = AudioExportTypeWAV
+	}
+}
+
+// exportFormatNeedsFFmpeg reports whether a clip export format can only be
+// produced by shelling out to FFmpeg.
+//
+// WAV and FLAC always have a native encoder. AAC and Opus have one too, but it
+// is opt-in while it earns field confidence, so for them the answer depends on
+// the runtime gate: without the gate the export really does need FFmpeg, and
+// with it the format is native and must NOT be downgraded to WAV. Getting this
+// wrong is silent, because the downgrade happens during config validation and
+// the operator only sees WAV files appear where they asked for .m4a or .opus.
+//
+// REMOVAL: when the native AAC and Opus encoders become the default, the two
+// gate calls go away and this collapses to "only MP3 needs FFmpeg".
+func exportFormatNeedsFFmpeg(exportType string) bool {
+	switch exportType {
+	case AudioExportTypeWAV, AudioExportTypeFLAC:
+		return false
+	case AudioExportTypeAAC:
+		return !NativeAACEncoderEnabled()
+	case AudioExportTypeOPUS:
+		return !NativeOpusEncoderEnabled()
+	default:
+		return true
 	}
 }
 
@@ -645,14 +674,29 @@ func validateNormalizationSettings(norm *NormalizationSettings, gain float64) er
 			Context("max_target_lufs", MaxTargetLUFS).
 			Build()
 	}
-	if math.IsNaN(norm.LoudnessRange) || math.IsInf(norm.LoudnessRange, 0) || norm.LoudnessRange < MinLoudnessRange || norm.LoudnessRange > MaxLoudnessRange {
-		return errors.Newf("normalization loudness range must be between %.0f and %.0f LU, got %.1f", MinLoudnessRange, MaxLoudnessRange, norm.LoudnessRange).
+	// LoudnessRange is deprecated and no longer applied by any export path, so the
+	// two halves of this check now deserve different answers.
+	//
+	// A non-finite value still fails: NaN/Inf anywhere in the settings tree is a
+	// corrupt-config signal this package rejects uniformly, and weakening that for
+	// one field would carve a hole in a deliberate hardening posture for no gain.
+	//
+	// A merely out-of-range finite value now warns instead. It cannot affect a
+	// single exported clip any more, so refusing to start over it would block an
+	// upgrade on a setting that does nothing.
+	switch {
+	case math.IsNaN(norm.LoudnessRange) || math.IsInf(norm.LoudnessRange, 0):
+		return errors.Newf("normalization loudness range must be a finite number, got %v", norm.LoudnessRange).
 			Category(errors.CategoryValidation).
 			Context("validation_type", "audio-normalization-range").
 			Context("loudness_range", norm.LoudnessRange).
-			Context("min_loudness_range", MinLoudnessRange).
-			Context("max_loudness_range", MaxLoudnessRange).
 			Build()
+	case norm.LoudnessRange < MinLoudnessRange || norm.LoudnessRange > MaxLoudnessRange:
+		GetLogger().Warn("Ignoring out-of-range normalization loudness range; the setting is deprecated and no longer applied",
+			logger.Float64("loudness_range", norm.LoudnessRange),
+			logger.Float64("min_loudness_range", MinLoudnessRange),
+			logger.Float64("max_loudness_range", MaxLoudnessRange),
+			logger.String("validation_type", "audio-normalization-range"))
 	}
 	if math.IsNaN(norm.TruePeak) || math.IsInf(norm.TruePeak, 0) || norm.TruePeak < MinTruePeak || norm.TruePeak > MaxTruePeak {
 		return errors.Newf("normalization true peak must be between %.0f and %.0f dBTP, got %.1f", MinTruePeak, MaxTruePeak, norm.TruePeak).

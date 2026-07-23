@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand/v2"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -19,7 +18,6 @@ import (
 	"golang.org/x/sync/singleflight"
 
 	"github.com/tphakala/birdnet-go/internal/audiocore"
-	"github.com/tphakala/birdnet-go/internal/audiocore/convert"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/errors"
 )
@@ -224,7 +222,7 @@ func BuildProcessingFilterChain(f AudioFilters) string {
 
 	// 2. Normalize (loudnorm).
 	if f.Normalize {
-		if f.LoudnessStats != nil && f.LoudnessStats.isValid() {
+		if f.LoudnessStats != nil && f.LoudnessStats.IsValid() {
 			// Pass 2: apply with measured values using linear normalisation.
 			filters = append(filters, fmt.Sprintf(
 				"loudnorm=I=%.1f:LRA=%.1f:TP=%.1f:measured_I=%s:measured_LRA=%s:measured_TP=%s:measured_thresh=%s:linear=true:offset=%s",
@@ -242,13 +240,11 @@ func BuildProcessingFilterChain(f AudioFilters) string {
 		}
 	}
 
-	// 3. Gain (volume).
-	if f.GainDB != 0 && !math.IsNaN(f.GainDB) {
-		sign := "+"
-		if f.GainDB < 0 {
-			sign = ""
-		}
-		filters = append(filters, fmt.Sprintf("volume=%s%.1fdB", sign, f.GainDB))
+	// 3. Gain (volume). Rendered by the same helper the export path uses, so the
+	// two filter builders in this package cannot drift in precision or sign
+	// handling again.
+	if f.GainDB != 0 && IsValidGainDB(f.GainDB) {
+		filters = append(filters, buildVolumeFilter(f.GainDB))
 	}
 
 	return strings.Join(filters, ",")
@@ -268,9 +264,9 @@ type LoudnessStats struct {
 	TargetOffset      string `json:"target_offset"` // Not used for 2-pass.
 }
 
-// isValid returns true if the measured loudness stats contain valid numeric values.
+// IsValid returns true if the measured loudness stats contain valid numeric values.
 // This prevents injection of malformed values into FFmpeg filter chains.
-func (s *LoudnessStats) isValid() bool {
+func (s *LoudnessStats) IsValid() bool {
 	for _, v := range []string{s.InputI, s.InputTP, s.InputLRA, s.InputThresh, s.TargetOffset} {
 		f, err := strconv.ParseFloat(v, 64)
 		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
@@ -359,27 +355,6 @@ func parseLoudnessJSON(stderr string) (*LoudnessStats, error) {
 	}
 
 	return &stats, nil
-}
-
-// AnalyzePCMLoudness analyzes the loudness of raw mono PCM audio data using
-// FFmpeg's loudnorm filter. It writes pcmData to a temporary WAV file, runs
-// loudness analysis via AnalyzeFileLoudness, and cleans up the temp file.
-// sampleRate and bitDepth describe the PCM encoding (e.g. 48000, 16).
-func AnalyzePCMLoudness(ctx context.Context, pcmData []byte, ffmpegPath string, sampleRate, bitDepth int) (*LoudnessStats, error) {
-	if len(pcmData) == 0 {
-		return nil, fmt.Errorf("empty PCM data provided for loudness analysis")
-	}
-
-	// Write PCM to a temporary WAV file so AnalyzeFileLoudness can process it.
-	tempDir := os.TempDir()
-	wavPath := filepath.Join(tempDir, fmt.Sprintf("birdnet-loudness-%d.wav", time.Now().UnixNano()))
-	defer os.Remove(wavPath) //nolint:errcheck // best-effort cleanup
-
-	if err := convert.SavePCMDataToWAV(wavPath, pcmData, sampleRate, bitDepth); err != nil {
-		return nil, fmt.Errorf("failed to write temp WAV for loudness analysis: %w", err)
-	}
-
-	return AnalyzeFileLoudness(ctx, wavPath, ffmpegPath, AudioFilters{}, nil)
 }
 
 // processingTimeout is the maximum time allowed for the entire processing operation
@@ -502,10 +477,47 @@ func ProcessAudioToFile(ctx context.Context, filePath, ffmpegPath string, filter
 // RTSP-specific flags like -rtsp_transport are only added for RTSP sources.
 // A default -timeout is added unless the caller supplies one via ffmpegParameters.
 func BuildFFmpegArgs(cfg *StreamConfig, ffmpegParameters []string) []string {
-	// Audio-only restriction is on by default; the runtime path drops it per
-	// Stream via buildFFmpegInputArgs once a camera proves it cannot honor it.
-	args := buildInputArgs(cfg, ffmpegParameters, true)
+	// Represent the initial request (no reactive fallback engaged yet). The audio
+	// mode is decided by resolveAudioOnly so this mirror matches the runtime path
+	// (buildFFmpegInputArgs) under every media mode.
+	args := buildInputArgs(cfg, ffmpegParameters, resolveAudioOnly(cfg, false))
 	return buildOutputArgs(args, cfg)
+}
+
+// resolveAudioOnly reports whether the stream should request audio-only RTSP
+// media (-allowed_media_types audio). It is the single source of truth for that
+// decision, shared by the runtime path (Stream.buildFFmpegInputArgs) and the
+// unit-tested mirror (BuildFFmpegArgs), so the two cannot diverge.
+//
+// fallbackEngaged is consulted only in auto mode; audio-only and full-stream are
+// deterministic and ignore it. An empty mode canonicalizes to the default
+// (full-stream); any other unrecognized value (rejected at config validation)
+// falls through to the default branch and is also treated as full-stream.
+func resolveAudioOnly(cfg *StreamConfig, fallbackEngaged bool) bool {
+	switch conf.MediaMode(cfg.MediaMode).Canonical() {
+	case conf.MediaModeAudioOnly:
+		return true
+	case conf.MediaModeFullStream:
+		return false
+	case conf.MediaModeAuto:
+		// Audio-only first, dropping the restriction once the reactive fallback
+		// latches because the camera cannot deliver audio alone (issue #3902).
+		return !fallbackEngaged
+	default:
+		return false
+	}
+}
+
+// mediaModeAllowsFallback reports whether the reactive audio-only fallback may
+// engage for this stream. Only auto mode allows it; audio-only fails visibly
+// rather than falling back, and full-stream never requested audio-only at all.
+func mediaModeAllowsFallback(cfg *StreamConfig) bool {
+	return conf.MediaMode(cfg.MediaMode).Canonical() == conf.MediaModeAuto
+}
+
+// effectiveMediaMode returns the canonical media mode as a string, for logging.
+func effectiveMediaMode(cfg *StreamConfig) string {
+	return string(conf.MediaMode(cfg.MediaMode).Canonical())
 }
 
 // buildOutputArgs appends the post-input FFmpeg flags: the input URL, decode

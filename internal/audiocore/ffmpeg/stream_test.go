@@ -45,6 +45,10 @@ func newTestConfig() StreamConfig {
 		FFmpegPath: "/usr/bin/ffmpeg",
 		Transport:  "tcp",
 		LogLevel:   "error",
+		// Auto mode exercises the historical audio-only-first request plus the
+		// reactive fallback. The default (empty) is now full-stream, so tests that
+		// assert audio-only behavior set auto explicitly here.
+		MediaMode: "auto",
 	}
 }
 
@@ -1845,5 +1849,69 @@ func TestStream_ReadStdout_NilRefWhenNoBufMgr(t *testing.T) {
 		assert.Equal(t, []byte{1, 2, 3}, result.data)
 	case <-time.After(time.Second):
 		t.Fatal("readStdout did not produce a readResult within 1s")
+	}
+}
+
+func TestStream_HandleReadError(t *testing.T) {
+	t.Parallel()
+
+	// Start one second past the quick-exit window so handleReadError takes the
+	// EOF branch rather than handleQuickExitError. Derive it from the constant
+	// so the test keeps exercising the intended path if processQuickExitTime
+	// ever changes.
+	startTime := time.Now().Add(-(processQuickExitTime + time.Second))
+
+	tests := []struct {
+		name         string
+		totalBytes   int64
+		cancelCtx    bool
+		wantErr      bool
+		wantContains string
+	}{
+		{
+			name:         "EOF with no data and live context returns error",
+			totalBytes:   0,
+			cancelCtx:    false,
+			wantErr:      true,
+			wantContains: "stream ended without producing data",
+		},
+		{
+			name:       "EOF after data returns nil",
+			totalBytes: 100,
+			cancelCtx:  false,
+			wantErr:    false,
+		},
+		{
+			name:       "EOF with no data but canceled context returns nil",
+			totalBytes: 0,
+			cancelCtx:  true,
+			wantErr:    false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg := newTestConfig()
+			stream := NewStream(&cfg, nil, nil, nil, nil)
+			ctx, cancel := context.WithCancelCause(t.Context())
+			stream.ctx = ctx
+			stream.cancel = cancel
+			t.Cleanup(func() { cancel(nil) })
+
+			stream.totalBytesReceived = tt.totalBytes
+			if tt.cancelCtx {
+				cancel(nil)
+			}
+
+			err := stream.handleReadError(io.EOF, startTime)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantContains)
+			} else {
+				require.NoError(t, err)
+			}
+		})
 	}
 }

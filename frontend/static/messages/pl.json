@@ -3486,6 +3486,13 @@
         "typeLabel": "Typ Strumienia",
         "typeHelp": "Protokół strumienia - wykrywany automatycznie z URL",
         "transportLabel": "Protokół",
+        "mediaModeLabel": "Tryb multimediów",
+        "mediaModeHelp": "Pełny strumień żąda audio i wideo (wideo jest odrzucane po dekodowaniu) i działa z większością kamer. Auto najpierw próbuje tylko audio, a jeśli kamera nie może dostarczyć samego audio, przełącza się na pełny strumień. Tylko audio nigdy nie zajmuje gniazda wideo kamery, ale kończy się niepowodzeniem, jeśli kamera nie może samodzielnie dostarczyć ścieżki audio.",
+        "mediaMode": {
+          "auto": "Auto",
+          "audioOnly": "Tylko audio",
+          "fullStream": "Pełny strumień"
+        },
         "summary": "{count} strumień(i) skonfigurowany(ch)",
         "healthy": "sprawny",
         "unhealthy": "niesprawny",
@@ -3658,8 +3665,6 @@
         "normalizationDisabled": "Normalizacja audio jest wyłączona",
         "targetLUFSLabel": "Docelowa Głośność (LUFS)",
         "targetLUFSHelp": "Docelowa zintegrowana głośność w LUFS (Jednostki Głośności Względem Pełnej Skali). -23 LUFS jest standardem nadawczym EBU R128. Zakres: -40 do -10 LUFS.",
-        "loudnessRangeLabel": "Zakres Głośności (LU)",
-        "loudnessRangeHelp": "Maksymalna zmienność głośności w klipie (0-20 LU). Niższe wartości tworzą bardziej spójną głośność, ale mogą zmniejszyć dynamikę.",
         "truePeakLabel": "Limit True Peak (dBTP)",
         "truePeakHelp": "Maksymalny poziom true peak, aby zapobiec cyfrowej kompresji (-10 do 0 dBTP). -2 dBTP zapewnia bezpieczną rezerwę dla większości systemów odtwarzania.",
         "normalizationNote": "Standard EBU R128",
@@ -3697,6 +3702,7 @@
         "typeHelp": "Format audio dla zapisanych klipów. WAV i FLAC są bezstratne (najlepsza jakość, większe pliki). MP3, AAC i Opus są stratne (mniejsze pliki, niewielka utrata jakości).",
         "bitrateLabel": "Bitrate",
         "bitrateHelp": "Bitrate kompresji audio dla formatów stratnych. Zakres: {min}-{max} kbps. Wyższe wartości zapewniają lepszą jakość, ale większe pliki.",
+        "losslessBitrateValue": "N/A - Lossless",
         "losslessNote": "Formaty bezstratne zachowują oryginalną jakość audio bez artefaktów kompresji."
       },
       "audioNormalization": {
@@ -3708,8 +3714,6 @@
         "requiresRecording": "Włącz nagrywanie klipów na karcie Nagrywanie, aby używać normalizacji audio.",
         "targetLUFSLabel": "Docelowa Głośność (LUFS)",
         "targetLUFSHelp": "Docelowa zintegrowana głośność w LUFS (Jednostki Głośności Względem Pełnej Skali). -23 LUFS jest standardem nadawczym EBU R128. Zakres: -40 do -10 LUFS.",
-        "loudnessRangeLabel": "Zakres Głośności (LU)",
-        "loudnessRangeHelp": "Maksymalna zmienność głośności w klipie (0-20 LU). Niższe wartości tworzą bardziej spójną głośność, ale mogą zmniejszyć dynamikę.",
         "truePeakLabel": "Limit True Peak (dBTP)",
         "truePeakHelp": "Maksymalny poziom true peak, aby zapobiec cyfrowej kompresji (-10 do 0 dBTP). -2 dBTP zapewnia bezpieczną rezerwę dla większości systemów odtwarzania.",
         "noteTitle": "Standard EBU R128",

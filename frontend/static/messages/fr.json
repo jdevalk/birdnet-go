@@ -3486,6 +3486,13 @@
         "typeLabel": "Type de Flux",
         "typeHelp": "Protocole du flux - détecté automatiquement depuis l'URL",
         "transportLabel": "Protocole",
+        "mediaModeLabel": "Mode multimédia",
+        "mediaModeHelp": "Le flux complet demande l'audio et la vidéo (la vidéo est ignorée après décodage) et fonctionne avec la plupart des caméras. Auto essaie d'abord l'audio seul et bascule vers le flux complet si la caméra ne peut pas fournir l'audio seul. Audio uniquement n'ouvre jamais d'emplacement vidéo sur la caméra mais échoue si la caméra ne peut pas fournir la piste audio par elle-même.",
+        "mediaMode": {
+          "auto": "Auto",
+          "audioOnly": "Audio uniquement",
+          "fullStream": "Flux complet"
+        },
         "summary": "{count} flux configuré(s)",
         "healthy": "sain",
         "unhealthy": "défaillant",
@@ -3658,8 +3665,6 @@
         "normalizationDisabled": "Audio normalization is disabled",
         "targetLUFSLabel": "Volume cible (LUFS)",
         "targetLUFSHelp": "Cible de volume intégré en LUFS (Loudness Units relative to Full Scale). -23 LUFS est la norme de diffusion EBU R128. Plage : -40 à -10 LUFS.",
-        "loudnessRangeLabel": "Plage de volume (LU)",
-        "loudnessRangeHelp": "Variation maximale de volume dans le clip (0-20 LU). Des valeurs plus faibles créent un volume plus cohérent mais peuvent réduire la dynamique.",
         "truePeakLabel": "Limite de pic réel (dBTP)",
         "truePeakHelp": "Niveau de pic réel maximal pour éviter l'écrêtage numérique (-10 à 0 dBTP). -2 dBTP fournit une marge de sécurité pour la plupart des systèmes de lecture.",
         "normalizationNote": "Norme EBU R128",
@@ -3697,6 +3702,7 @@
         "typeHelp": "Format audio pour les clips enregistrés. WAV et FLAC sont sans perte (meilleure qualité, fichiers plus volumineux). MP3, AAC et Opus sont avec perte (fichiers plus petits, légère perte de qualité).",
         "bitrateLabel": "Débit",
         "bitrateHelp": "Débit de compression audio pour les formats avec perte. Plage : {min}-{max} kbps. Des valeurs plus élevées offrent une meilleure qualité mais des fichiers plus volumineux.",
+        "losslessBitrateValue": "N/A - Lossless",
         "losslessNote": "Les formats sans perte préservent la qualité audio originale sans artefacts de compression."
       },
       "audioNormalization": {
@@ -3708,8 +3714,6 @@
         "requiresRecording": "Activez l'enregistrement des clips dans l'onglet Enregistrement pour utiliser la normalisation audio.",
         "targetLUFSLabel": "Volume cible (LUFS)",
         "targetLUFSHelp": "Cible de volume intégré en LUFS (Loudness Units relative to Full Scale). -23 LUFS est la norme de diffusion EBU R128. Plage : -40 à -10 LUFS.",
-        "loudnessRangeLabel": "Plage de volume (LU)",
-        "loudnessRangeHelp": "Variation maximale de volume dans le clip (0-20 LU). Des valeurs plus faibles créent un volume plus cohérent mais peuvent réduire la dynamique.",
         "truePeakLabel": "Limite de pic réel (dBTP)",
         "truePeakHelp": "Niveau de pic réel maximal pour éviter l'écrêtage numérique (-10 à 0 dBTP). -2 dBTP fournit une marge de sécurité pour la plupart des systèmes de lecture.",
         "noteTitle": "Norme EBU R128",

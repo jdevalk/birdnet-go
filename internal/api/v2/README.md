@@ -102,10 +102,10 @@ Lightweight connectivity check. Returns a minimal response with no database quer
 | GET    | `/analytics/time/hourly`              | `GetHourlyAnalytics`       | ❌   | Hourly detection patterns          |
 | GET    | `/analytics/time/daily`               | `GetDailyAnalytics`        | ❌   | Daily detection patterns           |
 | GET    | `/analytics/time/distribution/hourly` | `GetTimeOfDayDistribution` | ❌   | Time-of-day detection distribution |
-| GET    | `/analytics/time/distribution/species` | `GetSpeciesHourlyDistribution` | ❌ | Who-sings-when ridgeline: per-species hour-of-day distribution for the top N species by volume. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 5, max 8) |
+| GET    | `/analytics/time/distribution/species` | `GetSpeciesHourlyDistribution` | ❌ | Who-sings-when ridgeline: per-species hour-of-day distribution. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional (repeatable scientific-name filter; when omitted, the top N species by volume; when set, just those species, still volume-ordered and capped at `limit`); `limit` optional (default 5, max 8) |
 | GET    | `/analytics/time/heatmap`             | `GetActivityHeatmap`       | ❌   | Seasonal density heatmap (date x intra-day slot; `?format=csv`) |
 | GET    | `/analytics/time/dawn-onset`          | `GetDawnChorusOnset`       | ❌   | Dawn-chorus onset tracker: per-day onset relative to civil dawn (minutes; negative = before civil dawn). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional |
-| GET    | `/analytics/time/succession`          | `GetAcousticSuccession`    | ❌   | Acoustic succession streamgraph: per species, the raw hour-of-day detection counts (24 buckets, false positives excluded) for the top-N species by volume, stacked into a streamgraph showing the diel acoustic handover. All-species top-N (no species filter). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `limit` optional (default 6, max 10) |
+| GET    | `/analytics/time/succession`          | `GetAcousticSuccession`    | ❌   | Acoustic succession streamgraph: per species, the raw hour-of-day detection counts (24 buckets, false positives excluded), stacked into a streamgraph showing the diel acoustic handover. `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional (repeatable scientific-name filter; when omitted, the top-N species by volume; when set, just those species, still volume-ordered and capped at `limit`); `limit` optional (default 6, max 10) |
 | GET    | `/analytics/time/year-over-year`      | `GetYearOverYear`          | ❌   | Year-over-year tracker: current year-to-date cumulative detection counts versus the same calendar span one year earlier (false positives excluded), one point per current-year day with a per-day delta, aligned by calendar (month, day) with leap-day Feb 29 handled. All-species (no species filter). `date` optional (station-local YYYY-MM-DD; defaults to today) sets the inclusive end of both windows. Returns `{currentYear, previousYear, points[]}` |
 | GET    | `/analytics/sun`                      | `GetAnalyticsSun`          | ❌   | Sun times for the nocturnal activity clock's day/night shading: sunrise/sunset/civil-dawn/civil-dusk as minute-of-day in server-local time. `date` for a single day, or `start_date`/`end_date` for a range (collapsed to its midpoint); defaults to today. Returns `available:false` (not an error) on polar day/night or when SunCalc is unconfigured |
 | GET    | `/analytics/confidence/distribution`  | `GetConfidenceDistribution` | ❌  | Confidence distribution per species: per-species normalized histogram of detection confidence scores (Review & Accuracy tab). `start_date` required; `end_date` optional (defaults to `start_date` + 30 days); `species` optional (single species filter; default is the top-N species by volume); `bins` optional (default 20, clamped to 5-50); `limit` optional (default 5, max 8) |
@@ -197,6 +197,17 @@ even if it was detected earlier on another source).
 | GET    | `/media/bird-image/:scientific_name` | `ServeSpeciesImageProxy` | ❌   | Alias for image proxy endpoint     |
 | GET    | `/spectrogram/:id/status`            | `GetSpectrogramStatus`   | ❌   | Get spectrogram generation status  |
 | POST   | `/audio/:id/clip`                    | `ExtractAudioClipByID`   | ✅   | Extract audio clip from time range |
+
+**Pending clip handling (`503 + Retry-After`).** A detection's DB record and SSE
+broadcast are emitted before its audio clip is written, and with Extended Capture the
+clip write is deferred until the capture tail is recorded (up to the capture-buffer
+size). While a clip is still legitimately pending, the by-ID audio and spectrogram
+endpoints (`GET /audio/:id`, `GET /spectrogram/:id`) return `503 Service Unavailable`
+with a `Retry-After` header sized to the remaining time, instead of `404`. Clients
+should honor `Retry-After` and retry; the clip appears once the capture completes. A
+`404` from these endpoints means the clip is genuinely absent (never produced, or purged
+by retention). These pending 503s are intentionally not logged as errors and are not
+reported to telemetry, since they are expected, self-resolving backpressure.
 
 ### Notifications (`notifications/notifications.go`)
 
