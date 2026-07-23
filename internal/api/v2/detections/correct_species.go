@@ -12,6 +12,13 @@
 // surface and adding one would require regenerating mockery mocks for a
 // single-shot endpoint. The v2 schema is stable; the raw SQL is scoped to
 // three statements inside a single transaction.
+//
+// Because these statements name tables directly, every one of them must carry
+// the deployment's v2 table prefix (see v2TablePrefix) — it is "v2_" on a
+// MySQL install still inside the v1→v2 migration window and "" elsewhere.
+// Hardcoding the unprefixed names compiles and passes the SQLite-backed tests,
+// where the prefix is "", while failing at runtime on exactly the MySQL
+// deployments this endpoint is used on.
 package detections
 
 import (
@@ -21,10 +28,36 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/tphakala/birdnet-go/internal/classifier"
+	v2 "github.com/tphakala/birdnet-go/internal/datastore/v2"
 	"github.com/tphakala/birdnet-go/internal/logger"
 )
+
+// v2ManagerProvider is implemented by *v2only.Datastore, the store this
+// endpoint's raw SQL targets. It is asserted rather than added to
+// datastore.Interface so the legacy store (which has no v2 schema, and so
+// never reaches these statements) needs no changes.
+type v2ManagerProvider interface {
+	Manager() v2.Manager
+}
+
+// v2TablePrefix returns the prefix that raw-SQL references to v2 tables must
+// carry. It is "v2_" only on MySQL deployments still inside the v1→v2
+// migration window, where the v2 tables coexist with the legacy schema, and ""
+// on SQLite and fresh-install MySQL — see Manager.TablePrefix in
+// internal/datastore/v2/manager.go, which requires raw SQL to consult it.
+// Falls back to "" when the prefix cannot be resolved, matching the unprefixed
+// default rather than inventing a prefix that may not exist.
+func (c *Handler) v2TablePrefix() string {
+	if p, ok := c.DS.(v2ManagerProvider); ok {
+		if m := p.Manager(); m != nil {
+			return m.TablePrefix()
+		}
+	}
+	return ""
+}
 
 // CorrectSpeciesRequest is the JSON body of
 // POST /api/v2/detections/:id/correct-species.
@@ -160,9 +193,13 @@ func (c *Handler) CorrectDetectionSpecies(ctx echo.Context) error {
 		newModelID uint
 		newLabelID uint
 	)
+	// Raw-SQL table references must carry the deployment's v2 prefix; see
+	// v2TablePrefix. Resolved once so every statement below agrees.
+	prefix := c.v2TablePrefix()
+
 	correctionErr := c.DS.Transaction(func(tx *gorm.DB) error {
 		// 1. Map orchestrator (name, version) → ai_models.id
-		if err := tx.Table("ai_models").
+		if err := tx.Table(prefix+"ai_models").
 			Select("id").
 			Where("name = ? AND version = ?", modelName, modelVersion).
 			Scan(&newModelID).Error; err != nil {
@@ -175,7 +212,7 @@ func (c *Handler) CorrectDetectionSpecies(ctx echo.Context) error {
 		// 2. Find label_id for (scientific_name, model_id). We do NOT create
 		// a new label here — if the chosen model doesn't have a label for
 		// this species, the user must pick a different model.
-		if err := tx.Table("labels").
+		if err := tx.Table(prefix+"labels").
 			Select("id").
 			Where("scientific_name = ? AND model_id = ?", req.ScientificName, newModelID).
 			Scan(&newLabelID).Error; err != nil {
@@ -189,11 +226,12 @@ func (c *Handler) CorrectDetectionSpecies(ctx echo.Context) error {
 		// lock was set between our Get() above and now (TOCTOU). Using
 		// raw_value() COALESCE pattern would also work; explicit
 		// NOT EXISTS keeps it readable.
-		result := tx.Exec(
-			`UPDATE detections
+		result := tx.Exec(fmt.Sprintf(
+			`UPDATE %sdetections
 			    SET label_id = ?, model_id = ?, confidence = ?
 			  WHERE id = ?
-			    AND NOT EXISTS (SELECT 1 FROM detection_locks WHERE detection_id = ?)`,
+			    AND NOT EXISTS (SELECT 1 FROM %sdetection_locks WHERE detection_id = ?)`,
+			prefix, prefix),
 			newLabelID, newModelID, req.Confidence, noteIDUint, noteIDUint)
 		if result.Error != nil {
 			return fmt.Errorf("detection update failed: %w", result.Error)
@@ -202,16 +240,23 @@ func (c *Handler) CorrectDetectionSpecies(ctx echo.Context) error {
 			return fmt.Errorf("detection %d was locked or does not exist", noteIDUint)
 		}
 
-		// 4. Upsert the review row. The unique index on detection_id makes
-		// this an ON CONFLICT update; SQLite syntax matches what the rest
-		// of the codebase uses.
+		// 4. Upsert the review row, keyed by the unique index on detection_id.
+		// Built through clause.OnConflict rather than hand-written upsert SQL:
+		// "ON CONFLICT ... DO UPDATE" is SQLite/Postgres-only, and MySQL needs
+		// "ON DUPLICATE KEY UPDATE". GORM emits the right dialect for both, so
+		// this works on every supported backend.
 		now := tx.NowFunc()
-		if err := tx.Exec(
-			`INSERT INTO detection_reviews (detection_id, verified, created_at, updated_at)
-			 VALUES (?, 'correct', ?, ?)
-			 ON CONFLICT(detection_id) DO UPDATE
-			    SET verified = excluded.verified, updated_at = excluded.updated_at`,
-			noteIDUint, now, now).Error; err != nil {
+		if err := tx.Table(prefix + "detection_reviews").
+			Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "detection_id"}},
+				DoUpdates: clause.AssignmentColumns([]string{"verified", "updated_at"}),
+			}).
+			Create(map[string]any{
+				"detection_id": noteIDUint,
+				"verified":     "correct",
+				"created_at":   now,
+				"updated_at":   now,
+			}).Error; err != nil {
 			return fmt.Errorf("review upsert failed: %w", err)
 		}
 
