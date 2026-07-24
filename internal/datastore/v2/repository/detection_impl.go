@@ -913,7 +913,7 @@ func (r *detectionRepository) GetTopSpecies(ctx context.Context, start, end int6
 // Large label sets are chunked by batchQuerySize to stay within SQL host-parameter limits;
 // per-chunk results are merged before returning. Each label ID appears in exactly one chunk,
 // so no cross-chunk aggregation is needed.
-func (r *detectionRepository) GetBatchHourlyOccurrences(ctx context.Context, labelIDs []uint, start, end int64, tzOffsetSeconds int, minConfidence float64) (map[uint][24]int, error) {
+func (r *detectionRepository) GetBatchHourlyOccurrences(ctx context.Context, labelIDs []uint, start, end int64, tzOffsetSeconds int, minConfidence float64, sourceIDs ...uint) (map[uint][24]int, error) {
 	result := make(map[uint][24]int, len(labelIDs))
 
 	// Return empty map for empty input (no query)
@@ -942,11 +942,15 @@ func (r *detectionRepository) GetBatchHourlyOccurrences(ctx context.Context, lab
 		chunk := labelIDs[i:chunkEnd]
 
 		var rows []labelHourCount
-		err := r.db.WithContext(ctx).Table(fmt.Sprintf("%s d", detTable)).
+		query := r.db.WithContext(ctx).Table(fmt.Sprintf("%s d", detTable)).
 			Joins(fmt.Sprintf("LEFT JOIN %s dr ON d.id = dr.detection_id", revTable)).
 			Select(fmt.Sprintf("d.label_id as label_id, %s as hour, COUNT(*) as count", hourExpr)).
 			Where("d.label_id IN ? AND d.detected_at >= ? AND d.detected_at < ? AND d.confidence >= ?", chunk, start, end, minConfidence).
-			Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive)).
+			Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive))
+		if len(sourceIDs) > 0 {
+			query = query.Where("d.source_id IN ?", sourceIDs)
+		}
+		err := query.
 			Group(fmt.Sprintf("d.label_id, %s", hourExpr)).
 			Scan(&rows).Error
 		if err != nil {
@@ -1716,17 +1720,33 @@ func (r *detectionRepository) GetDetectionTrends(ctx context.Context, period str
 	return r.GetDailyAnalytics(ctx, startTime, now, tzOffsetSeconds, nil, modelID, sourceIDs...)
 }
 
-// GetNewSpecies returns species detected for the first time ever within the range.
+// GetNewSpecies returns species detected for the first time ever within the range, false positives
+// excluded, so a species whose qualifying detections were all reviewed away is not reported as new.
 // Groups by scientific_name to aggregate across all models for the same species.
 // Uses MIN(id) as tie-breaker to avoid duplicates when multiple detections share the same timestamp.
 // When sourceIDs is non-empty, "first ever" is scoped to detections from those audio sources only.
 func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int64, limit, offset int, sourceIDs ...uint) ([]NewSpeciesData, error) {
 	var results []NewSpeciesData
 
-	// Build optional source filter applied inside both derived table and outer join.
-	// Scoping inside the derived table ensures "lifetime first" is per-source when filtering;
-	// scoping in the outer join keeps detection_id/confidence consistent with the same source set.
-	sourceClauseInner, sourceClauseOuter, sourceArgs := buildSourceFilterClauses(sourceIDs, "d2", "d")
+	// Use raw SQL to properly group by scientific_name across all label IDs
+	// This finds species where their lifetime first detection is within the requested range.
+	//
+	// Approach: Use a derived table to compute lifetime first detection per species,
+	// then filter and join back to get detection details. This is O(n) instead of
+	// the O(n²) correlated subquery approach.
+	// Both levels exclude false positives (same filter as buildAnalyticsBaseQuery): the derived table
+	// so a reviewed-away detection cannot pin a species' lifetime first-seen (or make an
+	// all-false-positive species look new at all), and the outer join so the reported
+	// detection_id/confidence never come from a false-positive row sharing that timestamp.
+	// DetectionReview has a unique index on detection_id, so neither LEFT JOIN multiplies rows.
+	fpFilter := string(entities.VerificationFalsePositive)
+
+	// Optional per-source scoping. Both clauses are AND-style because the false-positive filter
+	// already opens the WHERE at each level: inside the derived table so "lifetime first" is
+	// per-source when filtering, and in the outer query so detection_id/confidence come from the
+	// same source set. Empty when sourceIDs is empty, collapsing this to the unscoped query.
+	_, sourceClauseInner, sourceArgs := buildSourceFilterClauses(sourceIDs, "", "d2")
+	_, sourceClauseOuter, _ := buildSourceFilterClauses(sourceIDs, "", "d")
 
 	rawSQL := fmt.Sprintf(`
 		SELECT
@@ -1743,20 +1763,25 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 				MAX(d2.detected_at) as lifetime_last
 			FROM %s d2
 			JOIN %s l2 ON l2.id = d2.label_id
-			%s
+			LEFT JOIN %s dr2 ON dr2.detection_id = d2.id
+			WHERE (dr2.verified IS NULL OR dr2.verified != ?)%s
 			GROUP BY l2.scientific_name
 			HAVING MIN(d2.detected_at) >= ? AND MIN(d2.detected_at) < ?
 		) species_first
 		JOIN %s l ON l.scientific_name = species_first.scientific_name
-		JOIN %s d ON d.label_id = l.id AND d.detected_at = species_first.lifetime_first %s
-		GROUP BY species_first.scientific_name, species_first.lifetime_first
+		JOIN %s d ON d.label_id = l.id AND d.detected_at = species_first.lifetime_first
+		LEFT JOIN %s dr ON dr.detection_id = d.id
+		WHERE (dr.verified IS NULL OR dr.verified != ?)%s
+		GROUP BY species_first.scientific_name, species_first.lifetime_first, species_first.lifetime_last
 		ORDER BY first_detected DESC
 		LIMIT ? OFFSET ?
-	`, r.tableName(), r.labelsTable(), sourceClauseInner, r.labelsTable(), r.tableName(), sourceClauseOuter)
+	`, r.tableName(), r.labelsTable(), r.reviewsTable(), sourceClauseInner, r.labelsTable(), r.tableName(), r.reviewsTable(), sourceClauseOuter)
 
-	args := make([]any, 0, len(sourceArgs)*2+4)
-	args = append(args, sourceArgs...) // inner WHERE source_id IN ?
+	args := make([]any, 0, len(sourceArgs)*2+6)
+	args = append(args, fpFilter)      // inner WHERE false-positive filter
+	args = append(args, sourceArgs...) // inner AND source_id IN ?
 	args = append(args, start, end)    // HAVING bounds
+	args = append(args, fpFilter)      // outer WHERE false-positive filter
 	args = append(args, sourceArgs...) // outer AND source_id IN ?
 	args = append(args, limit, offset) // pagination
 
