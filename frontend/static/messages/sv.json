@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Avancerat",
       "description": "Bearbetning och anpassad modellkonfiguration."
+    },
+    "downloadSource": {
+      "title": "Nedladdningskälla",
+      "description": "Varifrån modellfiler laddas ned.",
+      "note": "Lämna detta fält tomt såvida inte huggingface.co är blockerat eller långsamt på ditt nätverk. Miljövariabeln HF_ENDPOINT används när detta fält är tomt, och huggingface.co när ingetdera är angivet. Ett värde som inte är en giltig http- eller https-adress ignoreras och standardvärdet används i stället.",
+      "endpoint": {
+        "label": "HuggingFace-slutpunkt",
+        "helpText": "Spegelserver att ladda ned modeller från, till exempel https://hf-mirror.com. Gäller för nästa nedladdning; ingen omstart krävs.",
+        "validationMessage": "Ange en fullständig adress som börjar med http:// eller https://, eller lämna fältet tomt."
+      }
     },
     "gallery": {
       "title": "Modellgalleri",

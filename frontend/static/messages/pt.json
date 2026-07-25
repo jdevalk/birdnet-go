@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Advanced",
       "description": "Processing and custom model configuration."
+    },
+    "downloadSource": {
+      "title": "Origem de download",
+      "description": "Local de onde os arquivos do modelo são baixados.",
+      "note": "Deixe este campo vazio a menos que o huggingface.co esteja bloqueado ou lento em sua rede. A variável de ambiente HF_ENDPOINT é usada quando este campo está vazio, e huggingface.co quando nenhum está configurado. Um valor que não seja um endereço http ou https válido é ignorado e o padrão é usado em vez dele.",
+      "endpoint": {
+        "label": "Endpoint do HuggingFace",
+        "helpText": "Servidor espelho para baixar modelos, por exemplo https://hf-mirror.com. Aplica-se ao próximo download; não é necessário reiniciar.",
+        "validationMessage": "Insira um endereço completo começando com http:// ou https://, ou deixe o campo vazio."
+      }
     },
     "gallery": {
       "title": "Galeria de modelos",

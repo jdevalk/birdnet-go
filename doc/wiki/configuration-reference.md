@@ -73,6 +73,7 @@ BirdNET configuration
 | `birdnet.openvinopath` | string | path to libopenvino_c shared library (OpenVINO image variants only) |
 | `birdnet.backend` | string | inference backend preference: "auto" (default), "onnx", or "openvino" |
 | `birdnet.openvinodevice` | string | OpenVINO device preference: "auto" (default), "cpu", or "gpu" |
+| `birdnet.huggingfaceendpoint` | string | model download host, e.g. "https://hf-mirror.com" where huggingface.co is blocked; empty falls back to $HF_ENDPOINT then https://huggingface.co |
 
 ## perch
 
@@ -393,6 +394,17 @@ SentrySettings contains settings for Sentry error tracking
 |---------|------|-------------|
 | `sentry.enabled` | boolean | true to enable Sentry error tracking (opt-in) |
 | `sentry.debug` | boolean | true to enable transparent telemetry logging |
+
+## diagnostics
+
+DiagnosticsConfig groups the developer-facing diagnostics features.
+
+| Setting | Type | Description |
+|---------|------|-------------|
+| `diagnostics.profiling.enabled` | boolean | true to serve /debug/pprof/* on the web server |
+| `diagnostics.profiling.token` | string | secret required when no auth provider is configured; generated automatically |
+| `diagnostics.profiling.blockrate` | integer | nanoseconds of blocked time per sample; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched, so 0 is the only free setting and a very coarse rate still pays most of the cost. Recommended starting point: 10000. Hot-reloadable via the settings API. |
+| `diagnostics.profiling.mutexfraction` | integer | reports one sampled event per this many contention events; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched. Recommended starting point: 100. Hot-reloadable via the settings API. |
 
 ## output
 

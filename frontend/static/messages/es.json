@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Advanced",
       "description": "Processing and custom model configuration."
+    },
+    "downloadSource": {
+      "title": "Origen de descarga",
+      "description": "Lugar desde donde se descargan los archivos del modelo.",
+      "note": "Deje este campo vacío a menos que huggingface.co esté bloqueado o sea lento en su red. La variable de entorno HF_ENDPOINT se utiliza cuando este campo está vacío, y huggingface.co cuando ninguno está configurado. Se ignorará cualquier valor que no sea una dirección http o https válida y se utilizará el valor predeterminado en su lugar.",
+      "endpoint": {
+        "label": "Endpoint de HuggingFace",
+        "helpText": "Servidor espejo desde el cual descargar los modelos, por ejemplo https://hf-mirror.com. Se aplica a la siguiente descarga; no es necesario reiniciar.",
+        "validationMessage": "Introduzca una dirección completa que comience con http:// o https://, o deje el campo vacío."
+      }
     },
     "gallery": {
       "title": "Galería de modelos",

@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Papildu",
       "description": "Apstrādes un pielāgotu modeļu konfigurācija."
+    },
+    "downloadSource": {
+      "title": "Lejupielādes avots",
+      "description": "Vieta, no kuras tiek lejupielādēti modeļa faili.",
+      "note": "Atstājiet šo lauku tukšu, ja vien jūsu tīklā vietne huggingface.co nav bloķēta vai lēna. Vides mainīgais HF_ENDPOINT tiek izmantots, ja šis lauks ir tukšs, un huggingface.co, ja neviens no tiem nav iestatīts. Vērtība, kas nav derīga http vai https adrese, tiek ignorēta, un tās vietā tiek izmantota noklusējuma vērtība.",
+      "endpoint": {
+        "label": "HuggingFace galapunkts",
+        "helpText": "Spoguļvietne modeļu lejupielādei, piemēram, https://hf-mirror.com. Attiecas uz nākamo lejupielādi; nav nepieciešams restartēt.",
+        "validationMessage": "Ievadiet pilnu adresi, kas sākas ar http:// vai https://, vai atstājiet lauku tukšu."
+      }
     },
     "gallery": {
       "title": "Modeļu galerija",

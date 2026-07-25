@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Pokročilé",
       "description": "Konfigurácia spracovania a vlastných modelov."
+    },
+    "downloadSource": {
+      "title": "Zdroj sťahovania",
+      "description": "Miesto, odkiaľ sa sťahujú súbory modelov.",
+      "note": "Ponechajte toto pole prázdne, ak huggingface.co nie je vo vašej sieti zablokované ani pomalé. Premenná prostredia HF_ENDPOINT sa použije, ak je toto pole prázdne, a huggingface.co, ak nie je nastavená ani jedna z možností. Hodnota, ktorá nie je platnou adresou http alebo https, sa ignoruje a namiesto nej sa použije predvolená hodnota.",
+      "endpoint": {
+        "label": "Koncový bod HuggingFace",
+        "helpText": "Zrkadlový server na sťahovanie modelov, napríklad https://hf-mirror.com. Vzťahuje sa na nasledujúce sťahovanie; nie je potrebný reštart.",
+        "validationMessage": "Zadajte úplnú adresu začínajúcu na http:// alebo https://, alebo ponechajte pole prázdne."
+      }
     },
     "gallery": {
       "title": "Galéria modelov",

@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Advanced",
       "description": "Processing and custom model configuration."
+    },
+    "downloadSource": {
+      "title": "Download Source",
+      "description": "Where model files are downloaded from.",
+      "note": "Leave this empty unless huggingface.co is blocked or slow on your network. The HF_ENDPOINT environment variable is used when this field is empty, and huggingface.co when neither is set. A value that is not a valid http or https address is ignored and the default is used instead.",
+      "endpoint": {
+        "label": "HuggingFace endpoint",
+        "helpText": "Mirror to download models from, for example https://hf-mirror.com. Applies to the next download; no restart needed.",
+        "validationMessage": "Enter a full address starting with http:// or https://, or leave the field empty."
+      }
     },
     "gallery": {
       "title": "Model Gallery",

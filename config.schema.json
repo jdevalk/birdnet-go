@@ -494,6 +494,10 @@
         "openvinodevice": {
           "type": "string",
           "description": "OpenVINO device preference: \"auto\" (default), \"cpu\", or \"gpu\""
+        },
+        "huggingfaceendpoint": {
+          "type": "string",
+          "description": "model download host, e.g. \"https://hf-mirror.com\" where huggingface.co is blocked; empty falls back to $HF_ENDPOINT then https://huggingface.co"
         }
       },
       "additionalProperties": false,
@@ -747,6 +751,17 @@
       "additionalProperties": false,
       "type": "object",
       "description": "DetectionsGridConfig holds configuration for the detections grid element."
+    },
+    "DiagnosticsConfig": {
+      "properties": {
+        "profiling": {
+          "$ref": "#/$defs/ProfilingConfig",
+          "description": "pprof HTTP endpoint configuration"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "DiagnosticsConfig groups the developer-facing diagnostics features."
     },
     "DiskMonitorConfig": {
       "properties": {
@@ -1512,6 +1527,29 @@
       "type": "object",
       "description": "PrivacyFilterSettings contains settings for the privacy filter."
     },
+    "ProfilingConfig": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "true to serve /debug/pprof/* on the web server"
+        },
+        "token": {
+          "type": "string",
+          "description": "secret required when no auth provider is configured; generated automatically"
+        },
+        "blockrate": {
+          "type": "integer",
+          "description": "nanoseconds of blocked time per sample; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched, so 0 is the only free setting and a very coarse rate still pays most of the cost. Recommended starting point: 10000. Hot-reloadable via the settings API."
+        },
+        "mutexfraction": {
+          "type": "integer",
+          "description": "reports one sampled event per this many contention events; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched. Recommended starting point: 100. Hot-reloadable via the settings API."
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "ProfilingConfig gates the Go pprof HTTP endpoints."
+    },
     "PublicAccess": {
       "properties": {
         "liveaudio": {
@@ -2204,6 +2242,10 @@
         "sentry": {
           "$ref": "#/$defs/SentrySettings",
           "description": "Sentry error tracking configuration"
+        },
+        "diagnostics": {
+          "$ref": "#/$defs/DiagnosticsConfig",
+          "description": "developer diagnostics (pprof profiling)"
         },
         "output": {
           "properties": {

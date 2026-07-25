@@ -1727,6 +1727,19 @@
       "initialized": "Initialized",
       "version": "Version",
       "devices": "Devices",
+      "board": "Board",
+      "soc": "SoC",
+      "memory": "Memory",
+      "cores": "Cores",
+      "gpu": "Graphics",
+      "gpuReachable": "Reachable",
+      "gpuNotReachable": "Not reachable",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
+      "gpuReasonRenderNodeUnavailable": "No GPU device node is visible to the server. In Docker, map /dev/dri into the container; on a native install, check that the graphics driver is loaded.",
+      "gpuReasonRenderNodePermission": "The GPU device node cannot be opened. Either the account BirdNET-Go runs as needs access to the device's group, usually 'render', or the container was given the device with -v instead of --device, which does not grant access to it.",
+      "gpuReasonNoRuntime": "BirdNET-Go only accelerates inference on Intel graphics today, so this card will not be used.",
+      "gpuReasonUnknown": "This GPU cannot be used for inference on this build.",
       "stock": "Stock",
       "custom": "Custom",
       "sampleRate": "Sample rate",
@@ -5245,6 +5258,16 @@
     "advanced": {
       "title": "Haladó",
       "description": "Feldolgozási és egyéni modell beállítások."
+    },
+    "downloadSource": {
+      "title": "Letöltési forrás",
+      "description": "Ahonnan a modellfájlok letöltésre kerülnek.",
+      "note": "Hagyja üresen, kivéve, ha a huggingface.co blokkolva van vagy lassú a hálózatán. Ha ez a mező üres, a rendszer a HF_ENDPOINT környezeti változót használja, ha pedig egyik sincs beállítva, a huggingface.co címet. Azokat az értékeket, amelyek nem érvényes http vagy https címek, a rendszer figyelmen kívül hagyja, és helyettük az alapértelmezett értéket használja.",
+      "endpoint": {
+        "label": "HuggingFace végpont",
+        "helpText": "Tükörszerver a modellek letöltéséhez, például https://hf-mirror.com. A következő letöltésre vonatkozik; nincs szükség újraindításra.",
+        "validationMessage": "Adjon meg egy teljes címet, amely a http:// vagy a https:// karakterekkel kezdődik, vagy hagyja üresen a mezőt."
+      }
     },
     "gallery": {
       "title": "Modellgaléria",

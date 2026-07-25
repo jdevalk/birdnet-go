@@ -1253,25 +1253,26 @@ type InputConfig struct {
 }
 
 type BirdNETConfig struct {
-	Version            string              `yaml:"version,omitempty" json:"version,omitempty"`                 // model version: "2.4", "3.0"
-	Debug              bool                `yaml:"debug" json:"debug"`                                         // true to enable debug mode
-	Sensitivity        float64             `yaml:"sensitivity" json:"sensitivity"`                             // birdnet analysis sigmoid sensitivity
-	Threshold          float64             `yaml:"threshold" json:"threshold"`                                 // threshold for prediction confidence to report
-	Overlap            float64             `yaml:"overlap" json:"overlap"`                                     // birdnet analysis overlap between chunks
-	Longitude          float64             `yaml:"longitude" json:"longitude"`                                 // longitude of recording location for prediction filtering
-	Latitude           float64             `yaml:"latitude" json:"latitude"`                                   // latitude of recording location for prediction filtering
-	LocationConfigured bool                `yaml:"locationconfigured" json:"locationConfigured"`               // true when location has been explicitly configured by the user
-	Threads            int                 `yaml:"threads" json:"threads"`                                     // number of CPU threads to use for analysis
-	Locale             string              `yaml:"locale" json:"locale"`                                       // language to use for labels
-	RangeFilter        RangeFilterSettings `yaml:"rangefilter" json:"rangeFilter"`                             // range filter settings
-	ModelPath          string              `yaml:"modelpath,omitempty" json:"modelPath,omitempty"`             // path to external model file (empty for embedded)
-	LabelPath          string              `yaml:"labelpath,omitempty" json:"labelPath,omitempty"`             // path to external label file (empty for embedded)
-	Labels             []string            `yaml:"-" json:"-"`                                                 // list of available species labels, runtime value
-	UseXNNPACK         bool                `yaml:"usexnnpack" json:"useXnnpack"`                               // true to use XNNPACK delegate for inference acceleration
-	ONNXRuntimePath    string              `yaml:"onnxruntimepath,omitempty" json:"onnxRuntimePath,omitempty"` // path to ONNX Runtime shared library (required for ONNX models)
-	OpenVINOPath       string              `yaml:"openvinopath,omitempty" json:"openVinoPath,omitempty"`       // path to libopenvino_c shared library (OpenVINO image variants only)
-	Backend            string              `yaml:"backend,omitempty" json:"backend,omitempty"`                 // inference backend preference: "auto" (default), "onnx", or "openvino"
-	OpenVINODevice     string              `yaml:"openvinodevice,omitempty" json:"openVinoDevice,omitempty"`   // OpenVINO device preference: "auto" (default), "cpu", or "gpu"
+	Version             string              `yaml:"version,omitempty" json:"version,omitempty"`                         // model version: "2.4", "3.0"
+	Debug               bool                `yaml:"debug" json:"debug"`                                                 // true to enable debug mode
+	Sensitivity         float64             `yaml:"sensitivity" json:"sensitivity"`                                     // birdnet analysis sigmoid sensitivity
+	Threshold           float64             `yaml:"threshold" json:"threshold"`                                         // threshold for prediction confidence to report
+	Overlap             float64             `yaml:"overlap" json:"overlap"`                                             // birdnet analysis overlap between chunks
+	Longitude           float64             `yaml:"longitude" json:"longitude"`                                         // longitude of recording location for prediction filtering
+	Latitude            float64             `yaml:"latitude" json:"latitude"`                                           // latitude of recording location for prediction filtering
+	LocationConfigured  bool                `yaml:"locationconfigured" json:"locationConfigured"`                       // true when location has been explicitly configured by the user
+	Threads             int                 `yaml:"threads" json:"threads"`                                             // number of CPU threads to use for analysis
+	Locale              string              `yaml:"locale" json:"locale"`                                               // language to use for labels
+	RangeFilter         RangeFilterSettings `yaml:"rangefilter" json:"rangeFilter"`                                     // range filter settings
+	ModelPath           string              `yaml:"modelpath,omitempty" json:"modelPath,omitempty"`                     // path to external model file (empty for embedded)
+	LabelPath           string              `yaml:"labelpath,omitempty" json:"labelPath,omitempty"`                     // path to external label file (empty for embedded)
+	Labels              []string            `yaml:"-" json:"-"`                                                         // list of available species labels, runtime value
+	UseXNNPACK          bool                `yaml:"usexnnpack" json:"useXnnpack"`                                       // true to use XNNPACK delegate for inference acceleration
+	ONNXRuntimePath     string              `yaml:"onnxruntimepath,omitempty" json:"onnxRuntimePath,omitempty"`         // path to ONNX Runtime shared library (required for ONNX models)
+	OpenVINOPath        string              `yaml:"openvinopath,omitempty" json:"openVinoPath,omitempty"`               // path to libopenvino_c shared library (OpenVINO image variants only)
+	Backend             string              `yaml:"backend,omitempty" json:"backend,omitempty"`                         // inference backend preference: "auto" (default), "onnx", or "openvino"
+	OpenVINODevice      string              `yaml:"openvinodevice,omitempty" json:"openVinoDevice,omitempty"`           // OpenVINO device preference: "auto" (default), "cpu", or "gpu"
+	HuggingFaceEndpoint string              `yaml:"huggingfaceendpoint,omitempty" json:"huggingFaceEndpoint,omitempty"` // model download host, e.g. "https://hf-mirror.com" where huggingface.co is blocked; empty falls back to $HF_ENDPOINT then https://huggingface.co
 }
 
 // Inference backend preferences for BirdNET.Backend.
@@ -1720,6 +1721,53 @@ type BackupConfig struct {
 	} `yaml:"operationtimeouts" json:"operationTimeouts"`
 }
 
+// ProfilingConfig gates the Go pprof HTTP endpoints.
+//
+// The endpoints are served by the main web server behind its authentication
+// middleware, never by the Prometheus telemetry listener. When no
+// authentication provider is configured (the common home-LAN default), Token is
+// required instead, and is generated automatically: on the config load path
+// when profiling is already enabled, and on the settings-save path when it is
+// switched on at runtime.
+//
+// The leaf key is deliberately named "token" and not "profilingtoken": support
+// dump scrubbing matches sensitive keys on word boundaries, so a squashed name
+// would not be redacted. See isSensitiveKey in internal/support/collector.go.
+// The two rate fields have different units on entirely different scales, which
+// is a documented footgun in the Go API rather than an inconsistency here:
+// SetBlockProfileRate takes nanoseconds of blocked time per sample, while
+// SetMutexProfileFraction takes a 1-in-N fraction of contention events. Both
+// sample LESS as the number grows, so the senses agree; only the units and the
+// magnitudes differ. Both are independent of Enabled: collecting samples and
+// serving /debug/pprof are separate decisions, and turning on the endpoint to
+// grab a heap profile must not silently start taxing the audio path.
+//
+// Use ResolvedBlockRate and ResolvedMutexFraction when handing these to the
+// runtime rather than reading the fields directly; they clamp values the
+// runtime would otherwise misread.
+//
+// The two rate comments below are lifted verbatim into the generated config
+// schema and the wiki's configuration reference, so they spell the recommended
+// numbers out rather than naming the constants that hold them. Those two copies
+// cannot drift: TestSchemaUpToDate regenerates and byte-compares them. The
+// copies in config.yaml and doc/PROFILING.md are hand-maintained, and
+// TestRecommendedRatesMatchShippedConfig covers the config.yaml one.
+type ProfilingConfig struct {
+	Enabled bool   `yaml:"enabled" json:"enabled"` // true to serve /debug/pprof/* on the web server
+	Token   string `yaml:"token" json:"token"`     // secret required when no auth provider is configured; generated automatically
+
+	BlockRate     int `yaml:"blockrate" json:"blockRate"`         // nanoseconds of blocked time per sample; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched, so 0 is the only free setting and a very coarse rate still pays most of the cost. Recommended starting point: 10000. Hot-reloadable via the settings API.
+	MutexFraction int `yaml:"mutexfraction" json:"mutexFraction"` // reports one sampled event per this many contention events; 0 disables. Independent of enabled: sampling costs CPU continuously whether or not a profile is ever fetched. Recommended starting point: 100. Hot-reloadable via the settings API.
+}
+
+// DiagnosticsConfig groups the developer-facing diagnostics features. It is a
+// sibling of Logging and WebServer rather than a member of the telemetry
+// settings, because decoupling profiling from Prometheus metrics is the point:
+// enabling metrics must not expose profiling.
+type DiagnosticsConfig struct {
+	Profiling ProfilingConfig `yaml:"profiling" json:"profiling"` // pprof HTTP endpoint configuration
+}
+
 // Settings contains all configuration options for the BirdNET-Go application.
 type Settings struct {
 	Debug bool `yaml:"debug" json:"debug"` // true to enable debug mode
@@ -1755,6 +1803,8 @@ type Settings struct {
 	WebServer WebServerSettings `yaml:"webserver" json:"webServer"` // web server configuration
 	Security  Security          `yaml:"security" json:"security"`   // security configuration
 	Sentry    SentrySettings    `yaml:"sentry" json:"sentry"`       // Sentry error tracking configuration
+
+	Diagnostics DiagnosticsConfig `yaml:"diagnostics" json:"diagnostics"` // developer diagnostics (pprof profiling)
 
 	Output struct {
 		File struct {
@@ -1836,6 +1886,19 @@ func (s *Settings) GetEnabledOAuthProviders() []string {
 		}
 	}
 	return enabled
+}
+
+// IsAuthProviderConfigured reports whether this instance has any way to
+// authenticate a user: basic auth is enabled, or at least one OAuth provider is
+// enabled and fully configured.
+//
+// It deliberately ignores the allowed-subnet bypass, which is a per-request
+// concern handled by OAuth2Server.IsAuthenticationEnabled. This answers the
+// global question "can this instance authenticate anyone at all", which is what
+// decides whether an endpoint can rely on the auth middleware or has to carry
+// its own credential.
+func (s *Settings) IsAuthProviderConfigured() bool {
+	return s.Security.BasicAuth.Enabled || len(s.GetEnabledOAuthProviders()) > 0
 }
 
 // GenerateRandomSecret generates a URL-safe base64 encoded random string
