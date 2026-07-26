@@ -218,7 +218,7 @@ func (a *DatabaseAction) ExecuteContext(ctx context.Context, _ any) error {
 	}
 
 	// After successful save, publish detection event to the event bus.
-	a.publishDetectionEvent(isNewSpecies, daysSinceFirstSeen, novelty)
+	a.publishDetectionEvent(ctx, isNewSpecies, daysSinceFirstSeen, novelty)
 
 	// NOTE: Audio export is intentionally NOT performed here.
 	// It runs as a separate action (SaveAudioAction) outside the CompositeAction
@@ -314,8 +314,26 @@ func (a *DatabaseAction) populateEventMetadata(detectionEvent events.DetectionEv
 		}
 	}
 
-	if a.processor != nil && a.processor.BirdImageCache != nil {
-		if birdImage, err := a.processor.BirdImageCache.Get(a.Result.Species.ScientificName); err == nil && birdImage.URL != "" {
+	// Cached-only lookup. The previous BirdImageCache.Get here was a synchronous,
+	// uncancellable provider fetch inside the CompositeAction whose 30s timeout this
+	// file's own note (see the audio-export comment above) records as the reason slow
+	// work was moved out of it. A cold species could take minutes.
+	//
+	// The URL stays the provider's upstream address rather than becoming a media-proxy
+	// URL. This metadata reaches notification templates as bg_image_url and ends up in
+	// Discord rich embeds and webhook payloads, and those are fetched server-side by
+	// the notification service, from outside the user's network. A BirdNET-Go URL is
+	// unreachable from there for the typical home-LAN install, whether it is
+	// root-relative or an absolute one built from a private host. The provider URL is a
+	// public CDN address and is the only form that renders. Tracked separately.
+	// Shared with the SSE and MQTT actions of the same CompositeAction through the
+	// detection context, so one detection costs one lookup rather than three. The
+	// helper also schedules the prefetch when nothing is cached yet, so that this
+	// notification carries no image but the next detection of the species can.
+	if a.processor != nil {
+		birdImage := getBirdImageFromCache(a.DetectionCtx, a.processor.BirdImageCache,
+			a.Result.Species.ScientificName, a.Result.Species.CommonName, a.CorrelationID)
+		if birdImage.URL != "" {
 			metadata["image_url"] = birdImage.URL
 		}
 	}
@@ -345,10 +363,48 @@ func (a *DatabaseAction) recordNotificationSent(notificationTime time.Time) {
 	}
 }
 
+// newSpeciesImageWait bounds how long a new-species notification will wait for its
+// image to resolve. It is short relative to the enclosing CompositeAction's 30s
+// timeout, so a throttled provider degrades to a notification without an image
+// rather than putting the whole Database -> SSE -> MQTT chain at risk.
+const newSpeciesImageWait = 3 * time.Second
+
+// warmSpeciesImage resolves this detection's species image, waiting at most
+// newSpeciesImageWait, so that the caller's subsequent GetCached lookup can succeed.
+//
+// This is the one image lookup that is still allowed to wait, and only for a new
+// species. Every other path in this file and its siblings is cached-only, because a
+// cold species can otherwise occupy the provider chain for minutes. A new species is
+// rare by construction (once per species, ever) and is precisely the detection whose
+// notification an image matters most for.
+func (a *DatabaseAction) warmSpeciesImage(ctx context.Context) {
+	if a.processor == nil || a.processor.BirdImageCache == nil {
+		return
+	}
+	scientificName := a.Result.Species.ScientificName
+	if scientificName == "" {
+		return
+	}
+	if _, found, _ := a.processor.BirdImageCache.GetCached(scientificName); found {
+		return
+	}
+
+	waitCtx, cancel := context.WithTimeout(ctx, newSpeciesImageWait)
+	defer cancel()
+	if _, err := a.processor.BirdImageCache.GetWithContext(waitCtx, scientificName); err != nil {
+		GetLogger().Debug("New species image did not resolve within the notification wait",
+			logger.String("component", "analysis.processor.actions"),
+			logger.String("detection_id", a.CorrelationID),
+			logger.String("scientific_name", scientificName),
+			logger.Duration("waited", newSpeciesImageWait),
+			logger.Error(err))
+	}
+}
+
 // publishDetectionEvent publishes a detection event to the event bus.
 // All detections are published so that alert rules on detection.occurred can fire.
 // New species detections additionally go through suppression and notification recording.
-func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirstSeen int, novelty species.NoveltyStatus) {
+func (a *DatabaseAction) publishDetectionEvent(ctx context.Context, isNewSpecies bool, daysSinceFirstSeen int, novelty species.NoveltyStatus) {
 	if !events.IsInitialized() {
 		return
 	}
@@ -361,6 +417,15 @@ func (a *DatabaseAction) publishDetectionEvent(isNewSpecies bool, daysSinceFirst
 	if isNewSpecies {
 		suppress, notificationTime := a.shouldSuppressNewSpeciesNotification()
 		if !suppress {
+			// A new species is, by definition, absent from the image cache: the
+			// startup warm-up only covers previously detected species. Without a
+			// brief wait here the notification for the one detection users most
+			// want an image for would never carry one. Bounded so that a slow or
+			// throttled provider cannot push the surrounding CompositeAction
+			// towards its 30s timeout, and only on this branch: ordinary
+			// detections stay entirely off the provider path.
+			a.warmSpeciesImage(ctx)
+
 			detectionEvent := a.createDetectionEvent(true, daysSinceFirstSeen)
 			if detectionEvent != nil {
 				a.populateEventMetadata(detectionEvent, novelty)
