@@ -196,6 +196,9 @@ even if it was detected earlier on another source).
 | GET    | `/media/species-image/info`          | `GetSpeciesImageInfo`    | ❌   | Get species image attribution      |
 | GET    | `/media/image/:scientific_name`      | `ServeSpeciesImageProxy` | ❌   | Serve cached bird image (proxy)    |
 | GET    | `/media/bird-image/:scientific_name` | `ServeSpeciesImageProxy` | ❌   | Alias for image proxy endpoint     |
+| GET    | `/audio/:id`                         | `ServeAudioByID`         | ❌   | Serve detection audio clip by ID   |
+| GET    | `/spectrogram/:id`                   | `ServeSpectrogramByID`   | ❌   | Serve detection spectrogram by ID  |
+| POST   | `/spectrogram/:id/generate`          | `GenerateSpectrogramByID` | ❌   | Trigger spectrogram generation     |
 | GET    | `/spectrogram/:id/status`            | `GetSpectrogramStatus`   | ❌   | Get spectrogram generation status  |
 | POST   | `/audio/:id/clip`                    | `ExtractAudioClipByID`   | ✅   | Extract audio clip from time range |
 
@@ -653,7 +656,7 @@ Requires enhanced (v2) database. Returns 409 Conflict if not available.
 - ✅ = Authentication required
 - ✅ publicLiveAudio = Authentication required unless `PublicAccess.LiveAudio` is enabled (dynamic per-request check)
 - 🔑 token = Token-based access - the crypto-random `stream_token` returned by `/start` acts as the credential
-- ❌ = No authentication required
+- ❌ = No authentication required in normal mode. When `Security.PrivateMode` is enabled these routes still require authentication: the whole API is gated by `PrivateModeAuth`, except the bootstrap/auth/live-audio entries in `isPrivateModeExempt`.
 - ⚡ = Rate limited
 - 🔒 = Admin only (subset of authenticated)
 
