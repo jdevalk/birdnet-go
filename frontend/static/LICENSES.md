@@ -39,7 +39,7 @@ Source: MIT
 
 ### github.com/buger/jsonparser
 
-License: https://github.com/buger/jsonparser/blob/v1.2.0/LICENSE
+License: https://github.com/buger/jsonparser/blob/v1.3.1/LICENSE
 Source: MIT
 
 ### github.com/cespare/xxhash/v2
@@ -144,7 +144,7 @@ Source: BSD-3-Clause
 
 ### github.com/googleapis/enterprise-certificate-proxy/client
 
-License: https://github.com/googleapis/enterprise-certificate-proxy/blob/v0.3.18/LICENSE
+License: https://github.com/googleapis/enterprise-certificate-proxy/blob/v0.3.19/LICENSE
 Source: Apache-2.0
 
 ### github.com/googleapis/gax-go/v2
@@ -189,7 +189,7 @@ Source: MIT
 
 ### github.com/jlaffaye/ftp
 
-License: https://github.com/jlaffaye/ftp/blob/v0.2.1/LICENSE
+License: https://github.com/jlaffaye/ftp/blob/v0.2.2/LICENSE
 Source: ISC
 
 ### github.com/klauspost/cpuid/v2
@@ -229,12 +229,12 @@ Source: MIT
 
 ### github.com/mattn/go-isatty
 
-License: https://github.com/mattn/go-isatty/blob/v0.0.23/LICENSE
+License: https://github.com/mattn/go-isatty/blob/v0.0.24/LICENSE
 Source: MIT
 
 ### github.com/mattn/go-sqlite3
 
-License: https://github.com/mattn/go-sqlite3/blob/v1.14.48/LICENSE
+License: https://github.com/mattn/go-sqlite3/blob/v1.14.49/LICENSE
 Source: MIT
 
 ### github.com/munnerz/goautoneg
@@ -244,22 +244,17 @@ Source: BSD-3-Clause
 
 ### github.com/nicholas-fedor/shoutrrr
 
-License: https://github.com/nicholas-fedor/shoutrrr/blob/v0.16.2/LICENSE.md
+License: https://github.com/nicholas-fedor/shoutrrr/blob/v0.17.0/LICENSE.md
 Source: MIT
 
 ### github.com/nicholas-fedor/shoutrrr/pkg/color
 
-License: https://github.com/nicholas-fedor/shoutrrr/blob/v0.16.2/pkg/color/LICENSE.md
+License: https://github.com/nicholas-fedor/shoutrrr/blob/v0.17.0/pkg/color/LICENSE.md
 Source: MIT
 
 ### github.com/patrickmn/go-cache
 
 License: https://github.com/patrickmn/go-cache/blob/v2.1.0/LICENSE
-Source: MIT
-
-### github.com/paulmach/orb
-
-License: https://github.com/paulmach/orb/blob/v0.13.0/LICENSE.md
 Source: MIT
 
 ### github.com/pb33f/ordered-map/v2
@@ -284,7 +279,7 @@ Source: BSD-3-Clause
 
 ### github.com/prometheus/client_golang/prometheus
 
-License: https://github.com/prometheus/client_golang/blob/v1.24.0/LICENSE
+License: https://github.com/prometheus/client_golang/blob/v1.24.1/LICENSE
 Source: Apache-2.0
 
 ### github.com/prometheus/client_model/go
@@ -294,7 +289,7 @@ Source: Apache-2.0
 
 ### github.com/prometheus/common
 
-License: https://github.com/prometheus/common/blob/v0.70.0/LICENSE
+License: https://github.com/prometheus/common/blob/v0.70.1/LICENSE
 Source: Apache-2.0
 
 ### github.com/prometheus/procfs
@@ -302,9 +297,14 @@ Source: Apache-2.0
 License: https://github.com/prometheus/procfs/blob/v0.21.1/LICENSE
 Source: Apache-2.0
 
+### github.com/ringsaturn/orb
+
+License: https://github.com/ringsaturn/orb/blob/v0.15.0/LICENSE.md
+Source: MIT
+
 ### github.com/ringsaturn/tzf
 
-License: https://github.com/ringsaturn/tzf/blob/v1.2.3/LICENSE
+License: https://github.com/ringsaturn/tzf/blob/v1.2.5/LICENSE
 Source: MIT
 
 ### github.com/ringsaturn/tzf-dist
@@ -324,7 +324,7 @@ Source: BSD-3-Clause
 
 ### github.com/sj14/astral/pkg/astral
 
-License: https://github.com/sj14/astral/blob/v0.2.2/LICENSE
+License: https://github.com/sj14/astral/blob/v0.2.3/LICENSE
 Source: Apache-2.0
 
 ### github.com/smallnest/ringbuffer
@@ -379,7 +379,7 @@ Source: MIT
 
 ### github.com/tidwall/rtree
 
-License: https://github.com/tidwall/rtree/blob/v1.10.0/LICENSE
+License: https://github.com/tidwall/rtree/blob/v1.11.0/LICENSE
 Source: MIT
 
 ### github.com/tklauser/go-sysconf
@@ -434,7 +434,7 @@ Source: LGPL-2.1
 
 ### github.com/tphakala/go-audio-resampler
 
-License: https://github.com/tphakala/go-audio-resampler/blob/v1.5.0/LICENSE
+License: https://github.com/tphakala/go-audio-resampler/blob/v1.7.0/LICENSE
 Source: LGPL-2.1
 
 ### github.com/tphakala/go-flac
@@ -459,7 +459,7 @@ Source: MIT
 
 ### github.com/tphakala/simd
 
-License: https://github.com/tphakala/simd/blob/v1.6.0/LICENSE
+License: https://github.com/tphakala/simd/blob/v1.8.0/LICENSE
 Source: MIT
 
 ### github.com/valyala/bytebufferpool
@@ -504,7 +504,7 @@ Source: Apache-2.0
 
 ### go.yaml.in/yaml/v3
 
-License: https://github.com/yaml/go-yaml/blob/v3.0.4/LICENSE
+License: https://github.com/yaml/go-yaml/blob/v3.0.5/LICENSE
 Source: MIT
 
 ### go.yaml.in/yaml/v4
@@ -554,17 +554,17 @@ Source: BSD-3-Clause
 
 ### google.golang.org/api
 
-License: https://github.com/googleapis/google-api-go-client/blob/v0.289.0/LICENSE
+License: https://github.com/googleapis/google-api-go-client/blob/v0.292.0/LICENSE
 Source: BSD-3-Clause
 
 ### google.golang.org/genproto/googleapis/rpc
 
-License: https://github.com/googleapis/go-genproto/blob/e75dac1f907d/googleapis/rpc/LICENSE
+License: https://github.com/googleapis/go-genproto/blob/6ac0973c030d/googleapis/rpc/LICENSE
 Source: Apache-2.0
 
 ### google.golang.org/grpc
 
-License: https://github.com/grpc/grpc-go/blob/v1.82.1/LICENSE
+License: https://github.com/grpc/grpc-go/blob/v1.83.0/LICENSE
 Source: Apache-2.0
 
 ### google.golang.org/protobuf
