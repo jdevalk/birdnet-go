@@ -391,6 +391,9 @@ export type TranslationKey =
   | 'notifications.content.buffer.overloadMessage' // params: dropRate, sourceName
   | 'notifications.content.ort.unavailableTitle'
   | 'notifications.content.ort.unavailableMessage' // params: requiredVersion, modelName, installGuideURL
+  | 'notifications.content.region.staleTitle'
+  | 'notifications.content.region.staleMessage' // params: modelName, oldRegion, newRegion
+  | 'notifications.content.region.staleGlobalMessage' // params: modelName, oldRegion
   | 'notifications.content.alert.firedTitle' // params: rule_name
   | 'notifications.content.alert.metricExceeded' // params: value, threshold
   | 'notifications.content.alert.detectionOccurred' // params: species_name, confidence
@@ -3866,6 +3869,32 @@ export type TranslationKey =
   | 'analysis.downloadSource.endpoint.validationMessage'
   | 'analysis.gallery.title'
   | 'analysis.gallery.description'
+  | 'analysis.gallery.region.title'
+  | 'analysis.gallery.region.modeAuto'
+  | 'analysis.gallery.region.modeAutoHint'
+  | 'analysis.gallery.region.modeGlobal'
+  | 'analysis.gallery.region.modeGlobalHint'
+  | 'analysis.gallery.region.pinLabel'
+  | 'analysis.gallery.region.pinnedBadge'
+  | 'analysis.gallery.region.pinAction' // params: region
+  | 'analysis.gallery.region.switchToAuto'
+  | 'analysis.gallery.region.loading'
+  | 'analysis.gallery.region.loadFailed'
+  | 'analysis.gallery.region.mapLoading'
+  | 'analysis.gallery.region.mapUnavailable'
+  | 'analysis.gallery.region.mapAria' // params: region
+  | 'analysis.gallery.region.countriesCore' // params: countries
+  | 'analysis.gallery.region.countriesPartial' // params: countries
+  | 'analysis.gallery.region.countriesMore' // params: count
+  | 'analysis.gallery.region.countriesLess'
+  | 'analysis.gallery.region.why.noLocation'
+  | 'analysis.gallery.region.why.outsideCoverage'
+  | 'analysis.gallery.region.why.ambiguous' // params: region, runnerUp
+  | 'analysis.gallery.region.why.resolved' // params: region
+  | 'analysis.gallery.region.why.global'
+  | 'analysis.gallery.region.why.pinned' // params: region
+  | 'analysis.gallery.region.why.pinnedMismatch' // params: resolved
+  | 'analysis.gallery.region.why.pinnedUnknown' // params: region
   | 'analysis.gallery.variants.title'
   | 'analysis.gallery.variants.recommended'
   | 'analysis.gallery.variants.recommendedForHardware'
@@ -3876,6 +3905,8 @@ export type TranslationKey =
   | 'analysis.gallery.variants.latency' // params: ms
   | 'analysis.gallery.reasons.backendRecommended' // params: backend
   | 'analysis.gallery.reasons.backendSupported' // params: backend
+  | 'analysis.gallery.reasons.regionMatched' // params: region
+  | 'analysis.gallery.reasons.regionGlobalFallback'
   | 'analysis.gallery.reasons.precisionFp16Native'
   | 'analysis.gallery.reasons.ramConstrainedFit'
   | 'analysis.gallery.reasons.benchmarkMeasured'
@@ -3884,6 +3915,7 @@ export type TranslationKey =
   | 'analysis.gallery.reasons.backendMissing' // params: required
   | 'analysis.gallery.reasons.ramInsufficient' // params: requiredMb
   | 'analysis.gallery.reasons.hardwareExcluded' // params: token
+  | 'analysis.gallery.reasons.backendOnnxUnavailable'
   | 'analysis.gallery.tabs.installed'
   | 'analysis.gallery.tabs.available'
   | 'analysis.gallery.loading'
@@ -4109,6 +4141,15 @@ export type TranslationParams = {
     requiredVersion: string | number;
     modelName: string | number;
     installGuideURL: string | number;
+  };
+  'notifications.content.region.staleMessage': {
+    modelName: string | number;
+    oldRegion: string | number;
+    newRegion: string | number;
+  };
+  'notifications.content.region.staleGlobalMessage': {
+    modelName: string | number;
+    oldRegion: string | number;
   };
   'notifications.content.alert.firedTitle': { rule_name: string | number };
   'notifications.content.alert.metricExceeded': {
@@ -4451,10 +4492,21 @@ export type TranslationParams = {
     version: string | number;
     species: string | number;
   };
+  'analysis.gallery.region.pinAction': { region: string | number };
+  'analysis.gallery.region.mapAria': { region: string | number };
+  'analysis.gallery.region.countriesCore': { countries: string | number };
+  'analysis.gallery.region.countriesPartial': { countries: string | number };
+  'analysis.gallery.region.countriesMore': { count: string | number };
+  'analysis.gallery.region.why.ambiguous': { region: string | number; runnerUp: string | number };
+  'analysis.gallery.region.why.resolved': { region: string | number };
+  'analysis.gallery.region.why.pinned': { region: string | number };
+  'analysis.gallery.region.why.pinnedMismatch': { resolved: string | number };
+  'analysis.gallery.region.why.pinnedUnknown': { region: string | number };
   'analysis.gallery.variants.showAll': { count: string | number };
   'analysis.gallery.variants.latency': { ms: string | number };
   'analysis.gallery.reasons.backendRecommended': { backend: string | number };
   'analysis.gallery.reasons.backendSupported': { backend: string | number };
+  'analysis.gallery.reasons.regionMatched': { region: string | number };
   'analysis.gallery.reasons.archUnsupported': { required: string | number };
   'analysis.gallery.reasons.backendMissing': { required: string | number };
   'analysis.gallery.reasons.ramInsufficient': { requiredMb: string | number };

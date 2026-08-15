@@ -458,6 +458,11 @@
         "unavailableTitle": "ONNX Runtime non disponibile",
         "unavailableMessage": "ONNX Runtime {requiredVersion} è richiesto per {modelName} ma non è stato trovato. Consulta la guida all'installazione: {installGuideURL}"
       },
+      "region": {
+        "staleTitle": "La regione del modello potrebbe essere obsoleta",
+        "staleMessage": "{modelName} è installato per {oldRegion}, ma la tua nuova posizione corrisponde a {newRegion}. Puoi cambiare variante dalla galleria modelli in Impostazioni.",
+        "staleGlobalMessage": "{modelName} è installato per {oldRegion}, ma la tua nuova posizione è al di fuori della sua copertura. Puoi passare alla variante globale dalla galleria modelli in Impostazioni."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Valore attuale: {value}% (soglia: {threshold}%)",
@@ -5305,6 +5310,36 @@
     "gallery": {
       "title": "Galleria modelli",
       "description": "Gestisci i modelli di classificazione per il rilevamento di uccelli e pipistrelli.",
+      "region": {
+        "title": "Regione del modello",
+        "modeAuto": "Automatico",
+        "modeAutoHint": "Scegli la migliore variante regionale in base alla posizione della stazione",
+        "modeGlobal": "Globale",
+        "modeGlobalHint": "Usa sempre il modello mondiale",
+        "pinLabel": "Fissa una regione specifica",
+        "pinnedBadge": "Fissato",
+        "pinAction": "Fissa {region}",
+        "switchToAuto": "Passa ad automatico",
+        "loading": "Caricamento regioni...",
+        "loadFailed": "Impossibile caricare i dati della regione",
+        "mapLoading": "Caricamento mappa di copertura...",
+        "mapUnavailable": "Mappa di copertura non disponibile",
+        "mapAria": "Mappa di copertura di {region}",
+        "countriesCore": "Copre: {countries}",
+        "countriesPartial": "Copertura parziale: {countries}",
+        "countriesMore": "e altri {count}",
+        "countriesLess": "Mostra meno",
+        "why": {
+          "noLocation": "La selezione automatica richiede la posizione della stazione. Impostala nelle Impostazioni Principali; fino ad allora verrà utilizzato il modello globale.",
+          "outsideCoverage": "La tua posizione è al di fuori della copertura di qualsiasi modello regionale, pertanto viene utilizzato il modello globale.",
+          "ambiguous": "La tua posizione è vicina al confine tra {region} e {runnerUp}. La selezione automatica utilizza {region}; fissa una delle due per rendere esplicita la scelta.",
+          "resolved": "Regione rilevata dalla tua posizione: {region}.",
+          "global": "Il modello globale viene sempre utilizzato, indipendentemente dalla posizione della stazione.",
+          "pinned": "Fissato su {region}. La posizione della stazione non influisce sulla selezione del modello.",
+          "pinnedMismatch": "La tua posizione corrisponde attualmente a {resolved}.",
+          "pinnedUnknown": "La regione fissata \"{region}\" non è disponibile nell'attuale catalogo modelli. Le famiglie di modelli useranno come fallback la tua posizione o il modello globale."
+        }
+      },
       "variants": {
         "title": "Variante modello",
         "recommended": "Consigliato",
@@ -5318,6 +5353,8 @@
       "reasons": {
         "backendRecommended": "Eseguito su {backend}, il backend consigliato per il tuo hardware",
         "backendSupported": "Eseguito su {backend}",
+        "regionMatched": "Adattato alla tua regione ({region})",
+        "regionGlobalFallback": "Modello globale per la tua posizione",
         "precisionFp16Native": "Versione a mezza precisione adatta al tuo processore",
         "ramConstrainedFit": "Versione quantizzata ottimizzata per la tua memoria disponibile",
         "benchmarkMeasured": "Il più veloce sul tuo dispositivo secondo i benchmark",
@@ -5325,7 +5362,8 @@
         "archUnsupported": "Richiede un processore {required}",
         "backendMissing": "Richiede un backend di inferenza che la tua versione non può raggiungere ({required})",
         "ramInsufficient": "Richiede almeno {requiredMb} MB di memoria",
-        "hardwareExcluded": "Non supportato dal tuo hardware ({token})"
+        "hardwareExcluded": "Non supportato dal tuo hardware ({token})",
+        "backendOnnxUnavailable": "Richiede ONNX Runtime, che non è disponibile su questo sistema"
       },
       "tabs": {
         "installed": "Installati",

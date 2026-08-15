@@ -3,7 +3,12 @@
 // Uses the shared api utility for CSRF-protected fetch calls and
 // ReconnectingEventSource for SSE progress streams.
 
-import type { CatalogResponse, DownloadProgress, InstalledModel } from '$lib/types/models';
+import type {
+  CatalogResponse,
+  DownloadProgress,
+  InstalledModel,
+  ModelRegionsResponse,
+} from '$lib/types/models';
 import { api } from '$lib/utils/api';
 import { getLogger } from '$lib/utils/logger';
 import { buildAppUrl } from '$lib/utils/urlHelpers';
@@ -21,6 +26,26 @@ export async function fetchCatalog(): Promise<CatalogResponse> {
 /** Fetch all currently installed models. */
 export async function fetchInstalled(): Promise<InstalledModel[]> {
   return api.get<InstalledModel[]>(`${BASE}/installed`);
+}
+
+/**
+ * Fetch the region selector data for the model gallery: the saved mode, what the
+ * configured coordinates resolve to under "auto", the selectable regions, and the
+ * per-family resolution. Auth-gated on the server; the raw coordinates are never
+ * returned.
+ */
+export async function fetchModelRegions(): Promise<ModelRegionsResponse> {
+  return api.get<ModelRegionsResponse>(`${BASE}/regions`);
+}
+
+/**
+ * Fetch the SVG coverage map for a region slug, as raw markup for inline
+ * rendering. The endpoint is public and returns image/svg+xml, which the shared
+ * api util yields as text. Rejects (404) when a region has no map; the caller
+ * treats that as "no map" and falls back to the text-only country list.
+ */
+export async function fetchRegionCoverageMap(slug: string): Promise<string> {
+  return api.get<string>(`${BASE}/regions/${encodeURIComponent(slug)}/map`);
 }
 
 /**

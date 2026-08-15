@@ -458,6 +458,11 @@
         "unavailableTitle": "ONNX Runtime inte tillgänglig",
         "unavailableMessage": "ONNX Runtime {requiredVersion} krävs för {modelName} men hittades inte. Se installationsguiden: {installGuideURL}"
       },
+      "region": {
+        "staleTitle": "Modellregionen kan vara föråldrad",
+        "staleMessage": "{modelName} är installerad för {oldRegion}, men din nya plats motsvarar {newRegion}. Du kan byta varianter från modellgalleriet i Inställningar.",
+        "staleGlobalMessage": "{modelName} är installerad för {oldRegion}, men din nya plats är utanför dess täckning. Du kan byta till den globala varianten från modellgalleriet i Inställningar."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Nuvarande värde: {value}% (tröskel: {threshold}%)",
@@ -5305,6 +5310,36 @@
     "gallery": {
       "title": "Modellgalleri",
       "description": "Hantera klassificeringsmodeller för fågel- och fladdermusdetektion.",
+      "region": {
+        "title": "Modellregion",
+        "modeAuto": "Automatisk",
+        "modeAutoHint": "Välj den bästa regionala varianten utifrån stationsplatsen",
+        "modeGlobal": "Global",
+        "modeGlobalHint": "Använd alltid den världsomspännande modellen",
+        "pinLabel": "Fäst en specifik region",
+        "pinnedBadge": "Fäst",
+        "pinAction": "Fäst {region}",
+        "switchToAuto": "Växla till automatisk",
+        "loading": "Laddar regioner...",
+        "loadFailed": "Kunde inte ladda regiondata",
+        "mapLoading": "Läser in täckningskarta...",
+        "mapUnavailable": "Täckningskarta ej tillgänglig",
+        "mapAria": "Täckningskarta för {region}",
+        "countriesCore": "Täcker: {countries}",
+        "countriesPartial": "Delvis täckning: {countries}",
+        "countriesMore": "och {count} till",
+        "countriesLess": "Visa färre",
+        "why": {
+          "noLocation": "Automatiskt val kräver en stationsplats. Ange den i Huvudinställningar; den globala modellen används fram tills dess.",
+          "outsideCoverage": "Din plats är utanför alla regionala modellers täckning, så den globala modellen används.",
+          "ambiguous": "Din plats är nära gränsen mellan {region} och {runnerUp}. Automatiskt val använder {region}; fäst någon av dem för att göra valet explicit.",
+          "resolved": "Identifierad region från din plats: {region}.",
+          "global": "Den globala modellen används alltid, oavsett stationsplats.",
+          "pinned": "Fäst till {region}. Stationsplatsen påverkar inte modellvalet.",
+          "pinnedMismatch": "Din plats motsvarar för närvarande {resolved}.",
+          "pinnedUnknown": "Den fästa regionen \"{region}\" är inte tillgänglig i den aktuella modellkatalogen. Modellfamiljer faller tillbaka på din plats eller den globala modellen."
+        }
+      },
       "variants": {
         "title": "Modellvariant",
         "recommended": "Rekommenderad",
@@ -5318,6 +5353,8 @@
       "reasons": {
         "backendRecommended": "Körs på {backend}, den rekommenderade backend-motorn för din hårdvara",
         "backendSupported": "Körs på {backend}",
+        "regionMatched": "Anpassad för din region ({region})",
+        "regionGlobalFallback": "Global modell för din plats",
         "precisionFp16Native": "Halvprecisionsbygge anpassat för din CPU",
         "ramConstrainedFit": "Kvantiserat bygge anpassat för ditt tillgängliga minne",
         "benchmarkMeasured": "Snabbast på din enhet enligt prestandatester",
@@ -5325,7 +5362,8 @@
         "archUnsupported": "Kräver en {required} CPU",
         "backendMissing": "Kräver en inference-backend som din version inte kan nå ({required})",
         "ramInsufficient": "Kräver minst {requiredMb} MB minne",
-        "hardwareExcluded": "Stöds inte på din hårdvara ({token})"
+        "hardwareExcluded": "Stöds inte på din hårdvara ({token})",
+        "backendOnnxUnavailable": "Kräver ONNX Runtime, som inte är tillgängligt på detta system"
       },
       "tabs": {
         "installed": "Installerade",

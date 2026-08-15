@@ -87,3 +87,55 @@ export interface DownloadProgress {
   totalFiles: number;
   error?: string;
 }
+
+/** ISO 3166-1 alpha-2 country codes a region covers. Mirrors Go region.Countries. */
+export interface RegionCountries {
+  // A nil Go slice marshals as null, so the types include null to force the
+  // `?? []` guard at every call site.
+  core: string[] | null; // fully inside the model's sampled footprint
+  partial: string[] | null; // range-straddling or clipped at the footprint edge
+}
+
+/** One selectable region in the gallery region selector. Mirrors Go RegionOption. */
+export interface RegionOption {
+  slug: string;
+  name: string;
+  group: string; // continental bucket slug, for grouping in the UI
+  groupDisplay: string; // continental bucket display name
+  tier: number;
+  // ISO codes localized client-side via Intl.DisplayNames. A nil Go slice
+  // marshals as null, so consumers guard each list with `?? []`.
+  countries: RegionCountries;
+}
+
+/**
+ * How the server resolved the configured coordinates to a region. Mirrors Go
+ * RegionResolution. The endpoint always computes this under automatic mode (a
+ * preview), so in practice `source` is 'auto' or 'global'; 'pinned' and
+ * 'pinned-fallback' exist in the contract for future per-family use. `slug` is
+ * empty when the global model applies.
+ */
+export interface RegionResolution {
+  slug: string;
+  source: 'pinned' | 'auto' | 'pinned-fallback' | 'global';
+  ambiguous: boolean;
+  runnerUp?: string;
+}
+
+/** Per-family region resolution under the configured coordinates. Mirrors Go RegionFamily. */
+export interface RegionFamily {
+  catalogId: string;
+  repo: string;
+  installed: boolean;
+  installedVariantRegion: string; // region of the installed variant, "" for a global/hardware variant
+  resolved: RegionResolution;
+}
+
+/** Response of GET /api/v2/models/regions. Mirrors Go ModelRegionsResponse. */
+export interface ModelRegionsResponse {
+  modelRegion: string; // the saved BirdNET.ModelRegion setting
+  locationConfigured: boolean;
+  resolved: RegionResolution; // what "auto" resolves to from the coordinates
+  regions: RegionOption[]; // dropdown options, union across families
+  families: RegionFamily[]; // per-family resolution
+}

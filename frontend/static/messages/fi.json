@@ -458,6 +458,11 @@
         "unavailableTitle": "ONNX Runtime ei ole käytettävissä",
         "unavailableMessage": "ONNX Runtime {requiredVersion} vaaditaan mallille {modelName}, mutta sitä ei löytynyt. Katso asennusohje: {installGuideURL}"
       },
+      "region": {
+        "staleTitle": "Mallialue saattaa olla vanhentunut",
+        "staleMessage": "{modelName} on asennettu alueelle {oldRegion}, mutta uusi sijaintisi vastaa aluetta {newRegion}. Voit vaihtaa varianttia Asetusten malligalleriasta.",
+        "staleGlobalMessage": "{modelName} on asennettu alueelle {oldRegion}, mutta uusi sijaintisi on sen kattavuusalueen ulkopuolella. Voit vaihtaa globaaliin varianttiin Asetusten malligalleriasta."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Nykyinen arvo: {value}% (raja-arvo: {threshold}%)",
@@ -5305,6 +5310,36 @@
     "gallery": {
       "title": "Malligalleria",
       "description": "Hallitse lintu- ja lepakkotunnistuksen luokittelumalleja.",
+      "region": {
+        "title": "Mallialue",
+        "modeAuto": "Automaattinen",
+        "modeAutoHint": "Valitse paras alueellinen variantti aseman sijainnin perusteella",
+        "modeGlobal": "Globaali",
+        "modeGlobalHint": "Käytä aina maailmanlaajuista mallia",
+        "pinLabel": "Kiinnitä tietty alue",
+        "pinnedBadge": "Kiinnitetty",
+        "pinAction": "Kiinnitä {region}",
+        "switchToAuto": "Vaihda automaattiseen",
+        "loading": "Ladataan alueita...",
+        "loadFailed": "Aluetietojen lataaminen epäonnistui",
+        "mapLoading": "Ladataan kattavuuskarttaa...",
+        "mapUnavailable": "Kattavuuskartta ei ole saatavilla",
+        "mapAria": "Alueen {region} kattavuuskartta",
+        "countriesCore": "Kattaa: {countries}",
+        "countriesPartial": "Osittainen kattavuus: {countries}",
+        "countriesMore": "ja {count} muuta",
+        "countriesLess": "Näytä vähemmän",
+        "why": {
+          "noLocation": "Automaattinen valinta vaatii aseman sijainnin. Aseta se Pääasetuksissa; siihen asti käytetään globaalia mallia.",
+          "outsideCoverage": "Sijaintisi on kaikkien alueellisten mallien kattavuusalueen ulkopuolella, joten käytetään globaalia mallia.",
+          "ambiguous": "Sijaintisi on lähellä alueiden {region} ja {runnerUp} välistä rajaa. Automaattinen valinta käyttää aluetta {region}; tee valinnasta nimenomainen kiinnittämällä jompikumpi.",
+          "resolved": "Sijaintisi perusteella tunnistettu alue: {region}.",
+          "global": "Globaalia mallia käytetään aina aseman sijainnista riippumatta.",
+          "pinned": "Kiinnitetty alueeseen {region}. Aseman sijainti ei vaikuta mallin valintaan.",
+          "pinnedMismatch": "Sijaintisi vastaa tällä hetkellä aluetta {resolved}.",
+          "pinnedUnknown": "Kiinnitetty alue \"{region}\" ei ole saatavilla nykyisessä malliluettelossa. Malliperheet käyttävät varavaihtoehtona sijaintiasi tai globaalia mallia."
+        }
+      },
       "variants": {
         "title": "Mallivariantti",
         "recommended": "Suositeltu",
@@ -5318,6 +5353,8 @@
       "reasons": {
         "backendRecommended": "Käyttää taustajärjestelmää {backend}, joka on suositeltu laitteistollesi",
         "backendSupported": "Käyttää taustajärjestelmää {backend}",
+        "regionMatched": "Sovitettu alueellesi ({region})",
+        "regionGlobalFallback": "Globaali malli sijainnillesi",
         "precisionFp16Native": "Puolitarkkuusmalli (fp16), optimoitu suorittimellesi",
         "ramConstrainedFit": "Kvantisoitu malli, mitoitettu käytettävissä olevalle muistillesi",
         "benchmarkMeasured": "Laitteesi nopein suorituskykytestien perusteella",
@@ -5325,7 +5362,8 @@
         "archUnsupported": "Vaatii {required}-suorittimen",
         "backendMissing": "Vaatii inferenssin taustajärjestelmän, joka ei ole käytettävissä ({required})",
         "ramInsufficient": "Vaatii vähintään {requiredMb} MB muistia",
-        "hardwareExcluded": "Ei tue laitteistoasi ({token})"
+        "hardwareExcluded": "Ei tue laitteistoasi ({token})",
+        "backendOnnxUnavailable": "Vaatii ONNX Runtimen, joka ei ole käytettävissä tässä järjestelmässä"
       },
       "tabs": {
         "installed": "Asennetut",
