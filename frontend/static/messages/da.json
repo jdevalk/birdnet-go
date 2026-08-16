@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 understøttet",
       "fp16Unsupported": "FP16 ikke understøttet",
+      "advanced": "Avanceret",
+      "capabilities": "Egenskaber",
+      "capabilitiesHelp": "Hardware-tags, der bruges til at matche denne maskine med de tilgængelige modelbygninger.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,14 +5351,24 @@
         "default": "Standard",
         "incompatible": "Ikke tilgængelig for din hardware",
         "showAll": "Vis alle varianter ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Vis varianter for {region} og din hardware ({count})",
+        "showHardware": "Vis hardwarevarianter ({count})",
+        "showAllRegions": "Vis alle varianter, inklusive andre regioner ({count})",
+        "regionContext": "Regionale varianter vises for {region}, angivet af valget af modelregion ovenfor",
+        "regionContextNone": "Regionale varianter er tilgængelige. Vælg en region i valget af modelregion ovenfor, eller vis alle varianter.",
+        "otherRegions": "Andre regioner",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Vent på, at den aktuelle installation, geninstallation eller fjernelse af modellen fuldføres",
       "reasons": {
         "backendRecommended": "Kører på {backend}, den anbefalede backend til din hardware",
         "backendSupported": "Kører på {backend}",
         "regionMatched": "Matchet til din region ({region})",
         "regionGlobalFallback": "Global model til din placering",
         "precisionFp16Native": "Halvpræcisionsversion, der passer til din CPU",
+        "precisionFp16GpuPreferred": "Halvpræcisionsversion: halvt så stor download, kører på din GPU",
         "ramConstrainedFit": "Kvantiseret version tilpasset din tilgængelige hukommelse",
         "benchmarkMeasured": "Hurtigst på din enhed i udførte benchmarks",
         "variantLegacy": "Erstattet af en nyere version",
@@ -5363,7 +5376,7 @@
         "backendMissing": "Kræver en inference backend, som din version ikke kan nå ({required})",
         "ramInsufficient": "Kræver mindst {requiredMb} MB hukommelse",
         "hardwareExcluded": "Understøttes ikke på din hardware ({token})",
-        "backendOnnxUnavailable": "Kræver ONNX Runtime, som ikke er tilgængelig på dette system"
+        "backendOnnxUnavailable": "Kræver ONNX Runtime, som ikke er tilgængelig på dette system. Docker-images og udgivelsespakker indeholder det; se installationsvejledningen til ONNX Runtime."
       },
       "tabs": {
         "installed": "Installerede",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Kunne ikke indlæse modelkatalog",
         "installFailed": "Kunne ikke starte modelinstallation",
-        "removeFailed": "Kunne ikke fjerne model"
+        "removeFailed": "Kunne ikke fjerne model",
+        "actionFailed": "Der opstod et problem med {name}",
+        "downloadSourceHint": "Hvis huggingface.co er blokeret eller langsomt på dit netværk, kan du indstille en spejlserver i sektionen Downloadkilde nedenfor.",
+        "goToDownloadSource": "Gå til Downloadkilde",
+        "dismiss": "Afvis",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Region",
       "speciesLabel": "Arter",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Geninstallerer...",
       "reinstallComplete": "Filer verificeret succesfuldt",
       "geomodelBadge": "Inkluderer BirdNET v3.0 geomodel",
-      "onnxRuntimeRequired": "Kræver ONNX Runtime, som ikke er tilgængelig på dette system.",
-      "onnxRuntimeMissing": "ONNX Runtime er ikke tilgængelig. Denne model kan ikke køre.",
-      "unavailable": "Ikke tilgængelig"
+      "entryIncompatible": "Denne model er ikke tilgængelig på dette system."
     },
     "bird": {
       "title": "Fugleregistrering",

@@ -1,6 +1,34 @@
-import { describe, it, expect } from 'vitest';
-import { pickPreselectedVariant, reasonKey, variantLabel } from './variantSelection';
-import type { CatalogEntry, CatalogVariant } from '$lib/types/models';
+import { describe, it, expect, vi } from 'vitest';
+import {
+  pickPreselectedVariant,
+  reasonKey,
+  variantLabel,
+  translateReason,
+  topReasons,
+} from './variantSelection';
+import type { CatalogEntry, CatalogVariant, VariantReason } from '$lib/types/models';
+
+// Controlled i18n mock: only these two keys have a "translation"; every other key
+// echoes back, which is how the real t() signals an untranslated key. This lets us
+// exercise both the translated branch and the fallback branch of translateReason.
+// The mock t is a spy (declared via vi.hoisted so it exists before the hoisted
+// vi.mock runs) so a test can assert the interpolation args are forwarded to t,
+// not merely that the result is unchanged. It still echoes an unmapped key, which
+// is how the real t() signals an untranslated key.
+const { tSpy } = vi.hoisted(() => ({
+  tSpy: vi.fn((key: string, _args?: Record<string, string>) => {
+    const dict: Record<string, string> = {
+      'analysis.gallery.reasons.backendRecommended': 'Best for your hardware',
+      'analysis.gallery.reasons.regionMatched': 'Matched to your region',
+    };
+    // eslint-disable-next-line security/detect-object-injection -- test mock, key is a controlled literal
+    return dict[key] ?? key;
+  }),
+}));
+
+vi.mock('$lib/i18n', () => ({
+  t: tSpy,
+}));
 
 function variant(overrides: Partial<CatalogVariant> & { id: string }): CatalogVariant {
   return {
@@ -129,7 +157,90 @@ describe('variantLabel', () => {
     );
   });
 
+  it('strips the @region suffix from the id so it does not leak into the descriptor', () => {
+    // Regression: a regional id like "int8-arm@nordic" must not render the
+    // "@nordic" suffix inside the descriptor as "arm@nordic".
+    expect(variantLabel(variant({ id: 'fp32@nordic', precision: 'fp32', region: 'nordic' }))).toBe(
+      'FP32 (nordic)'
+    );
+    expect(
+      variantLabel(
+        variant({ id: 'int8-arm@southern-africa', precision: 'int8', region: 'southern-africa' })
+      )
+    ).toBe('INT8 (arm) (southern-africa)');
+    expect(
+      variantLabel(variant({ id: 'no-dft-fp32@iberia', precision: 'fp32', region: 'iberia' }))
+    ).toBe('FP32 (no-dft) (iberia)');
+  });
+
   it('falls back to the id when precision is absent', () => {
     expect(variantLabel(variant({ id: 'custom' }))).toBe('custom');
+  });
+
+  it('resolves the region display name from the map when provided', () => {
+    const names = new Map([['nordic', 'Nordic and Baltic']]);
+    expect(
+      variantLabel(variant({ id: 'fp32@nordic', precision: 'fp32', region: 'nordic' }), names)
+    ).toBe('FP32 (Nordic and Baltic)');
+  });
+
+  it('falls back to the raw slug when the map lacks the region or is absent', () => {
+    const names = new Map([['iberia', 'Iberia']]);
+    // Slug not in the map -> raw slug.
+    expect(
+      variantLabel(variant({ id: 'fp32@nordic', precision: 'fp32', region: 'nordic' }), names)
+    ).toBe('FP32 (nordic)');
+    // No map at all -> raw slug, unchanged from the single-argument behavior.
+    expect(variantLabel(variant({ id: 'fp32@nordic', precision: 'fp32', region: 'nordic' }))).toBe(
+      'FP32 (nordic)'
+    );
+  });
+});
+
+describe('translateReason', () => {
+  it('returns the translation when the reason code maps to a real key', () => {
+    expect(translateReason('backend.recommended', undefined, 'raw')).toBe('Best for your hardware');
+  });
+
+  it('returns the fallback when the reason code has no translation', () => {
+    expect(translateReason('some.unmapped_code', undefined, 'raw-fallback')).toBe('raw-fallback');
+  });
+
+  it('passes interpolation args through to t', () => {
+    tSpy.mockClear();
+    // regionMatched has a translation, so the translated branch is taken. Assert
+    // the args object reaches t verbatim, not just that the result is unchanged.
+    expect(translateReason('region.matched', { region: 'Finland' }, 'raw')).toBe(
+      'Matched to your region'
+    );
+    expect(tSpy).toHaveBeenCalledWith('analysis.gallery.reasons.regionMatched', {
+      region: 'Finland',
+    });
+  });
+});
+
+describe('topReasons', () => {
+  const reason = (code: string): VariantReason => ({ code });
+
+  it('returns an empty array for no reasons', () => {
+    expect(topReasons(undefined)).toEqual([]);
+    expect(topReasons([])).toEqual([]);
+  });
+
+  it('localizes a single reason', () => {
+    expect(topReasons([reason('backend.recommended')])).toEqual(['Best for your hardware']);
+  });
+
+  it('surfaces the region reason that sits at index 1, not just the headline', () => {
+    expect(topReasons([reason('backend.recommended'), reason('region.matched')])).toEqual([
+      'Best for your hardware',
+      'Matched to your region',
+    ]);
+  });
+
+  it('caps at the limit and falls back to the raw code for unmapped reasons', () => {
+    expect(
+      topReasons([reason('backend.recommended'), reason('region.matched'), reason('extra.one')])
+    ).toEqual(['Best for your hardware', 'Matched to your region']);
   });
 });

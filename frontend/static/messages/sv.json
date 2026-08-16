@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 stöds",
       "fp16Unsupported": "FP16 stöds inte",
+      "advanced": "Avancerat",
+      "capabilities": "Egenskaper",
+      "capabilitiesHelp": "Hårdvarutaggar som används för att matcha denna maskin mot tillgängliga modellbyggen.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,14 +5351,24 @@
         "default": "Standard",
         "incompatible": "Inte tillgänglig för din hårdvara",
         "showAll": "Visa alla varianter ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Visa varianter för {region} och din hårdvara ({count})",
+        "showHardware": "Visa hårdvaruvarianter ({count})",
+        "showAllRegions": "Visa alla varianter, inklusive andra regioner ({count})",
+        "regionContext": "Regionala varianter visas för {region}, inställt via modellregionsvalet ovan",
+        "regionContextNone": "Regionala varianter är tillgängliga. Välj en region i modellregionsvalet ovan, eller visa alla varianter.",
+        "otherRegions": "Andra regioner",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Vänta tills den pågående installationen, ominstallationen eller borttagningen av modellen är klar",
       "reasons": {
         "backendRecommended": "Körs på {backend}, den rekommenderade backend-motorn för din hårdvara",
         "backendSupported": "Körs på {backend}",
         "regionMatched": "Anpassad för din region ({region})",
         "regionGlobalFallback": "Global modell för din plats",
         "precisionFp16Native": "Halvprecisionsbygge anpassat för din CPU",
+        "precisionFp16GpuPreferred": "Halvprecisionsbygge: hälften så stor nedladdning, körs på din GPU",
         "ramConstrainedFit": "Kvantiserat bygge anpassat för ditt tillgängliga minne",
         "benchmarkMeasured": "Snabbast på din enhet enligt prestandatester",
         "variantLegacy": "Ersatt av en nyare version",
@@ -5363,7 +5376,7 @@
         "backendMissing": "Kräver en inference-backend som din version inte kan nå ({required})",
         "ramInsufficient": "Kräver minst {requiredMb} MB minne",
         "hardwareExcluded": "Stöds inte på din hårdvara ({token})",
-        "backendOnnxUnavailable": "Kräver ONNX Runtime, som inte är tillgängligt på detta system"
+        "backendOnnxUnavailable": "Kräver ONNX Runtime, som inte är tillgängligt på detta system. Docker-avbilder och versionsarkiv innehåller det; se installationsguiden för ONNX Runtime."
       },
       "tabs": {
         "installed": "Installerade",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Kunde inte ladda modellkatalogen",
         "installFailed": "Kunde inte starta modellinstallation",
-        "removeFailed": "Kunde inte ta bort modell"
+        "removeFailed": "Kunde inte ta bort modell",
+        "actionFailed": "Det uppstod ett problem med {name}",
+        "downloadSourceHint": "Om huggingface.co är blockerat eller långsamt på ditt nätverk kan du ange en spegelsajt i avsnittet Nedladdningskälla nedan.",
+        "goToDownloadSource": "Gå till Nedladdningskälla",
+        "dismiss": "Avfärda",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Region",
       "speciesLabel": "Arter",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Installerar om...",
       "reinstallComplete": "Filer verifierade",
       "geomodelBadge": "Inkluderar BirdNET v3.0 geomodell",
-      "onnxRuntimeRequired": "Kräver ONNX Runtime som inte är tillgängligt på detta system.",
-      "onnxRuntimeMissing": "ONNX Runtime är inte tillgängligt. Denna modell kan inte köras.",
-      "unavailable": "Ej tillgänglig"
+      "entryIncompatible": "Den här modellen är inte tillgänglig på detta system."
     },
     "bird": {
       "title": "Fågeldetektering",

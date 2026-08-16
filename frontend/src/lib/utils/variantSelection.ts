@@ -1,7 +1,9 @@
-// Pure helpers for the model gallery variant picker. No Svelte, no I/O, so they
-// are trivially unit-testable.
+// Helpers for the model gallery variant picker. Dependency-light and
+// unit-testable; the only non-pure import is `t` for reason localization, which
+// every test environment mocks (see src/test/setup.ts).
 
-import type { CatalogEntry, CatalogVariant } from '$lib/types/models';
+import type { CatalogEntry, CatalogVariant, VariantReason } from '$lib/types/models';
+import { t } from '$lib/i18n';
 
 /**
  * Choose the variant the gallery preselects for an entry. This is the "smart by
@@ -56,21 +58,70 @@ export function reasonKey(code: string): string {
 }
 
 /**
+ * Localize a structured reason code, returning `fallback` when the code has no
+ * translation. Unifies the two former copies of this pattern (the variant
+ * picker's `reasonText`, which falls back to the raw code, and the gallery's
+ * entry-level banner, which falls back to a generic localized line): each caller
+ * passes the fallback string it wants. `t` returns the key itself for an unmapped
+ * key, which is how "no translation" is detected.
+ */
+export function translateReason(
+  code: string,
+  args: Record<string, string> | undefined,
+  fallback: string
+): string {
+  const key = reasonKey(code);
+  const translated = t(key, args);
+  return translated === key ? fallback : translated;
+}
+
+/**
+ * Localize the top `limit` reasons of a recommended variant, each on the raw code
+ * as fallback. The recommender orders the backend reason first (the headline) and
+ * appends `region.matched` second, so rendering only the first hides the region
+ * match on a recommended regional variant; surfacing the top two fixes that.
+ * Returns the localized strings as an array so the caller controls layout.
+ */
+export function topReasons(reasons: VariantReason[] | undefined, limit = 2): string[] {
+  if (!reasons?.length) return [];
+  return reasons.slice(0, limit).map(r => translateReason(r.code, r.args, r.code));
+}
+
+/**
  * Human-facing label for a variant: the precision uppercased, with the part of
  * the id that is not the precision appended in parentheses so variants sharing a
  * precision stay distinguishable (e.g. "fp32" -> "FP32", "no-dft-fp32" ->
  * "FP32 (no-dft)", "int8-arm" -> "INT8 (arm)"). Falls back to the raw id when the
  * variant carries no precision. The region, when set, is appended last.
  */
-export function variantLabel(variant: CatalogVariant): string {
+// Variant-id delimiters: "<precision>[-<descriptor>]" optionally suffixed with
+// "@<region>" for a regional tile (e.g. "int8-arm@nordic").
+const VARIANT_REGION_SEPARATOR = '@';
+const VARIANT_DESCRIPTOR_SEPARATOR = /[-_]/;
+
+export function variantLabel(
+  variant: CatalogVariant,
+  regionNames?: ReadonlyMap<string, string>
+): string {
   const precision = variant.precision?.toUpperCase() ?? '';
-  const extra = variant.id
-    .split(/[-_]/)
+  // Derive the non-precision descriptor from the id. Strip any "@region" suffix
+  // first (the region is appended separately) so a regional id like
+  // "int8-arm@nordic" yields the "arm" descriptor, not "arm@nordic".
+  const baseId = variant.id.split(VARIANT_REGION_SEPARATOR)[0];
+  const extra = baseId
+    .split(VARIANT_DESCRIPTOR_SEPARATOR)
     .filter(segment => segment !== '' && segment.toLowerCase() !== variant.precision?.toLowerCase())
     .join('-');
-  let base = precision || variant.id;
+  let base = precision || baseId;
   if (precision && extra) {
     base = `${precision} (${extra})`;
   }
-  return variant.region ? `${base} (${variant.region})` : base;
+  if (!variant.region) return base;
+  // Resolve the region's canonical display name from the same source the region
+  // selector uses (the regions endpoint, threaded in as a slug->name map). Fall
+  // back to the raw slug when the map is absent or the slug is unknown, so the
+  // label never shows a bare slug when a name is available, and never breaks when
+  // it is not.
+  const regionDisplay = regionNames?.get(variant.region) ?? variant.region;
+  return `${base} (${regionDisplay})`;
 }

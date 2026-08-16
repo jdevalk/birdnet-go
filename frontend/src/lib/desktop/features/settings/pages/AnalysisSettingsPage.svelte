@@ -28,14 +28,21 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { downloadBlob } from '$lib/utils/fileHelpers';
-  import type { CatalogEntry, DownloadProgress, InstalledModel } from '$lib/types/models';
+  import type {
+    CatalogEntry,
+    DownloadProgress,
+    InstalledModel,
+    ModelRegionsResponse,
+  } from '$lib/types/models';
   import {
     fetchCatalog,
     fetchInstalled,
+    fetchModelRegions,
     installModel,
     reinstallModel,
     uninstallModel,
     subscribeInstallProgress,
+    isNetworkDownloadError,
   } from '$lib/utils/modelsApi';
   import { invalidateModels } from '$lib/stores/models.svelte';
   import SettingsTabs from '$lib/desktop/features/settings/components/SettingsTabs.svelte';
@@ -68,7 +75,7 @@
   import { buildAppUrl } from '$lib/utils/urlHelpers';
   import { toastActions } from '$lib/stores/toast';
   import { formatBytes, formatNumber } from '$lib/utils/formatters';
-  import { pickPreselectedVariant, reasonKey } from '$lib/utils/variantSelection';
+  import { pickPreselectedVariant, translateReason } from '$lib/utils/variantSelection';
   import { safeArrayAccess } from '$lib/utils/security';
   import { loggers } from '$lib/utils/logger';
   import { t } from '$lib/i18n';
@@ -118,15 +125,15 @@
   // Render an entry-level incompatibility code (e.g. "backend.onnx_unavailable")
   // through the same i18n reason path the variant picker uses, falling back to a
   // generic localized line when the code is absent or has no translation, so a
-  // structured code never surfaces to the user as a raw dotted string.
-  // Entry-level codes carry no interpolation args (unlike variant reasons), so no
-  // args are threaded here; a future parameterized entry-level code would need an
-  // args field on CatalogEntryResponse.IncompatibleReason and a change here.
-  function entryIncompatibleText(code: string | undefined, fallbackKey: string): string {
-    if (!code) return t(fallbackKey);
-    const key = reasonKey(code);
-    const translated = t(key);
-    return translated === key ? t(fallbackKey) : translated;
+  // structured code never surfaces to the user as a raw dotted string. The
+  // fallback is cause-neutral on purpose: it is only reached when the code is
+  // missing or unmapped, which is exactly when the specific cause is not known.
+  // Entry-level codes carry no interpolation args (unlike variant reasons), so
+  // undefined args are passed; a future parameterized entry-level code would need
+  // an args field on CatalogEntryResponse.IncompatibleReason and a change here.
+  function entryIncompatibleText(code: string | undefined): string {
+    const fallback = t('analysis.gallery.entryIncompatible');
+    return code ? translateReason(code, undefined, fallback) : fallback;
   }
 
   // ── Page-level tab state ──────────────────────────────────────────────
@@ -139,13 +146,55 @@
   // sections, which the visibility-filtered catalog cannot).
   let installedModels = $state<InstalledModel[]>([]);
   let loading = $state(true);
-  let error = $state<string | null>(null);
+  // Catalog loading failure: gates the two gallery tab bodies and drives the
+  // banner whose Retry re-runs loadCatalog.
+  let catalogError = $state<string | null>(null);
+
+  // A failed per-model action (install, reinstall, remove). Rendered as a
+  // dismissible banner above the gallery tabs so it never replaces the grid, and
+  // so switching tabs cannot strand it. Carries enough to offer a real Retry and,
+  // for a download-reachability failure, a pointer to the Download Source setting.
+  type GalleryActionKind = 'install' | 'reinstall' | 'remove';
+  interface GalleryActionError {
+    modelId: string;
+    modelName: string;
+    kind: GalleryActionKind;
+    message: string; // raw backend/SSE/ApiError text, kept inspectable
+    variantId?: string; // reused when retrying an install
+    network: boolean; // download could not reach the model host
+  }
+  let installError = $state<GalleryActionError | null>(null);
 
   let installingId = $state<string | null>(null);
   let deletingId = $state<string | null>(null);
   let reinstallingId = $state<string | null>(null);
   let downloadProgress = $state<DownloadProgress | null>(null);
   let completionTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // One shared "any gallery action in flight" predicate. Install and reinstall
+  // share the single downloadProgress state and progressCleanup subscription, so
+  // starting a second action while one runs can strand the first's UI state; every
+  // action gate uses this rather than an ad-hoc subset of the three ids.
+  const galleryActionInFlight = $derived(
+    installingId !== null || reinstallingId !== null || deletingId !== null
+  );
+
+  // Model regions, for localized region names in variant labels and the
+  // region-aware picker. Fetched once on mount; a failure degrades to raw slugs.
+  let regionsData = $state<ModelRegionsResponse | null>(null);
+  // Monotonic sequence guarding loadCatalog against out-of-order responses: a slow
+  // in-flight fetch must not overwrite a newer one (a region-change re-fetch, or
+  // the Retry button). Plain let: intentionally untracked.
+  let catalogRequestSeq = 0;
+  // The saved region the loaded catalog reflects, so the region effect below
+  // re-fetches only when a save actually changes it. Plain let: intentionally
+  // untracked, so mutating it never re-runs the effect.
+  let catalogLoadedRegion: string | null = null;
+
+  // Shared DOM id for the Download Source endpoint input, referenced both by the
+  // input's own id and by scrollToDownloadSource's getElementById lookup, so the
+  // two cannot drift apart.
+  const HUGGINGFACE_ENDPOINT_ID = 'huggingface-endpoint';
 
   let licenseModel = $state<CatalogEntry | null>(null);
   // The variant preselected in the license/install dialog: the server-recommended
@@ -177,6 +226,54 @@
   // ── Store-derived state ───────────────────────────────────────────────
   let store = $derived($settingsStore);
   let birdnet = $derived($birdnetSettings);
+
+  // ── Region-aware picker wiring ────────────────────────────────────────
+  // slug -> localized name, from the same regions endpoint the region selector
+  // uses, so the picker labels a region exactly as the selector names it. Guarded
+  // against a missing or still-loading response.
+  const regionNameMap = $derived(new Map((regionsData?.regions ?? []).map(r => [r.slug, r.name])));
+  // The live selected region mode from the unsaved form store (mirrors the
+  // ModelRegionSelector), so the picker's region scoping tracks a selector click
+  // instantly, before any save. Note: until a save the server-computed
+  // recommended flags still reflect the SAVED region, so the recommended variant
+  // may lag the live selection; the effect below re-fetches on save to reconcile.
+  const liveModelRegion = $derived(birdnet?.modelRegion ? birdnet.modelRegion : 'auto');
+  const activeRegionSlug = $derived.by<string>(() => {
+    if (!regionsData) return '';
+    if (liveModelRegion === 'global') return '';
+    if (liveModelRegion === 'auto')
+      return regionsData.locationConfigured ? regionsData.resolved.slug : '';
+    return regionNameMap.has(liveModelRegion) ? liveModelRegion : '';
+  });
+  // The SAVED region the catalog's recommendation flags were computed from. Those
+  // flags come from the persisted setting (resolveRecommendRegion on the server),
+  // so the picker's server-side recommendation only needs a re-fetch when this
+  // changes, not on unsaved toggles.
+  const savedModelRegion = $derived.by<string | null>(() => {
+    const b = store.originalData.birdnet;
+    if (!b) return null; // settings not loaded yet
+    return b.modelRegion ? b.modelRegion : 'auto';
+  });
+
+  // Re-fetch the catalog when the SAVED region changes mid-session (a save), so
+  // the server-computed recommendation flags follow the region selector. Unsaved
+  // selector toggles do not fire this (they only move activeRegionSlug, which
+  // scopes the picker client-side); the first observation after settings load does
+  // not either (onMount already loaded the catalog for the persisted region). The
+  // only tracked read is savedModelRegion, a primitive $derived, so Svelte re-runs
+  // this only when its value actually changes; the catalogLoadedRegion guard is
+  // belt-and-braces.
+  $effect(() => {
+    const region = savedModelRegion;
+    if (region === null) return;
+    if (catalogLoadedRegion === null) {
+      catalogLoadedRegion = region; // onMount already loaded this region's catalog
+      return;
+    }
+    if (region === catalogLoadedRegion) return;
+    catalogLoadedRegion = region;
+    loadCatalog();
+  });
   let dynamicThreshold = $derived(
     $dynamicThresholdSettings ?? {
       enabled: false,
@@ -893,6 +990,7 @@
 
   onMount(() => {
     loadCatalog();
+    loadModelRegions();
     loadBirdnetLocales();
     loadRangeFilterCount();
     loadRangeFilterStatus();
@@ -904,26 +1002,49 @@
 
   // ── Gallery functions ─────────────────────────────────────────────────
   async function loadCatalog() {
+    const seq = ++catalogRequestSeq;
     loading = true;
-    error = null;
+    catalogError = null;
     try {
       const response = await fetchCatalog();
+      // Bail if a newer loadCatalog started while this one awaited, so a slow
+      // response cannot overwrite the newer region's catalog.
+      if (seq !== catalogRequestSeq) return;
       catalog = response.catalog;
       // Refresh the installed list alongside the catalog so the secondary-model
       // threshold sections track install/uninstall. Swallows its own errors.
-      await loadInstalledModels();
+      await loadInstalledModels(seq);
     } catch (e) {
-      error = e instanceof Error ? e.message : t('analysis.gallery.errors.catalogLoadFailed');
+      if (seq !== catalogRequestSeq) return;
+      catalogError =
+        e instanceof Error ? e.message : t('analysis.gallery.errors.catalogLoadFailed');
     } finally {
-      loading = false;
+      // Only the newest request owns the loading flag, so a superseded response
+      // does not clear the spinner out from under the one still running.
+      if (seq === catalogRequestSeq) loading = false;
     }
   }
 
-  async function loadInstalledModels() {
+  // seq, when passed, is the owning loadCatalog request's sequence: a stale
+  // installed-list response is dropped rather than overwriting a newer one.
+  async function loadInstalledModels(seq?: number) {
     try {
-      installedModels = await fetchInstalled();
+      const installed = await fetchInstalled();
+      if (seq !== undefined && seq !== catalogRequestSeq) return;
+      installedModels = installed;
     } catch (e) {
       logger.error('Failed to load installed models:', e);
+    }
+  }
+
+  // Load the model regions for name resolution and region-aware picker scoping.
+  // Best-effort: on failure the picker degrades to raw slugs with no region
+  // scoping, which is strictly better than blocking the gallery.
+  async function loadModelRegions() {
+    try {
+      regionsData = await fetchModelRegions();
+    } catch (e) {
+      logger.error('Failed to load model regions:', e);
     }
   }
 
@@ -940,16 +1061,30 @@
     licenseModel = null;
   }
 
-  async function handleInstall() {
+  function handleInstall() {
     if (!licenseModel) return;
     // Never install a variant the recommender flagged incompatible with this host
     // (the button is disabled in this state; this guards a programmatic call too).
     if (installBlocked) return;
+    // Do not start an install while any gallery action is in flight; they share
+    // the single downloadProgress state and SSE subscription.
+    if (galleryActionInFlight) return;
     const modelId = licenseModel.id;
+    const modelName = licenseModel.name;
     // Only send a variantId when the entry actually offers variants; a flat entry
     // installs its single build with no variant.
     const variantId = licenseModel.variants?.length ? selectedVariantId : undefined;
     closeLicenseDialog();
+    startInstall(modelId, modelName, variantId);
+  }
+
+  // The install body, extracted so a failed install's Retry can re-run it without
+  // reopening the license dialog (the license was accepted this session).
+  async function startInstall(modelId: string, modelName: string, variantId: string | undefined) {
+    // Defensive boundary: callers already gate on galleryActionInFlight, but keep
+    // the invariant here so a future caller cannot start an overlapping action.
+    if (galleryActionInFlight) return;
+    installError = null;
     installingId = modelId;
     downloadProgress = null;
 
@@ -983,16 +1118,38 @@
           }, 2000);
         },
         (err: string) => {
-          error = err;
+          installError = reportActionError(modelId, modelName, 'install', err, variantId);
           installingId = null;
           downloadProgress = null;
           progressCleanup = null;
         }
       );
     } catch (e) {
-      error = e instanceof Error ? e.message : t('analysis.gallery.errors.installFailed');
+      const message = e instanceof Error ? e.message : t('analysis.gallery.errors.installFailed');
+      installError = reportActionError(modelId, modelName, 'install', message, variantId);
       installingId = null;
     }
+  }
+
+  // Build a GalleryActionError, classifying whether a mirror endpoint could help.
+  function reportActionError(
+    modelId: string,
+    modelName: string,
+    kind: GalleryActionKind,
+    message: string,
+    variantId?: string
+  ): GalleryActionError {
+    return {
+      modelId,
+      modelName,
+      kind,
+      message,
+      variantId,
+      // A remove failure never involves a download, so it is never network-shaped;
+      // enforce that structurally rather than trusting the delete error's text not
+      // to contain a download-error substring.
+      network: kind !== 'remove' && isNetworkDownloadError(message),
+    };
   }
 
   function openRemoveDialog(entry: CatalogEntry) {
@@ -1007,8 +1164,12 @@
 
   async function handleUninstall() {
     if (!removeConfirmModel) return;
+    // Do not start a remove while any gallery action is in flight.
+    if (galleryActionInFlight) return;
     const modelId = removeConfirmModel.id;
+    const modelName = removeConfirmModel.name;
     closeRemoveDialog();
+    installError = null;
     deletingId = modelId;
 
     try {
@@ -1016,29 +1177,39 @@
       invalidateModels();
       await loadCatalog();
     } catch (e) {
-      error = e instanceof Error ? e.message : t('analysis.gallery.errors.removeFailed');
+      const message = e instanceof Error ? e.message : t('analysis.gallery.errors.removeFailed');
+      // A remove failure never involves a download, so it is never network-shaped.
+      installError = reportActionError(modelId, modelName, 'remove', message);
     } finally {
       deletingId = null;
     }
   }
 
-  async function handleReinstall(entry: CatalogEntry) {
-    if (reinstallingId || installingId) return;
-    reinstallingId = entry.id;
+  function handleReinstall(entry: CatalogEntry) {
+    if (galleryActionInFlight) return;
+    startReinstall(entry.id, entry.name);
+  }
+
+  // The reinstall body, extracted so a failed reinstall's Retry can re-run it.
+  async function startReinstall(modelId: string, modelName: string) {
+    // Defensive boundary: callers already gate on galleryActionInFlight.
+    if (galleryActionInFlight) return;
+    installError = null;
+    reinstallingId = modelId;
     downloadProgress = null;
 
     try {
-      await reinstallModel(entry.id);
+      await reinstallModel(modelId);
 
       if (progressCleanup) progressCleanup();
       progressCleanup = subscribeInstallProgress(
-        entry.id,
+        modelId,
         (progress: DownloadProgress) => {
           downloadProgress = progress;
         },
         () => {
           downloadProgress = {
-            catalogId: entry.id,
+            catalogId: modelId,
             status: 'complete',
             downloadedBytes: 0,
             totalBytes: 0,
@@ -1048,7 +1219,7 @@
           progressCleanup = null;
           clearTimeout(completionTimer);
           completionTimer = setTimeout(() => {
-            if (reinstallingId === entry.id) {
+            if (reinstallingId === modelId) {
               reinstallingId = null;
               downloadProgress = null;
             }
@@ -1057,16 +1228,44 @@
           }, 2000);
         },
         (err: string) => {
-          error = err;
+          installError = reportActionError(modelId, modelName, 'reinstall', err);
           reinstallingId = null;
           downloadProgress = null;
           progressCleanup = null;
         }
       );
     } catch (e) {
-      error = e instanceof Error ? e.message : t('analysis.gallery.errors.installFailed');
+      const message = e instanceof Error ? e.message : t('analysis.gallery.errors.installFailed');
+      installError = reportActionError(modelId, modelName, 'reinstall', message);
       reinstallingId = null;
     }
+  }
+
+  // Re-run whichever action failed; the stored error object carries what is needed.
+  // A remove failure offers no retry (the card's Remove button is right there).
+  function retryFailedAction() {
+    if (!installError) return;
+    // Defensive in-flight guard, mirroring handleReinstall: installError is only set
+    // when nothing is in flight (each start clears it, every failure resets its id),
+    // so this is currently unreachable, but it keeps the invariant explicit and
+    // survives future refactors that might retry while an action is running.
+    if (galleryActionInFlight) return;
+    const { modelId, modelName, variantId, kind } = installError;
+    if (kind === 'install') startInstall(modelId, modelName, variantId);
+    else if (kind === 'reinstall') startReinstall(modelId, modelName);
+  }
+
+  function dismissInstallError() {
+    installError = null;
+  }
+
+  // Bring the Download Source setting into view and focus it: the mirror endpoint
+  // is the remedy for a download-reachability failure, and it lives on this same
+  // Models tab, just below the gallery.
+  function scrollToDownloadSource() {
+    const el = document.getElementById(HUGGINGFACE_ENDPOINT_ID);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.focus();
   }
 
   /** Compute download percentage for progress bar */
@@ -1491,14 +1690,15 @@
           class="flex items-start gap-3 p-4 rounded-lg mt-4 bg-[color-mix(in_srgb,var(--color-error)_15%,transparent)] text-[var(--color-error)]"
           role="alert"
         >
-          <XCircle class="size-5 shrink-0" />
+          <XCircle class="size-5 shrink-0" aria-hidden="true" />
           <span>{rangeFilterState.error}</span>
           <button
             type="button"
             class="ml-auto inline-flex items-center justify-center p-1.5 rounded-md bg-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            aria-label={t('common.aria.dismissAlert')}
             onclick={() => (rangeFilterState.error = null)}
           >
-            <X class="size-4" />
+            <X class="size-4" aria-hidden="true" />
           </button>
         </div>
       {/if}
@@ -1626,6 +1826,82 @@
       currentData={{ modelRegion: birdnet?.modelRegion ?? 'auto' }}
     >
       <ModelRegionSelector disabled={store.isLoading || store.isSaving} />
+
+      <!-- A failed install/reinstall/remove surfaces here, above the gallery tabs,
+           so it never replaces the model grid and stays visible across tabs. -->
+      {#if installError}
+        <div
+          class="mt-4 flex flex-col gap-2 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 text-sm"
+          role="alert"
+        >
+          <div class="flex items-start gap-3">
+            <AlertTriangle class="size-5 shrink-0 text-[var(--color-error)]" aria-hidden="true" />
+            <div class="min-w-0 flex-1">
+              <p class="font-medium text-[var(--color-base-content)]">
+                {t('analysis.gallery.errors.actionFailed', { name: installError.modelName })}
+              </p>
+              {#if installError.network}
+                <p class="mt-1 text-[var(--color-base-content)]/80">
+                  {t('analysis.gallery.errors.downloadSourceHint')}
+                </p>
+              {:else if installError.kind === 'remove'}
+                <!-- A remove failure has no in-banner Retry (removes are not
+                     re-run from here); point the user back to the card's own
+                     Remove button so the recovery path is never left implicit. -->
+                <p class="mt-1 text-[var(--color-base-content)]/80">
+                  {t('analysis.gallery.errors.removeRetryHint')}
+                </p>
+              {/if}
+              <!-- Raw backend/SSE/ApiError text is often long and technical; lead
+                   with the plain-English title (and hint where classifiable) and
+                   keep the raw message one disclosure click away. -->
+              <details class="mt-1">
+                <summary
+                  class="cursor-pointer text-[var(--color-base-content)]/70 hover:text-[var(--color-base-content)]"
+                >
+                  {t('analysis.gallery.errors.details')}
+                </summary>
+                <p class="mt-1 break-words text-[var(--color-base-content)]/80">
+                  {installError.message}
+                </p>
+              </details>
+            </div>
+            <button
+              type="button"
+              class="ml-auto inline-flex items-center justify-center rounded-md p-1.5 bg-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+              aria-label={t('analysis.gallery.errors.dismiss')}
+              onclick={dismissInstallError}
+            >
+              <X class="size-4" />
+            </button>
+          </div>
+          {#if installError.kind !== 'remove' || installError.network}
+            <div class="flex flex-wrap items-center gap-2 pl-8">
+              {#if installError.kind !== 'remove'}
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-300)] transition-colors"
+                  onclick={retryFailedAction}
+                >
+                  <RefreshCw class="size-3.5" aria-hidden="true" />
+                  {t('analysis.gallery.retry')}
+                </button>
+              {/if}
+              {#if installError.network}
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-300)] transition-colors"
+                  onclick={scrollToDownloadSource}
+                >
+                  <SettingsIcon class="size-3.5" aria-hidden="true" />
+                  {t('analysis.gallery.errors.goToDownloadSource')}
+                </button>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
+
       <SettingsTabs tabs={galleryTabs} bind:activeTab={galleryTab} showActions={false} />
     </SettingsSection>
 
@@ -1660,7 +1936,7 @@
           keeps compiling it the way the browser does.
         -->
         <TextInput
-          id="huggingface-endpoint"
+          id={HUGGINGFACE_ENDPOINT_ID}
           type="url"
           pattern="[Hh][Tt][Tt][Pp][Ss]?:\/\/[^\/?#@]+(\/[^?#]*)?"
           value={birdnet?.huggingFaceEndpoint ?? ''}
@@ -1681,6 +1957,27 @@
 {/snippet}
 
 <!-- ── Gallery: Installed Tab ────────────────────────────────────────── -->
+<!-- Shared catalog-load-error banner, rendered in both gallery tabs. A single
+     definition keeps the two tabs' error UI (markup, retry action, a11y) from
+     drifting, and its decorative icons carry aria-hidden. -->
+{#snippet catalogErrorBanner()}
+  <div
+    class="flex items-center gap-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 text-sm"
+    role="alert"
+  >
+    <AlertTriangle class="size-5 shrink-0 text-[var(--color-error)]" aria-hidden="true" />
+    <span class="text-[var(--color-base-content)]">{catalogError}</span>
+    <button
+      type="button"
+      onclick={loadCatalog}
+      class="ml-auto flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-300)] transition-colors"
+    >
+      <RefreshCw class="size-3.5" aria-hidden="true" />
+      {t('analysis.gallery.retry')}
+    </button>
+  </div>
+{/snippet}
+
 {#snippet installedTabContent()}
   <div class="space-y-4">
     {#if loading}
@@ -1690,21 +1987,8 @@
           >{t('analysis.gallery.loading')}</span
         >
       </div>
-    {:else if error}
-      <div
-        class="flex items-center gap-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 text-sm"
-        role="alert"
-      >
-        <AlertTriangle class="size-5 shrink-0 text-[var(--color-error)]" />
-        <span class="text-[var(--color-base-content)]">{error}</span>
-        <button
-          onclick={loadCatalog}
-          class="ml-auto flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-300)] transition-colors"
-        >
-          <RefreshCw class="size-3.5" />
-          {t('analysis.gallery.retry')}
-        </button>
-      </div>
+    {:else if catalogError}
+      {@render catalogErrorBanner()}
     {:else}
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
         <!-- Built-in BirdNET model (always present) -->
@@ -1821,14 +2105,15 @@
             <!-- Incompatible warning for installed models -->
             {#if !entry.compatible}
               <div
-                class="mt-3 flex items-start gap-2 rounded-lg bg-red-500/10 p-3 text-xs text-red-700 dark:text-red-400"
+                class="mt-3 flex items-start gap-2 rounded-lg bg-[var(--color-error)]/10 p-3 text-sm"
+                role="status"
               >
-                <XCircle class="h-4 w-4 shrink-0 mt-0.5" />
-                <span
-                  >{entryIncompatibleText(
-                    entry.incompatibleReason,
-                    'analysis.gallery.onnxRuntimeMissing'
-                  )}</span
+                <XCircle
+                  class="h-4 w-4 shrink-0 mt-0.5 text-[var(--color-error)]"
+                  aria-hidden="true"
+                />
+                <span class="text-[var(--color-base-content)]"
+                  >{entryIncompatibleText(entry.incompatibleReason)}</span
                 >
               </div>
             {/if}
@@ -1884,8 +2169,12 @@
             <!-- Action footer -->
             <div class="mt-3 flex items-center justify-end gap-2">
               <button
+                type="button"
                 onclick={() => handleReinstall(entry)}
-                disabled={reinstallingId !== null || installingId !== null || isDeleting}
+                disabled={galleryActionInFlight}
+                title={galleryActionInFlight && !isReinstalling
+                  ? t('analysis.gallery.actionInProgress')
+                  : undefined}
                 class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-base-content)]/80 hover:bg-[var(--color-base-300)] transition-colors disabled:opacity-50"
                 aria-label="{t('analysis.gallery.reinstall')} {entry.name}"
               >
@@ -1898,8 +2187,12 @@
                 {/if}
               </button>
               <button
+                type="button"
                 onclick={() => openRemoveDialog(entry)}
-                disabled={isDeleting || isReinstalling || installingId !== null}
+                disabled={galleryActionInFlight}
+                title={galleryActionInFlight && !isDeleting
+                  ? t('analysis.gallery.actionInProgress')
+                  : undefined}
                 class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-error)] hover:bg-[var(--color-error)]/10 transition-colors disabled:opacity-50"
                 aria-label="{t('analysis.gallery.remove')} {entry.name}"
               >
@@ -2010,14 +2303,15 @@
     <!-- Incompatible warning banner -->
     {#if !entry.compatible}
       <div
-        class="mt-3 flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400"
+        class="mt-3 flex items-start gap-2 rounded-lg bg-[var(--color-warning)]/10 p-3 text-sm"
+        role="status"
       >
-        <TriangleAlert class="h-4 w-4 shrink-0 mt-0.5" />
-        <span
-          >{entryIncompatibleText(
-            entry.incompatibleReason,
-            'analysis.gallery.onnxRuntimeRequired'
-          )}</span
+        <TriangleAlert
+          class="h-4 w-4 shrink-0 mt-0.5 text-[var(--color-warning)]"
+          aria-hidden="true"
+        />
+        <span class="text-[var(--color-base-content)]"
+          >{entryIncompatibleText(entry.incompatibleReason)}</span
         >
       </div>
     {/if}
@@ -2070,8 +2364,12 @@
     <!-- Action footer (pushed to bottom via mt-auto) -->
     <div class="mt-auto flex items-center justify-end pt-3">
       <button
+        type="button"
         onclick={() => openLicenseDialog(entry)}
-        disabled={!entry.compatible || isInstalling || installingId !== null}
+        disabled={!entry.compatible || galleryActionInFlight}
+        title={galleryActionInFlight && !isInstalling
+          ? t('analysis.gallery.actionInProgress')
+          : undefined}
         class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-content)] hover:bg-[var(--color-primary)]/80 transition-colors disabled:opacity-50"
         aria-label="{t('analysis.gallery.install')} {entry.name}"
       >
@@ -2096,21 +2394,8 @@
           >{t('analysis.gallery.loading')}</span
         >
       </div>
-    {:else if error}
-      <div
-        class="flex items-center gap-3 rounded-lg border border-[var(--color-error)]/30 bg-[var(--color-error)]/10 px-4 py-3 text-sm"
-        role="alert"
-      >
-        <AlertTriangle class="size-5 shrink-0 text-[var(--color-error)]" />
-        <span class="text-[var(--color-base-content)]">{error}</span>
-        <button
-          onclick={loadCatalog}
-          class="ml-auto flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-300)] transition-colors"
-        >
-          <RefreshCw class="size-3.5" />
-          {t('analysis.gallery.retry')}
-        </button>
-      </div>
+    {:else if catalogError}
+      {@render catalogErrorBanner()}
     {:else}
       <!-- Acoustic Classifiers section -->
       {#if availableWildlife.length > 0 || availableBirds.length > 0 || availableBats.length > 0}
@@ -2279,16 +2564,31 @@
             variants={licenseModel.variants}
             installedVariantId={licenseModel.installedVariantId}
             {selectedVariantId}
+            {activeRegionSlug}
+            regionNames={regionNameMap}
             onSelect={id => (selectedVariantId = id)}
             idPrefix="license-variant"
           />
+          <!-- Plain-language help for the precision jargon (FP32/FP16/INT8) and the
+               Default-vs-Recommended distinction, for the non-technical audience. A
+               native <details> is keyboard- and touch-accessible, unlike a
+               hover-only tooltip. -->
+          <details class="mt-2 text-xs text-[var(--color-base-content)]/70">
+            <summary class="cursor-pointer hover:text-[var(--color-base-content)]">
+              {t('analysis.gallery.variants.precisionInfo')}
+            </summary>
+            <p class="mt-1">{t('analysis.gallery.variants.precisionHelp')}</p>
+          </details>
         {/if}
 
         {#if !licenseModel.commercialUse}
           <div
             class="flex items-start gap-2 rounded-lg border border-[var(--color-warning)]/30 bg-[var(--color-warning)]/10 px-3 py-2.5 text-sm"
           >
-            <ShieldAlert class="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]" />
+            <ShieldAlert
+              class="mt-0.5 size-4 shrink-0 text-[var(--color-warning)]"
+              aria-hidden="true"
+            />
             <p class="text-[var(--color-base-content)]">
               {t('analysis.gallery.license.nonCommercialWarning')}
             </p>
@@ -2334,7 +2634,7 @@
     <div class="w-full max-w-md p-6">
       <div class="flex items-start gap-3">
         <div class="shrink-0 rounded-full bg-[var(--color-error)]/10 p-2">
-          <AlertTriangle class="size-5 text-[var(--color-error)]" />
+          <AlertTriangle class="size-5 text-[var(--color-error)]" aria-hidden="true" />
         </div>
         <div>
           <h3
@@ -2432,14 +2732,15 @@
           class="flex items-start gap-3 p-4 rounded-lg mb-4 bg-[color-mix(in_srgb,var(--color-error)_15%,transparent)] text-[var(--color-error)]"
           role="alert"
         >
-          <XCircle class="size-5 shrink-0" />
+          <XCircle class="size-5 shrink-0" aria-hidden="true" />
           <span>{rangeFilterState.error}</span>
           <button
             type="button"
             class="ml-auto inline-flex items-center justify-center p-1.5 rounded-md bg-transparent hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+            aria-label={t('common.aria.dismissAlert')}
             onclick={() => (rangeFilterState.error = null)}
           >
-            <X class="size-4" />
+            <X class="size-4" aria-hidden="true" />
           </button>
         </div>
       {/if}

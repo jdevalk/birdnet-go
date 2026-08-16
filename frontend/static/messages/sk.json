@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 podporované",
       "fp16Unsupported": "FP16 nepodporované",
+      "advanced": "Pokročilé",
+      "capabilities": "Schopnosti",
+      "capabilitiesHelp": "Hardvérové značky používané na priradenie tohto počítača k dostupným zostaveniam modelov.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,14 +5351,24 @@
         "default": "Predvolené",
         "incompatible": "Nie je k dispozícii pre váš hardvér",
         "showAll": "Zobraziť všetky varianty ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Zobraziť varianty pre {region} a váš hardvér ({count})",
+        "showHardware": "Zobraziť hardvérové varianty ({count})",
+        "showAllRegions": "Zobraziť všetky varianty vrátane ostatných regiónov ({count})",
+        "regionContext": "Zobrazené regionálne varianty pre {region}, nastavené výberom regiónu modelu vyššie",
+        "regionContextNone": "K dispozícii sú regionálne varianty. Vyberte región vo výbere regiónu modelu vyššie alebo zobrazte všetky varianty.",
+        "otherRegions": "Ostatné regióny",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Počkajte na dokončenie prebiehajúcej inštalácie, preinštalovania alebo odstránenia modelu",
       "reasons": {
         "backendRecommended": "Beží na {backend}, čo je odporúčaný backend pre váš hardvér",
         "backendSupported": "Beží na {backend}",
         "regionMatched": "Prispôsobené vášmu regiónu ({region})",
         "regionGlobalFallback": "Globálny model pre vašu polohu",
         "precisionFp16Native": "Verzia s polovičnou presnosťou zodpovedajúca vášmu procesoru",
+        "precisionFp16GpuPreferred": "Verzia s polovičnou presnosťou: polovičná veľkosť sťahovania, beží na vašom GPU",
         "ramConstrainedFit": "Kvantizovaná verzia optimalizovaná pre vašu dostupnú pamäť",
         "benchmarkMeasured": "Najrýchlejší na vašom zariadení podľa meraní výkonu",
         "variantLegacy": "Nahradené novšou verziou",
@@ -5363,7 +5376,7 @@
         "backendMissing": "Vyžaduje inferenčný backend, ktorý nie je dostupný ({required})",
         "ramInsufficient": "Vyžaduje aspoň {requiredMb} MB pamäte",
         "hardwareExcluded": "Nepodporované na vašom hardvéri ({token})",
-        "backendOnnxUnavailable": "Vyžaduje ONNX Runtime, ktorý nie je v tomto systéme k dispozícii"
+        "backendOnnxUnavailable": "Vyžaduje ONNX Runtime, ktorý nie je v tomto systéme k dispozícii. Obrazy Docker a archívy vydaní ho obsahujú; pozrite si návod na inštaláciu ONNX Runtime."
       },
       "tabs": {
         "installed": "Nainštalované",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Nepodarilo sa načítať katalóg modelov",
         "installFailed": "Nepodarilo sa spustiť inštaláciu modelu",
-        "removeFailed": "Nepodarilo sa odstrániť model"
+        "removeFailed": "Nepodarilo sa odstrániť model",
+        "actionFailed": "Vyskytol sa problém s {name}",
+        "downloadSourceHint": "Ak je huggingface.co vo vašej sieti zablokované alebo pomalé, nastavte zrkadlový server v sekcii Zdroj sťahovania nižšie.",
+        "goToDownloadSource": "Prejsť na Zdroj sťahovania",
+        "dismiss": "Zavrieť",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Región",
       "speciesLabel": "Druhy",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Preinštalovanie...",
       "reinstallComplete": "Súbory úspešne overené",
       "geomodelBadge": "Obsahuje BirdNET v3.0 geomodel",
-      "onnxRuntimeRequired": "Vyžaduje ONNX Runtime, ktorý nie je v tomto systéme k dispozícii.",
-      "onnxRuntimeMissing": "ONNX Runtime nie je k dispozícii. Tento model nie je možné spustiť.",
-      "unavailable": "Nedostupné"
+      "entryIncompatible": "Tento model nie je v tomto systéme k dispozícii."
     },
     "bird": {
       "title": "Detekcia vtákov",

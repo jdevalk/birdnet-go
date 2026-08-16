@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 támogatott",
       "fp16Unsupported": "FP16 nem támogatott",
+      "advanced": "Speciális",
+      "capabilities": "Képességek",
+      "capabilitiesHelp": "Hardvercímkék, amelyek a gép és az elérhető modellverziók párosítására szolgálnak.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,14 +5351,24 @@
         "default": "Alapértelmezett",
         "incompatible": "Nem érhető el az Ön hardveréhez",
         "showAll": "Összes változat mutatása ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Változatok mutatása a(z) {region} régióhoz és a hardveredhez ({count})",
+        "showHardware": "Hardverváltozatok mutatása ({count})",
+        "showAllRegions": "Összes változat mutatása, beleértve a többi régiót ({count})",
+        "regionContext": "Megjelenített regionális változatok ehhez: {region}, a fenti modellrégió-választás alapján",
+        "regionContextNone": "Elérhetők regionális változatok. Válassz egy régiót a fenti modellrégió-választásban, vagy jelenítsd meg az összes változatot.",
+        "otherRegions": "Egyéb régiók",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Várd meg a modell jelenlegi telepítésének, újratelepítésének vagy eltávolításának befejezését",
       "reasons": {
         "backendRecommended": "Ezen fut: {backend}, amely a hardveredhez ajánlott backend",
         "backendSupported": "Ezen fut: {backend}",
         "regionMatched": "A régiódhoz igazítva ({region})",
         "regionGlobalFallback": "Globális modell a tartózkodási helyedhez",
         "precisionFp16Native": "A CPU-hoz igazított félpontosságú (fp16) build",
+        "precisionFp16GpuPreferred": "Félpontosságú build: fele akkora letöltés, a GPU-don fut",
         "ramConstrainedFit": "A rendelkezésre álló memóriához méretezett kvantált build",
         "benchmarkMeasured": "Mérések alapján a leggyorsabb az eszközödön",
         "variantLegacy": "Egy újabb build váltotta fel",
@@ -5363,7 +5376,7 @@
         "backendMissing": "Olyan következtetési backendet igényel, amelyet a build nem ér el ({required})",
         "ramInsufficient": "Legalább {requiredMb} MB memória szükséges",
         "hardwareExcluded": "Nem támogatott a hardvereden ({token})",
-        "backendOnnxUnavailable": "ONNX Runtime szükséges, amely nem érhető el ezen a rendszeren"
+        "backendOnnxUnavailable": "ONNX Runtime szükséges, amely nem érhető el ezen a rendszeren. A Docker-lemezképek és a kiadási csomagok tartalmazzák; lásd az ONNX Runtime telepítési útmutatóját."
       },
       "tabs": {
         "installed": "Telepített",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Nem sikerült betölteni a modellkatalógust",
         "installFailed": "Nem sikerült elindítani a modell telepítését",
-        "removeFailed": "Nem sikerült eltávolítani a modellt"
+        "removeFailed": "Nem sikerült eltávolítani a modellt",
+        "actionFailed": "Probléma történt a következővel: {name}",
+        "downloadSourceHint": "Ha a huggingface.co blokkolva van vagy lassú a hálózatán, állítson be egy tükörszervert az alábbi Letöltési forrás szakaszban.",
+        "goToDownloadSource": "Ugrás a Letöltési forráshoz",
+        "dismiss": "Bezárás",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Régió",
       "speciesLabel": "Fajok",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Újratelepítés...",
       "reinstallComplete": "Fájlok sikeresen ellenőrizve",
       "geomodelBadge": "Tartalmazza a BirdNET v3.0 geomodellt",
-      "onnxRuntimeRequired": "ONNX Runtime szükséges, amely nem elérhető ezen a rendszeren.",
-      "onnxRuntimeMissing": "Az ONNX Runtime nem elérhető. Ez a modell nem futtatható.",
-      "unavailable": "Nem elérhető"
+      "entryIncompatible": "Ez a modell nem érhető el ezen a rendszeren."
     },
     "bird": {
       "title": "Madárészlelés",

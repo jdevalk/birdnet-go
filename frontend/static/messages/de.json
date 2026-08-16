@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 unterstützt",
       "fp16Unsupported": "FP16 nicht unterstützt",
+      "advanced": "Erweitert",
+      "capabilities": "Fähigkeiten",
+      "capabilitiesHelp": "Hardware-Tags, die verwendet werden, um diesen Rechner mit den verfügbaren Modell-Builds abzugleichen.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,14 +5351,24 @@
         "default": "Standard",
         "incompatible": "Für Ihre Hardware nicht verfügbar",
         "showAll": "Alle Varianten anzeigen ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Varianten für {region} und Ihre Hardware anzeigen ({count})",
+        "showHardware": "Hardware-Varianten anzeigen ({count})",
+        "showAllRegions": "Alle Varianten anzeigen, einschließlich anderer Regionen ({count})",
+        "regionContext": "Regionale Varianten angezeigt für {region}, festgelegt durch die Auswahl der Modellregion oben",
+        "regionContextNone": "Regionale Varianten sind verfügbar. Wählen Sie oben eine Region in der Modellregionsauswahl oder zeigen Sie alle Varianten an.",
+        "otherRegions": "Andere Regionen",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Warten Sie, bis die aktuelle Modellinstallation, Neuinstallation oder Entfernung abgeschlossen ist",
       "reasons": {
         "backendRecommended": "Läuft auf {backend}, dem empfohlenen Backend für Ihre Hardware",
         "backendSupported": "Läuft auf {backend}",
         "regionMatched": "Abgestimmt auf Ihre Region ({region})",
         "regionGlobalFallback": "Globales Modell für Ihren Standort",
         "precisionFp16Native": "Half-Precision-Build, abgestimmt auf Ihren Prozessor",
+        "precisionFp16GpuPreferred": "Half-Precision-Build: halbe Downloadgröße, läuft auf Ihrer GPU",
         "ramConstrainedFit": "Quantisierter Build, optimiert für Ihren verfügbaren Speicher",
         "benchmarkMeasured": "Am schnellsten auf Ihrem Gerät laut Benchmarks",
         "variantLegacy": "Durch einen neueren Build ersetzt",
@@ -5363,7 +5376,7 @@
         "backendMissing": "Benötigt ein Inference-Backend, das nicht erreichbar ist ({required})",
         "ramInsufficient": "Benötigt mindestens {requiredMb} MB Speicher",
         "hardwareExcluded": "Wird von Ihrer Hardware nicht unterstützt ({token})",
-        "backendOnnxUnavailable": "Erfordert ONNX Runtime, das auf diesem System nicht verfügbar ist"
+        "backendOnnxUnavailable": "Erfordert ONNX Runtime, das auf diesem System nicht verfügbar ist. Docker-Images und Release-Tarballs enthalten es; siehe die Installationsanleitung für ONNX Runtime."
       },
       "tabs": {
         "installed": "Installiert",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Modellkatalog konnte nicht geladen werden",
         "installFailed": "Modellinstallation konnte nicht gestartet werden",
-        "removeFailed": "Modell konnte nicht entfernt werden"
+        "removeFailed": "Modell konnte nicht entfernt werden",
+        "actionFailed": "Es gab ein Problem mit {name}",
+        "downloadSourceHint": "Wenn huggingface.co in Ihrem Netzwerk blockiert oder langsam ist, richten Sie im Abschnitt Download-Quelle unten einen Spiegelserver ein.",
+        "goToDownloadSource": "Zur Download-Quelle",
+        "dismiss": "Schließen",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Region",
       "speciesLabel": "Arten",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Wird neu installiert...",
       "reinstallComplete": "Dateien erfolgreich überprüft",
       "geomodelBadge": "Enthält BirdNET v3.0 Geomodell",
-      "onnxRuntimeRequired": "Erfordert ONNX Runtime, das auf diesem System nicht verfügbar ist.",
-      "onnxRuntimeMissing": "ONNX Runtime ist nicht verfügbar. Dieses Modell kann nicht ausgeführt werden.",
-      "unavailable": "Nicht verfügbar"
+      "entryIncompatible": "Dieses Modell ist auf diesem System nicht verfügbar."
     },
     "bird": {
       "title": "Bird Detection",

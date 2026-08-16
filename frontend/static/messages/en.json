@@ -1725,6 +1725,9 @@
       "fp16": "FP16",
       "fp16Supported": "FP16 supported",
       "fp16Unsupported": "FP16 not supported",
+      "advanced": "Advanced",
+      "capabilities": "Capabilities",
+      "capabilitiesHelp": "Hardware tags used to match this machine against the available model builds.",
       "backendTflite": "TensorFlow Lite",
       "backendOnnx": "ONNX Runtime",
       "backendOpenvino": "OpenVINO",
@@ -5348,22 +5351,32 @@
         "default": "Default",
         "incompatible": "Not available for your hardware",
         "showAll": "Show all variants ({count})",
-        "latency": "~{ms} ms"
+        "showRegion": "Show variants for {region} and your hardware ({count})",
+        "showHardware": "Show hardware variants ({count})",
+        "showAllRegions": "Show all variants, including other regions ({count})",
+        "regionContext": "Regional variants shown for {region}, set by the model region selection above",
+        "regionContextNone": "Regional variants are available. Pick a region in the model region selection above, or show all variants.",
+        "otherRegions": "Other regions",
+        "latency": "~{ms} ms",
+        "precisionInfo": "About precision and variants",
+        "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
       },
+      "actionInProgress": "Wait for the current model install, reinstall, or remove to finish",
       "reasons": {
         "backendRecommended": "Runs on {backend}, the recommended backend for your hardware",
         "backendSupported": "Runs on {backend}",
         "regionMatched": "Matched to your region ({region})",
         "regionGlobalFallback": "Global model for your location",
         "precisionFp16Native": "Half-precision build matched to your CPU",
+        "precisionFp16GpuPreferred": "Half-precision build: half the download, runs on your GPU",
         "ramConstrainedFit": "Quantized build sized for your available memory",
         "benchmarkMeasured": "Fastest on your device in measured benchmarks",
         "variantLegacy": "Superseded by a newer build",
-        "archUnsupported": "Requires a {required} CPU",
+        "archUnsupported": "Requires {required} CPU architecture",
         "backendMissing": "Needs an inference backend your build cannot reach ({required})",
         "ramInsufficient": "Needs at least {requiredMb} MB of memory",
         "hardwareExcluded": "Not supported on your hardware ({token})",
-        "backendOnnxUnavailable": "Requires ONNX Runtime, which isn't available on this system"
+        "backendOnnxUnavailable": "Requires ONNX Runtime, which isn't available on this system. Docker images and release tarballs include it; see the ONNX Runtime installation guide."
       },
       "tabs": {
         "installed": "Installed",
@@ -5417,7 +5430,13 @@
       "errors": {
         "catalogLoadFailed": "Failed to load model catalog",
         "installFailed": "Failed to start model installation",
-        "removeFailed": "Failed to remove model"
+        "removeFailed": "Failed to remove model",
+        "actionFailed": "There was a problem with {name}",
+        "downloadSourceHint": "If huggingface.co is blocked or slow on your network, set a mirror in the Download Source section below.",
+        "goToDownloadSource": "Go to Download Source",
+        "dismiss": "Dismiss",
+        "details": "Details",
+        "removeRetryHint": "To try again, use the Remove button on the model's card."
       },
       "regionLabel": "Region",
       "speciesLabel": "Species",
@@ -5425,9 +5444,7 @@
       "reinstalling": "Reinstalling...",
       "reinstallComplete": "Files verified successfully",
       "geomodelBadge": "Includes BirdNET v3.0 geomodel",
-      "onnxRuntimeRequired": "Requires ONNX Runtime which is not available on this system.",
-      "onnxRuntimeMissing": "ONNX Runtime is not available. This model cannot run.",
-      "unavailable": "Unavailable"
+      "entryIncompatible": "This model is not available on this system."
     },
     "bird": {
       "title": "Bird Detection",
