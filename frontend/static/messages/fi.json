@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} on asennettu alueelle {oldRegion}, mutta uusi sijaintisi vastaa aluetta {newRegion}. Voit vaihtaa varianttia Asetusten malligalleriasta.",
         "staleGlobalMessage": "{modelName} on asennettu alueelle {oldRegion}, mutta uusi sijaintisi on sen kattavuusalueen ulkopuolella. Voit vaihtaa globaaliin varianttiin Asetusten malligalleriasta."
       },
+      "modelPath": {
+        "reconciledTitle": "Mallin {modelName} tiedostopolut korjattu",
+        "reconciledMessage": "Mallille {modelName} määritetyt tiedostopolut olivat vanhentuneet, ja ne korjattiin vastaamaan asennettua mallia sijainnissa {modelPath}.",
+        "substitutedTitle": "Mallille {modelName} määritettyä mallitiedostoa ei löytynyt",
+        "substitutedMessage": "Mallille {modelName} määritettyä mallitiedostoa ei löytynyt levyltä, joten sen sijaan käytetään asennettua mallia sijainnissa {modelPath}. Asetuksiasi ei muutettu.",
+        "unreadableTitle": "Mallille {modelName} määritettyä mallitiedostoa ei voitu lukea",
+        "unreadableMessage": "Mallille {modelName} määritetty mallitiedosto on olemassa, mutta sitä ei voitu lukea, joten sen sijaan käytetään asennettua mallia sijainnissa {modelPath}. Asetuksiasi ei muutettu. Tarkista tiedoston käyttöoikeudet ja se, että sen tallennustila on liitetty.",
+        "builtinMessage": "Mallille {modelName} määritettyä mallitiedostoa ei löytynyt levyltä eikä korvaavaa asennettua mallia ole saatavilla, joten sen sijaan käytetään sisäänrakennettua mallia. Asetuksiasi ei muutettu.",
+        "notRegisteredTitle": "Mikään malli ei analysoi kohdetta {sourceName}",
+        "notRegisteredMessage": "Ääni ei tavoita kohdetta {models} äänilähteessä \"{sourceName}\", joten havaintoja ei tuoteta. Avaa Asetusten malligalleria tarkistaaksesi tilan."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Nykyinen arvo: {value}% (raja-arvo: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "Tekoälymallit & Inferenssi",
       "loading": "Ladataan inferenssin tilaa",
       "error": "Inferenssin tilaa ei voitu ladata",
+      "vad": {
+        "section": "Yksityisyyssuoja",
+        "title": "Silero VAD",
+        "active": "Aktiivinen",
+        "activeHelp": "Puheentunnistusmalli on ladattu ja analysoi ääntä.",
+        "idle": "Valmiustilassa",
+        "idleHelp": "Käytössä ja valmiina; malli ladataan, kun ensimmäinen äänipätkä analysoidaan.",
+        "disabled": "Poistettu käytöstä",
+        "disabledHelp": "Yksityisyyssuoja on kytketty pois päältä yksityisyyssuodattimen asetuksista.",
+        "unavailable": "Ei mallia",
+        "unavailableHelp": "Tässä versiossa ei ole käytettävissä puheentunnistusmallia. Määritä VAD-mallin polku yksityisyyssuodattimen asetuksissa, tai käytä versiota, jossa on sisäänrakennettu malli.",
+        "description": "Silero VAD on erikoistunut akustinen malli, joka tunnistaa ihmispuheen. Se ohjaa yksityisyyssuodatinta ja hylkää äänen puhetta havaittaessa, jotta äänet pysyvät poissa tallenteistasi.",
+        "threshold": "Kynnysarvo",
+        "speechHits": "Puheosumat",
+        "recentTitle": "Viimeisin puhe",
+        "recentEmpty": "Puhetta ei ole vielä havaittu",
+        "colWhen": "Aika",
+        "colProbability": "Todennäköisyys",
+        "colSource": "Lähde"
+      },
       "sectionHardware": "Laitteisto",
       "sectionBackends": "Inferenssin Taustajärjestelmät",
       "sectionModels": "Mallit",
@@ -1766,6 +1797,8 @@
       "sources": "Äänilähteet",
       "noSources": "Ei liitettyjä lähteitä",
       "primaryFallback": "ensisijainen (vara)",
+      "sourceNotRunning": "ei analysoida",
+      "sourceNotRunningTooltip": "Tämä lähde on liitetty malliin asetuksissa, mutta sen ääni ei tavoita mallia, joten se ei tuota havaintoja. Avaa Asetusten malligalleria tarkistaaksesi sen tilan.",
       "notMeasured": "-",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Kieli",
           "helpText": "Kieli käännetyille lajien nimille."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU-säikeet",
-          "helpText": "CPU-säikeiden määrä. Aseta 0 käyttääksesi kaikkia saatavilla olevia säikeitä."
+        "inferenceThreads": {
+          "label": "Inferenssin CPU-säikeet",
+          "helpText": "Mallin inferenssiin käytettävien CPU-säikeiden määrä. Aseta 0 käyttääksesi kaikkia saatavilla olevia säikeitä. Ei vaikuta GPU:lla suoritettaviin malleihin."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Ota yksityisyyssuodatus käyttöön",
         "disabled": "Yksityisyyssuodatus on poistettu käytöstä",
         "confidenceLabel": "Luottamuskynnys ihmisen tunnistukseen",
-        "confidenceHelp": "Aseta luottamustaso ihmisäänen tunnistukseen, matalampi arvo tekee suodattimesta herkemmän"
+        "confidenceHelp": "Aseta luottamustaso ihmisäänen tunnistukseen, matalampi arvo tekee suodattimesta herkemmän",
+        "vadEnable": "Ota käyttöön Yksityisyyssuoja (Silero VAD)",
+        "vadHelp": "Käyttää erillistä neuroverkkomallia ihmispuheen tunnistamiseen luokittelijan rinnalla. Kuluttaa ylimääräisiä järjestelmäresursseja (n. 20-30 Mt RAM-muistia ja suoritinpäättelyä per segmentti).",
+        "vadThresholdLabel": "Yksityisyyssuojan kynnysarvo",
+        "vadThresholdHelp": "Yksityisyyssuojan puheentunnistimen herkkyyskynnys (oletus 0.35). Pienempi arvo tekee suodattimesta herkemmän hiljaiselle tai kaukaiselle puheelle."
       },
       "falsePositivePrevention": {
         "title": "Väärien positiivisten ehkäisy",
@@ -5317,21 +5354,25 @@
         "title": "Mallialue",
         "modeAuto": "Automaattinen",
         "modeAutoHint": "Valitse paras alueellinen variantti aseman sijainnin perusteella",
-        "modeGlobal": "Globaali",
-        "modeGlobalHint": "Käytä aina maailmanlaajuista mallia",
-        "pinLabel": "Kiinnitä tietty alue",
-        "pinnedBadge": "Kiinnitetty",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Kiinnitä {region}",
         "switchToAuto": "Vaihda automaattiseen",
         "loading": "Ladataan alueita...",
         "loadFailed": "Aluetietojen lataaminen epäonnistui",
-        "mapLoading": "Ladataan kattavuuskarttaa...",
         "mapUnavailable": "Kattavuuskartta ei ole saatavilla",
         "mapAria": "Alueen {region} kattavuuskartta",
-        "countriesCore": "Kattaa: {countries}",
-        "countriesPartial": "Osittainen kattavuus: {countries}",
-        "countriesMore": "ja {count} muuta",
-        "countriesLess": "Näytä vähemmän",
         "why": {
           "noLocation": "Automaattinen valinta vaatii aseman sijainnin. Aseta se Pääasetuksissa; siihen asti käytetään globaalia mallia.",
           "outsideCoverage": "Sijaintisi on kaikkien alueellisten mallien kattavuusalueen ulkopuolella, joten käytetään globaalia mallia.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Alueelliset variantit näytetään alueelle {region}, määritetty yllä olevalla mallialueen valinnalla",
         "regionContextNone": "Alueellisia variantteja on saatavilla. Valitse alue yllä olevasta mallialueen valinnasta tai näytä kaikki variantit.",
         "otherRegions": "Muut alueet",
+        "filterPlaceholder": "Suodata alueita",
+        "filterAria": "Suodata aluekohtaisia versioita",
+        "filterNoMatch": "Mikään alue ei vastaa hakua \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Ladataan malleja...",
       "retry": "Yritä uudelleen",
       "builtIn": "Sisäänrakennettu",
-      "builtInDescription": "BirdNET-tiimin sisäänrakennettu lintulajien luokittelija.",
       "species": "{count} lajia",
       "install": "Asenna",
       "installing": "Asennetaan...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Asennetaan uudelleen...",
       "reinstallComplete": "Tiedostot tarkistettu onnistuneesti",
       "geomodelBadge": "Sisältää BirdNET v3.0 -geomallin",
-      "entryIncompatible": "Tämä malli ei ole saatavilla tässä järjestelmässä."
+      "preview": {
+        "badge": "Esiversio",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Kehittäjien esiversio, ei lopullinen julkaisu. Tämä on varhainen versio testausta varten; tulokset voivat muuttua ennen vakaata versiota.",
+        "dialogNotice": "Olet asentamassa kehittäjien esiversiota ({build}). Se soveltuu kokeiluun, mutta sitä ei vielä suositella ainoaksi luokittelijaksi."
+      },
+      "entryIncompatible": "Tämä malli ei ole saatavilla tässä järjestelmässä.",
+      "regionGlobal": "Globaali",
+      "hardwareLabel": "Laitteisto",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# malli voi toimia nopeammin laitteistollasi} other {# mallia voi toimia nopeammin laitteistollasi}}",
+        "review": "Tarkista",
+        "dismiss": "Hylkää",
+        "badgeTitle": "Laitteistollesi on saatavilla nopeampi versio",
+        "swap": "Optimoi",
+        "dialogTitle": "Optimoi mallisi",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} -> {to}",
+        "apply": "Käytä",
+        "applyAll": "Käytä kaikkia",
+        "applying": "Käytetään...",
+        "applied": "Käytetty",
+        "applyFailed": "Käyttö epäonnistui",
+        "upToDate": "Kaikki mallisi on jo optimoitu tälle laitteistolle.",
+        "licenseNote": "Vaihto tapahtuu saman mallin sisällä, joten sen lisenssi ei muutu."
+      }
     },
     "bird": {
       "title": "Bird Detection",

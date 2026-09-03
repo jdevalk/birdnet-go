@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} is geïnstalleerd voor {oldRegion}, maar uw nieuwe locatie komt overeen met {newRegion}. U kunt van variant wisselen via de modellengalerij in Instellingen.",
         "staleGlobalMessage": "{modelName} is geïnstalleerd voor {oldRegion}, maar uw nieuwe locatie valt buiten de dekking. U kunt overschakelen naar de globale variant via de modellengalerij in Instellingen."
       },
+      "modelPath": {
+        "reconciledTitle": "Bestandspaden van model hersteld voor {modelName}",
+        "reconciledMessage": "De geconfigureerde bestandspaden voor {modelName} waren verouderd en zijn hersteld om overeen te komen met het geïnstalleerde model op {modelPath}.",
+        "substitutedTitle": "Geconfigureerd modelbestand voor {modelName} niet gevonden",
+        "substitutedMessage": "Het voor {modelName} geconfigureerde modelbestand is niet op de schijf gevonden, dus wordt in plaats daarvan het geïnstalleerde model op {modelPath} gebruikt. Uw configuratie is ongewijzigd gebleven.",
+        "unreadableTitle": "Geconfigureerd modelbestand voor {modelName} kon niet worden gelezen",
+        "unreadableMessage": "Het voor {modelName} geconfigureerde modelbestand bestaat, maar kon niet worden gelezen, dus wordt in plaats daarvan het geïnstalleerde model op {modelPath} gebruikt. Uw configuratie is ongewijzigd gebleven. Controleer de bestandsmachtigingen en of de opslag is gekoppeld.",
+        "builtinMessage": "Het voor {modelName} geconfigureerde modelbestand is niet op de schijf gevonden en er is geen geïnstalleerd model beschikbaar om het te vervangen, dus wordt in plaats daarvan het ingebouwde model gebruikt. Uw configuratie is ongewijzigd gebleven.",
+        "notRegisteredTitle": "Geen model analyseert {sourceName}",
+        "notRegisteredMessage": "Er bereikt geen audio {models} op audiobron \"{sourceName}\", waardoor er geen detecties worden geproduceerd. Open de modellengalerij in Instellingen om de status te controleren."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Huidige waarde: {value}% (drempelwaarde: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "AI-modellen & Inferentie",
       "loading": "Inferentiestatus laden",
       "error": "Kan inferentiestatus niet laden",
+      "vad": {
+        "section": "Privacybescherming",
+        "title": "Silero VAD",
+        "active": "Actief",
+        "activeHelp": "Het spraakdetectiemodel is geladen en beoordeelt audio.",
+        "idle": "Inactief",
+        "idleHelp": "Ingeschakeld en gereed; het model wordt geladen wanneer het eerste audiofragment wordt beoordeeld.",
+        "disabled": "Uitgeschakeld",
+        "disabledHelp": "Privacybescherming is uitgeschakeld in de instellingen van het privacyfilter.",
+        "unavailable": "Geen model",
+        "unavailableHelp": "Er is geen spraakdetectiemodel beschikbaar in deze build. Stel een VAD-modelpad in bij de instellingen van het privacyfilter, of gebruik een build met een ingesloten model.",
+        "description": "Silero VAD is een gespecialiseerd akoestisch model dat menselijke spraak detecteert. Het stuurt het privacyfilter aan en gooit audio weg wanneer er spraak aanwezig is, zodat stemmen uit uw opnamen worden gehouden.",
+        "threshold": "Drempelwaarde",
+        "speechHits": "Spraaktreffers",
+        "recentTitle": "Recente spraak",
+        "recentEmpty": "Nog geen spraak gedetecteerd",
+        "colWhen": "Tijdstip",
+        "colProbability": "Waarschijnlijkheid",
+        "colSource": "Bron"
+      },
       "sectionHardware": "Hardware",
       "sectionBackends": "Inferentie Back-ends",
       "sectionModels": "Modellen",
@@ -1766,6 +1797,8 @@
       "sources": "Audiobronnen",
       "noSources": "Geen bronnen verbonden",
       "primaryFallback": "primair (fallback)",
+      "sourceNotRunning": "analyseert niet",
+      "sourceNotRunningTooltip": "Deze bron is in de instellingen toegewezen aan het model, maar de audio bereikt het model niet, waardoor het geen detecties produceert. Open de modellengalerij in Instellingen om de status te controleren.",
       "notMeasured": "n/b",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Taalregio",
           "helpText": "Taalregio voor vertaalde soorten algemene namen."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU-threads",
-          "helpText": "Aantal CPU threads. Zet op 0 om alle beschikbare threads te gebruiken."
+        "inferenceThreads": {
+          "label": "CPU-threads voor inferentie",
+          "helpText": "Aantal CPU-threads dat wordt gebruikt voor modelinferentie. Zet op 0 om alle beschikbare threads te gebruiken. Heeft geen effect op modellen die op een GPU draaien."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Schakel Privacy Filteren in",
         "disabled": "Privacy filteren is uitgeschakeld",
         "confidenceLabel": "Betrouwbaarheids Drempelwaarde voor Menselijke Detectie",
-        "confidenceHelp": "Stel het betrouwbaarheidsniveau in voor menselijke stem detectie, lagere waarde maakt filter gevoeliger"
+        "confidenceHelp": "Stel het betrouwbaarheidsniveau in voor menselijke stem detectie, lagere waarde maakt filter gevoeliger",
+        "vadEnable": "Privacybescherming inschakelen (Silero VAD)",
+        "vadHelp": "Voert een specifiek neuraal spraakdetectiemodel uit naast de classificator voor betrouwbare spraakfiltering. Verbruikt extra systeembronnen (ongeveer 20-30 MB RAM en CPU-inferentie per segment).",
+        "vadThresholdLabel": "Drempelwaarde voor privacybescherming",
+        "vadThresholdHelp": "Gevoeligheidsdrempel voor de spraakactiviteitsdetector (standaard 0.35). Lagere waarden maken het filter gevoeliger voor zachte of verre spraak."
       },
       "falsePositivePrevention": {
         "title": "Vals Positief Preventie",
@@ -5317,21 +5354,25 @@
         "title": "Modelregio",
         "modeAuto": "Automatisch",
         "modeAutoHint": "Kies de beste regionale variant op basis van de stationslocatie",
-        "modeGlobal": "Globaal",
-        "modeGlobalHint": "Altijd het wereldwijde model gebruiken",
-        "pinLabel": "Een specifieke regio vastzetten",
-        "pinnedBadge": "Vastgezet",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "{region} vastzetten",
         "switchToAuto": "Overschakelen naar automatisch",
         "loading": "Regio's laden...",
         "loadFailed": "Kan regiogegevens niet laden",
-        "mapLoading": "Dekkingskaart laden...",
         "mapUnavailable": "Dekkingskaart niet beschikbaar",
         "mapAria": "Dekkingskaart van {region}",
-        "countriesCore": "Dekt: {countries}",
-        "countriesPartial": "Gedeeltelijke dekking: {countries}",
-        "countriesMore": "en nog {count}",
-        "countriesLess": "Minder tonen",
         "why": {
           "noLocation": "Automatische selectie vereist een stationslocatie. Stel deze in bij Hoofdinstellingen; tot die tijd wordt het globale model gebruikt.",
           "outsideCoverage": "Uw locatie valt buiten de dekking van alle regionale modellen, dus wordt het globale model gebruikt.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Regionale varianten getoond voor {region}, ingesteld door de modelregioselectie hierboven",
         "regionContextNone": "Er zijn regionale varianten beschikbaar. Kies een regio in de modelregioselectie hierboven, of toon alle varianten.",
         "otherRegions": "Andere regio's",
+        "filterPlaceholder": "Regio's filteren",
+        "filterAria": "Filter op regio afgestemde versies",
+        "filterNoMatch": "Geen regio's komen overeen met \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Modellen laden...",
       "retry": "Opnieuw proberen",
       "builtIn": "Ingebouwd",
-      "builtInDescription": "Ingebouwde vogelsoortclassificator van het BirdNET-team.",
       "species": "{count} soorten",
       "install": "Installeren",
       "installing": "Installeren...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Opnieuw installeren...",
       "reinstallComplete": "Bestanden succesvol geverifieerd",
       "geomodelBadge": "Bevat BirdNET v3.0 geomodel",
-      "entryIncompatible": "Dit model is niet beschikbaar op dit systeem."
+      "preview": {
+        "badge": "Voorvertoning",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Voorvertoning voor ontwikkelaars, niet de definitieve versie. Dit is een vroege versie om te testen; resultaten kunnen veranderen voor de stabiele versie.",
+        "dialogNotice": "Je installeert een voorvertoning voor ontwikkelaars ({build}). Handig om uit te proberen, maar nog niet aanbevolen als je enige classificator."
+      },
+      "entryIncompatible": "Dit model is niet beschikbaar op dit systeem.",
+      "regionGlobal": "Globaal",
+      "hardwareLabel": "Hardware",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# model kan sneller werken op jouw hardware} other {# modellen kunnen sneller werken op jouw hardware}}",
+        "review": "Controleren",
+        "dismiss": "Afwijzen",
+        "badgeTitle": "Er is een snellere build beschikbaar voor jouw hardware",
+        "swap": "Optimaliseren",
+        "dialogTitle": "Optimaliseer jouw modellen",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} naar {to}",
+        "apply": "Toepassen",
+        "applyAll": "Alles toepassen",
+        "applying": "Toepassen...",
+        "applied": "Toegepast",
+        "applyFailed": "Toepassen mislukt",
+        "upToDate": "Al jouw modellen zijn al geoptimaliseerd voor deze hardware.",
+        "licenseNote": "Het wisselen blijft binnen hetzelfde model, dus de licentie verandert niet."
+      }
     },
     "bird": {
       "title": "Bird Detection",

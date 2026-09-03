@@ -1813,9 +1813,6 @@ func sanitizeSettingsForAPI(s *conf.Settings) *conf.Settings {
 	// --- eBird API key ---
 	sanitized.Realtime.EBird.APIKey = redact(s.Realtime.EBird.APIKey)
 
-	// --- Backup secrets ---
-	sanitized.Backup.EncryptionKey = redact(s.Backup.EncryptionKey)
-
 	// Backup targets may contain FTP/SFTP/S3 credentials in their Settings map.
 	// Copy the slice and redact known secret keys.
 	if len(s.Backup.Targets) > 0 {
@@ -1927,10 +1924,7 @@ func restoreRedactedSecrets(current, incoming *conf.Settings) error {
 	// eBird
 	restore(&current.Realtime.EBird.APIKey, &incoming.Realtime.EBird.APIKey)
 
-	// Backup
-	restore(&current.Backup.EncryptionKey, &incoming.Backup.EncryptionKey)
-
-	// Backup target secrets — match by Type to handle reordering
+	// Backup target secrets, match by Type to handle reordering
 	for i := range incoming.Backup.Targets {
 		if incoming.Backup.Targets[i].Settings == nil {
 			continue
@@ -2018,7 +2012,6 @@ func validateNoRedactedSentinels(s *conf.Settings) error {
 	check(s.Realtime.Weather.OpenWeather.APIKey, "realtime.weather.openWeather.apiKey")
 	check(s.Realtime.Weather.Wunderground.APIKey, "realtime.weather.wunderground.apiKey")
 	check(s.Realtime.EBird.APIKey, "realtime.ebird.apiKey")
-	check(s.Backup.EncryptionKey, "backup.encryptionKey")
 
 	// Array-based OAuth providers
 	for i := range s.Security.OAuthProviders {
@@ -2086,7 +2079,6 @@ func clearRedactedSentinels(s *conf.Settings) {
 	clearField(&s.Realtime.Weather.OpenWeather.APIKey)
 	clearField(&s.Realtime.Weather.Wunderground.APIKey)
 	clearField(&s.Realtime.EBird.APIKey)
-	clearField(&s.Backup.EncryptionKey)
 
 	for i := range s.Security.OAuthProviders {
 		clearField(&s.Security.OAuthProviders[i].ClientSecret)
@@ -2458,9 +2450,9 @@ const (
 // pointer; the reasoning is at that call site.
 var settingsChangeChecks = []settingsChangeCheck{
 	{"BirdNET", "reload_birdnet", birdnetSettingsChanged, "Reloading BirdNET model with new settings...", notification.MsgSettingsReloadingBirdnet, ToastTypeInfo, toastDurationLong},
+	{"Analysis overlap", actionRestartAudioCapture, analysisOverlapChanged, "Restarting audio capture to apply new overlap...", "", ToastTypeInfo, toastDurationMedium},
 	{"Range filter", "rebuild_range_filter", rangeFilterSettingsChanged, "Rebuilding species range filter...", notification.MsgSettingsRebuildingRangeFilter, ToastTypeInfo, toastDurationMedium},
 	{"Species interval", "update_detection_intervals", intervalSettingsChanged, "Updating detection intervals...", notification.MsgSettingsUpdatingIntervals, ToastTypeInfo, toastDurationShort},
-	{"Base threshold", "recalculate_dynamic_thresholds", baseThresholdChanged, "Recalculating dynamic thresholds...", notification.MsgSettingsRecalculatingThresholds, ToastTypeInfo, toastDurationShort},
 	{"Dynamic thresholds", "reconfigure_dynamic_thresholds", dynamicThresholdEnabledChanged, "Reconfiguring dynamic thresholds...", notification.MsgSettingsReconfiguringDynamicThresholds, ToastTypeInfo, toastDurationMedium},
 	{"MQTT", "reconfigure_mqtt", mqttSettingsChanged, "Reconfiguring MQTT connection...", notification.MsgSettingsReconfiguringMqtt, ToastTypeInfo, toastDurationMedium},
 	{"BirdWeather", "reconfigure_birdweather", birdWeatherSettingsChanged, "Reconfiguring BirdWeather integration...", notification.MsgSettingsReconfiguringBirdweather, ToastTypeInfo, toastDurationMedium},
@@ -2677,19 +2669,16 @@ func birdnetSettingsChanged(oldSettings, currentSettings *conf.Settings) bool {
 	return false
 }
 
-// baseThresholdChanged checks if any model-global confidence base threshold has
-// changed. When one does, dynamic threshold CurrentValue entries must be
-// recalculated since they store absolute values derived from the base threshold.
-// This covers the primary BirdNET threshold, the Bat threshold, and the Perch v2
-// and BirdNET v3.0 override toggles and values, which all feed
-// modelGlobalConfidenceThreshold.
-func baseThresholdChanged(oldSettings, currentSettings *conf.Settings) bool {
-	return oldSettings.BirdNET.Threshold != currentSettings.BirdNET.Threshold ||
-		oldSettings.Bat.Threshold != currentSettings.Bat.Threshold ||
-		oldSettings.Perch.OverrideThreshold != currentSettings.Perch.OverrideThreshold ||
-		oldSettings.Perch.Threshold != currentSettings.Perch.Threshold ||
-		oldSettings.BirdNETV3.OverrideThreshold != currentSettings.BirdNETV3.OverrideThreshold ||
-		oldSettings.BirdNETV3.Threshold != currentSettings.BirdNETV3.Threshold
+// analysisOverlapChanged reports whether birdnet.overlap changed. Overlap drives
+// the realtime analysis-buffer cadence (read/overlap size), so a change requires
+// reallocating the analysis buffers. Overlap is not a per-source audio property,
+// so the diff-based reconfigure_audio_sources cannot see it; instead this triggers
+// restart_audio_capture, a full teardown and rebuild that re-applies the primary
+// model dimensions and reallocates every source's analysis buffers with the new
+// overlap. This is separate from reload_birdnet (which rebuilds the model
+// instance, not the source buffers).
+func analysisOverlapChanged(oldSettings, currentSettings *conf.Settings) bool {
+	return oldSettings.BirdNET.Overlap != currentSettings.BirdNET.Overlap
 }
 
 // dynamicThresholdEnabledChanged checks if the DynamicThreshold.Enabled flag was toggled.

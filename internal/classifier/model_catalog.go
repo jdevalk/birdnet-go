@@ -18,6 +18,18 @@ const (
 	CategoryGeomodel = "geomodel"
 )
 
+// birdnetV24SpeciesCount is the number of species in the embedded BirdNET v2.4
+// label set (data/labels/V2.4). The v2.4 entry reports this at the entry and
+// per-variant level because no labels file is downloaded, so the runtime count is
+// known statically. It matches the embedded label file's expected line count.
+const birdnetV24SpeciesCount = 6522
+
+// catalogBackendTFLite is the backend token used as a key in CatalogVariant.Backends
+// for the TensorFlow Lite backend, matching the tokens in the embedded catalog data
+// and the remote manifests. It equals hwprofile.CapTFLite but is kept local so the
+// catalog's backend-token lookups do not couple to the hardware-capability package.
+const catalogBackendTFLite = "tflite"
+
 // CatalogFile role constants.
 const (
 	RoleModel          = "model"
@@ -29,6 +41,14 @@ const (
 	RoleTaxonomy       = "taxonomy"
 )
 
+// Model release channels. An empty CatalogEntry.Channel means a stable (GA)
+// release; ChannelPreview marks a developer-preview build the gallery labels as
+// not the final GA build.
+const (
+	ChannelStable  = "stable"
+	ChannelPreview = "preview"
+)
+
 // CatalogEntry describes a downloadable model available in the model gallery.
 //
 // The snake_case JSON tags define the on-disk schema for the user-editable
@@ -37,16 +57,24 @@ const (
 // serialize this struct directly; it maps to a separate camelCase response
 // type (see internal/api/v2/models.go), so these tags do not affect the API.
 type CatalogEntry struct {
-	ID              string        `json:"id"`                // unique catalog identifier (e.g., "battybirdnet-eu")
-	Name            string        `json:"name"`              // user-facing display name
-	Description     string        `json:"description"`       // short description of the model
-	Author          string        `json:"author"`            // model author or organization
-	License         string        `json:"license"`           // license identifier (e.g., "Apache-2.0")
-	CommercialUse   bool          `json:"commercial_use"`    // whether commercial use is permitted
-	Category        string        `json:"category"`          // "wildlife", "bird", "bat", or "geomodel"
-	Region          string        `json:"region"`            // geographic region, or empty for global models
-	SpeciesCount    int           `json:"species_count"`     // number of species the model can identify
-	Version         string        `json:"version"`           // model version string
+	ID            string `json:"id"`             // unique catalog identifier (e.g., "battybirdnet-eu")
+	Name          string `json:"name"`           // user-facing display name
+	Description   string `json:"description"`    // short description of the model
+	Author        string `json:"author"`         // model author or organization
+	License       string `json:"license"`        // license identifier (e.g., "Apache-2.0")
+	CommercialUse bool   `json:"commercial_use"` // whether commercial use is permitted
+	Category      string `json:"category"`       // "wildlife", "bird", "bat", or "geomodel"
+	Region        string `json:"region"`         // geographic region, or empty for global models
+	SpeciesCount  int    `json:"species_count"`  // number of species the model can identify
+	Version       string `json:"version"`        // model version string
+	// Channel marks a non-stable release. "" (or "stable") is the normal GA build;
+	// "preview" marks a developer-preview build the gallery flags as not the GA
+	// build. omitempty keeps every stable entry's on-disk JSON byte-identical, so
+	// adding this field does not shift catalogChecksum or force a schema-version bump.
+	Channel string `json:"channel,omitempty"`
+	// BuildLabel is a human-facing build tag shown next to Version for a non-stable
+	// channel (e.g. "preview3.1"). Empty for stable releases. omitempty as above.
+	BuildLabel      string        `json:"build_label,omitempty"`
 	GeomodelVersion string        `json:"geomodel_version"`  // geomodel range filter version (e.g., "v3"); empty if no geomodel
 	RegistryID      string        `json:"registry_id"`       // maps to a ModelRegistry key; empty if loader not yet implemented
 	Hidden          bool          `json:"hidden"`            // if true, entry is excluded from the gallery UI
@@ -82,6 +110,13 @@ type CatalogVariant struct {
 	Files        []CatalogFile             `json:"files"`                   // files to download for this variant
 	Legacy       bool                      `json:"legacy"`                  // if true, hidden unless already installed (superseded build)
 	SupersededBy string                    `json:"superseded_by,omitempty"` // id of the variant that replaces this one, if any
+	// BuiltIn marks the embedded baseline variant of a permanent model (the
+	// BirdNET v2.4 classifier shipped inside the binary). A BuiltIn variant carries
+	// no files (nothing to download), is always reported installed by ScanInstalled,
+	// and is exempt from the catalog's no-files / model-role validation. At most one
+	// variant per entry may set it. omitempty keeps the on-disk JSON of every other
+	// entry byte-identical, so adding this field does not shift catalogChecksum.
+	BuiltIn bool `json:"built_in,omitempty"`
 }
 
 // VariantRequirements declares the host capabilities a variant needs. Arch and
@@ -140,16 +175,21 @@ var EmbeddedCatalog = []CatalogEntry{
 	// backend loader is fully functional and v3.0 can also be enabled via config
 	// (models.enabled + birdnetv3 model/label paths).
 	{
-		ID:              "birdnet-v3.0",
-		Name:            "BirdNET v3.0",
-		Description:     "Developer preview of the BirdNET v3.0 global wildlife classifier (11,560 species, birds and other fauna; scientific and common names). Not the GA build.",
-		Author:          "Cornell Lab of Ornithology & Chemnitz University of Technology",
-		License:         "CC-BY-SA-4.0",
-		CommercialUse:   true,
-		Category:        CategoryWildlife,
-		Region:          "",
-		SpeciesCount:    11560,
-		Version:         "3.0",
+		ID:            "birdnet-v3.0",
+		Name:          "BirdNET v3.0",
+		Description:   "Developer preview of the BirdNET v3.0 global wildlife classifier (11,560 species, birds and other fauna; scientific and common names). Not the GA build.",
+		Author:        "Cornell Lab of Ornithology & Chemnitz University of Technology",
+		License:       "CC-BY-SA-4.0",
+		CommercialUse: true,
+		Category:      CategoryWildlife,
+		Region:        "",
+		SpeciesCount:  11560,
+		Version:       "3.0",
+		// Developer-preview build: the gallery shows a PREVIEW badge and a not-GA
+		// notice, and surfaces this tag (which otherwise lives only inside the
+		// preview3.1 file paths below) so users know it is not the final release.
+		Channel:         ChannelPreview,
+		BuildLabel:      "preview3.1",
 		GeomodelVersion: "v3",
 		RegistryID:      RegistryIDBirdNETV3,
 		Hidden:          false,
@@ -310,50 +350,68 @@ var EmbeddedCatalog = []CatalogEntry{
 		},
 	},
 
-	// BirdNET v2.4 DFT-truncated variants: opt-in, faster drop-in ONNX builds for the
-	// primary classifier, represented as one Hidden entry with hardware variants.
-	// DFT-bin truncation drops the mel-DFT bins the filterbank discards, so the output
-	// is bit-exact (single classification head, unchanged labels) while CPU/OpenVINO
-	// inference is about 1.4-2x faster. The files are published under NEW HuggingFace
-	// filenames, so existing installs are untouched.
+	// BirdNET v2.4, the permanent primary classifier, wired into its own variant set.
+	// The embedded default (shipped inside the binary) is represented as a BuiltIn
+	// baseline variant; the two DFT-truncated ONNX builds are opt-in, faster drop-in
+	// alternatives. DFT-bin truncation drops the mel-DFT bins the filterbank discards,
+	// so the output is bit-exact (single classification head, unchanged labels) while
+	// CPU/OpenVINO inference is about 1.4-2x faster. The ONNX files are published under
+	// NEW HuggingFace filenames, so existing installs are untouched.
 	//
-	// The entry is Hidden on purpose. The primary BirdNET v2.4 classifier is resolved
-	// at startup from config and the standard model paths (see NewBirdNET), NOT from
-	// the gallery, and nothing in the install path wires an installed file into
-	// BirdNET.ModelPath or hot-swaps the primary model. A visible "Install" button
-	// would therefore download a file that nothing activates. So this entry only
-	// records the authoritative checksums, sizes, and repo paths as a catalog
-	// foundation; a future primary-variant selector (tracked separately) will make the
-	// variants selectable. RegistryID is the permanent BirdNET v2.4 ID because these
-	// variants ARE that model in alternate files: being Hidden they are never
-	// hot-loaded (there is no secondary loader for the primary), and Uninstall
-	// refuses the entry via the permanent-model guard. Labels are the embedded v2.4 set (data/labels/V2.4),
-	// so no labels file is downloaded. If a power user points birdnet.modelpath at a
-	// manually fetched file, the primary loader uses it as-is (remapV24ToONNXOnARM64
-	// honors an explicit CustomPath).
+	// The entry is visible so the gallery can offer an in-place "optimize" swap between
+	// the builtin baseline and a compatible DFT-truncated build. The primary BirdNET
+	// v2.4 classifier is resolved at startup from config and the standard model paths
+	// (see NewBirdNET), NOT from a generic gallery loader, so the swap runs through a
+	// dedicated primary-reload path (ModelManager.replacePrimaryVariant ->
+	// Orchestrator.ReloadPrimaryForVariantSwap), not the generic replaceVariant flow.
+	// RegistryID is the permanent BirdNET v2.4 ID: the model is always installed (the
+	// BuiltIn baseline needs no files), it is never hot-loaded by loadInstalledModels
+	// (there is no secondary loader for the primary), and Uninstall refuses the entry
+	// via the permanent-model guard, so only its variant may change. Labels are the
+	// embedded v2.4 set (data/labels/V2.4), so no labels file is downloaded.
 	{
-		ID:              "birdnet-v2.4",
-		Name:            "BirdNET v2.4 (DFT-truncated)",
-		Description:     "Drop-in BirdNET v2.4 classifier with DFT-bin truncation: bit-exact output, about 1.4-2x faster CPU and OpenVINO inference. FP32 for OpenVINO/CPU (A76/Pi5, amd64, Intel iGPU); INT8 for low-RAM ARM via ONNX Runtime (Pi4/Pi3).",
-		Author:          "Cornell Lab of Ornithology & Chemnitz University of Technology",
-		License:         "CC-BY-NC-SA-4.0",
-		CommercialUse:   false,
-		Category:        CategoryBird,
-		Region:          "",
-		SpeciesCount:    0, // determined at runtime from the embedded v2.4 labels (no labels file is downloaded)
-		Version:         "2.4",
-		RegistryID:      permanentRegistryID,
-		Hidden:          true,
-		RequiresONNX:    true,
+		ID:            "birdnet-v2.4",
+		Name:          "BirdNET v2.4",
+		Description:   "The built-in BirdNET v2.4 classifier. Optionally swap in a DFT-truncated build for bit-exact output at about 1.4-2x faster CPU and OpenVINO inference: FP32 for OpenVINO/CPU (A76/Pi5, amd64, Intel iGPU); INT8 for low-RAM ARM via ONNX Runtime (Pi4/Pi3).",
+		Author:        "Cornell Lab of Ornithology & Chemnitz University of Technology",
+		License:       "CC-BY-NC-SA-4.0",
+		CommercialUse: false,
+		Category:      CategoryBird,
+		Region:        "",
+		SpeciesCount:  birdnetV24SpeciesCount,
+		Version:       "2.4",
+		RegistryID:    permanentRegistryID,
+		Hidden:        false,
+		// RequiresONNX is now per-variant: the BuiltIn baseline runs on the embedded
+		// TFLite model (no ONNX Runtime needed); the DFT-truncated builds are ONNX
+		// (see VariantNeedsONNX, which the install ORT gate consults per variant).
+		RequiresONNX:    false,
 		UpstreamURL:     "https://github.com/birdnet-team/BirdNET-Analyzer",
 		HuggingFaceRepo: "tphakala/BirdNET-v2.4",
 		// No labels/companions: v2.4 uses the embedded label set. Variant Files are
-		// the model file only.
+		// the model file only (and none for the BuiltIn baseline).
 		Variants: []CatalogVariant{
 			{
-				ID:        "fp32-dfttrunc",
-				Precision: "fp32",
-				Default:   true,
+				// BuiltIn baseline: the embedded v2.4 model that ships inside the
+				// binary. No files (nothing to download), always installed. It does NOT
+				// mark any ONNX backend Recommended: a 0-byte size tie-break would let
+				// this file-less variant beat a real DFT build and suppress the optimize
+				// offer, so it advertises only tflite as recommended (the embedded path)
+				// with onnxruntime-cpu merely supported.
+				ID:      "builtin",
+				BuiltIn: true,
+				Default: true,
+				// The embedded model identifies the full v2.4 label set.
+				SpeciesCount: birdnetV24SpeciesCount,
+				Backends: map[string]BackendSupport{
+					"tflite":          {Supported: true, Recommended: true},
+					"onnxruntime-cpu": {Supported: true},
+				},
+			},
+			{
+				ID:           "fp32-dfttrunc",
+				Precision:    "fp32",
+				SpeciesCount: birdnetV24SpeciesCount,
 				// RAM floors sourced from the acoustic-models
 				// BirdNET-v2.4.models.json manifest.
 				Requirements: VariantRequirements{MinRAMMB: 250},
@@ -371,6 +429,7 @@ var EmbeddedCatalog = []CatalogEntry{
 			{
 				ID:           "int8-arm-dfttrunc",
 				Precision:    "int8",
+				SpeciesCount: birdnetV24SpeciesCount,
 				Requirements: VariantRequirements{Arch: []string{"aarch64"}, MinRAMMB: 250},
 				Backends: map[string]BackendSupport{
 					"onnxruntime-cpu": {Supported: true, Recommended: true},
@@ -676,6 +735,20 @@ func defaultVariant(entry *CatalogEntry) *CatalogVariant {
 	return &entry.Variants[0]
 }
 
+// DefaultVariantID returns the ID of the variant that an empty variant selection
+// resolves to (the one flagged Default, else the first), or "" for a flat entry
+// with no variants. It is the exported form used by the API layer to map an empty
+// install request to the concrete variant ID the recommender keys its verdict by.
+func DefaultVariantID(entry *CatalogEntry) string {
+	if entry == nil {
+		return ""
+	}
+	if v := defaultVariant(entry); v != nil {
+		return v.ID
+	}
+	return ""
+}
+
 // variantFilesByID returns the file list for the given variant of an entry. An
 // empty variantID yields the entry's resolved (default) Files, preserving the
 // pre-variant behaviour. A non-empty variantID selects the matching variant's
@@ -701,6 +774,75 @@ func variantFilesByID(entry *CatalogEntry, variantID string) (files []CatalogFil
 func VariantSelectable(entry *CatalogEntry, variantID string) bool {
 	_, ok := variantFilesByID(entry, variantID)
 	return ok
+}
+
+// IsPermanentEntry reports whether entry is the permanent built-in BirdNET v2.4
+// classifier. The permanent entry is always installed, can only have its variant
+// swapped (never uninstalled), and swaps through the dedicated primary-reload path
+// rather than the generic variant-replace flow.
+func IsPermanentEntry(entry *CatalogEntry) bool {
+	return entry != nil && entry.RegistryID == permanentRegistryID
+}
+
+// builtInVariant returns the entry's BuiltIn baseline variant (the embedded
+// primary model), or nil when the entry has none. Catalog validation guarantees at
+// most one BuiltIn variant per entry.
+func builtInVariant(entry *CatalogEntry) *CatalogVariant {
+	if entry == nil {
+		return nil
+	}
+	for i := range entry.Variants {
+		if entry.Variants[i].BuiltIn {
+			return &entry.Variants[i]
+		}
+	}
+	return nil
+}
+
+// resolveVariant returns the variant of entry with the given id, resolving an empty
+// id to the default variant. It returns nil for a flat entry (no variants) or when
+// the id matches no variant.
+func resolveVariant(entry *CatalogEntry, variantID string) *CatalogVariant {
+	if entry == nil || len(entry.Variants) == 0 {
+		return nil
+	}
+	if variantID == "" {
+		return defaultVariant(entry)
+	}
+	for i := range entry.Variants {
+		if entry.Variants[i].ID == variantID {
+			return &entry.Variants[i]
+		}
+	}
+	return nil
+}
+
+// VariantNeedsONNX reports whether running the given variant of entry requires the
+// ONNX Runtime. A BuiltIn baseline (the embedded v2.4 TFLite model) never does. A
+// variant that advertises support for the TFLite backend can also run without ORT.
+// Otherwise the variant is an ONNX build and needs the runtime. For a flat entry or
+// an unknown variant id it falls back to the entry-level RequiresONNX flag. This is
+// the per-variant refinement of the entry-level ORT gate: a v2.4 entry is no longer
+// RequiresONNX at the entry level, so the install path consults this to gate only
+// the DFT-truncated ONNX variants, never the embedded baseline.
+func VariantNeedsONNX(entry *CatalogEntry, variantID string) bool {
+	v := resolveVariant(entry, variantID)
+	if v == nil {
+		return entry != nil && entry.RequiresONNX
+	}
+	if v.BuiltIn {
+		return false
+	}
+	// Backends is keyed by backend token; catalogBackendTFLite matches the literal
+	// tokens used throughout this file's catalog data and the remote manifest. A
+	// variant only avoids the ONNX Runtime when it declares TFLite as an actually
+	// SUPPORTED backend: a manifest may list "tflite" with Supported:false (the
+	// Perch manifests do exactly this for unavailable backends), and key presence
+	// alone would then wrongly skip the ORT requirement.
+	if support, ok := v.Backends[catalogBackendTFLite]; ok && support.Supported {
+		return false
+	}
+	return true
 }
 
 // VariantRegion returns the region slug of entry's variant with the given id, or

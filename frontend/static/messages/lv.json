@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} ir instalēts reģionam {oldRegion}, bet jūsu jaunā atrašanās vieta atbilst {newRegion}. Varat pārslēgt variantus no modeļu galerijas sadaļā Iestatījumi.",
         "staleGlobalMessage": "{modelName} ir instalēts reģionam {oldRegion}, bet jūsu jaunā atrašanās vieta ir ārpus tā pārklājuma. Varat pārslēgties uz globālo variantu no modeļu galerijas sadaļā Iestatījumi."
       },
+      "modelPath": {
+        "reconciledTitle": "Modeļa {modelName} failu ceļi salaboti",
+        "reconciledMessage": "Konfigurētie failu ceļi modelim {modelName} bija novecojuši un tika salaboti, lai atbilstu instalētajam modelim vietā {modelPath}.",
+        "substitutedTitle": "Konfigurētais {modelName} modeļa fails netika atrasts",
+        "substitutedMessage": "Modelim {modelName} konfigurētais faila ceļš netika atrasts diskā, tāpēc tā vietā tiek izmantots instalētais modelis {modelPath}. Jūsu konfigurācija netika mainīta.",
+        "unreadableTitle": "Konfigurēto modeļa failu modelim {modelName} nevarēja nolasīt",
+        "unreadableMessage": "Modelim {modelName} konfigurētais modeļa fails pastāv, taču to nevarēja nolasīt, tāpēc tā vietā tiek izmantots instalētais modelis {modelPath}. Jūsu konfigurācija netika mainīta. Pārbaudiet faila atļaujas un to, vai tā krātuve ir montēta.",
+        "builtinMessage": "Modelim {modelName} konfigurētais modeļa fails netika atrasts diskā un nav pieejams neviens instalēts modelis tā aizstāšanai, tāpēc tā vietā tiek izmantots iebūvētais modelis. Jūsu konfigurācija netika mainīta.",
+        "notRegisteredTitle": "Neviens modelis neanalizē {sourceName}",
+        "notRegisteredMessage": "Audio nesasniedz {models} audio avotā \"{sourceName}\", tāpēc noteikšanas netiek veiktas. Atveriet modeļu galeriju sadaļā Iestatījumi, lai pārbaudītu statusu."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Pašreizējā vērtība: {value}% (slieksnis: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "MI Modeļi un Secinājumi",
       "loading": "Ielādē secinājumu statusu",
       "error": "Neizdevās ielādēt secinājumu statusu",
+      "vad": {
+        "section": "Privātuma aizsardzība",
+        "title": "Silero VAD",
+        "active": "Aktīvs",
+        "activeHelp": "Runas noteikšanas modelis ir ielādēts un novērtē audio.",
+        "idle": "Dīkstāve",
+        "idleHelp": "Iespējots un gatavs; modelis tiek ielādēts, kad tiek novērtēts pirmais audio fragments.",
+        "disabled": "Atspējots",
+        "disabledHelp": "Privātuma aizsardzība ir izslēgta privātuma filtra iestatījumos.",
+        "unavailable": "Nav modeļa",
+        "unavailableHelp": "Šajā būvējumā nav pieejams runas noteikšanas modelis. Iestatiet VAD modeļa ceļu privātuma filtra iestatījumos vai izmantojiet būvējumu ar iegultu modeli.",
+        "description": "Silero VAD ir specializēts akustiskais modelis, kas nosaka cilvēka runu. Tas darbina privātuma filtru, izmetot audio, kad ir klāt runa, lai balsis netiktu saglabātas jūsu ierakstos.",
+        "threshold": "Slieksnis",
+        "speechHits": "Runas atklājumi",
+        "recentTitle": "Nesenā runa",
+        "recentEmpty": "Runa vēl nav konstatēta",
+        "colWhen": "Laiks",
+        "colProbability": "Varbūtība",
+        "colSource": "Avots"
+      },
       "sectionHardware": "Aparatūra",
       "sectionBackends": "Secinājumu Aizmugursistēmas",
       "sectionModels": "Modeļi",
@@ -1766,6 +1797,8 @@
       "sources": "Audio avoti",
       "noSources": "Nav pievienotu avotu",
       "primaryFallback": "primārais (rezerves)",
+      "sourceNotRunning": "neanalizē",
+      "sourceNotRunningTooltip": "Šis avots ir piešķirts modelim iestatījumos, bet tā audio nesasniedz modeli, tāpēc tas neveic noteikšanas. Atveriet modeļu galeriju sadaļā Iestatījumi, lai pārbaudītu tā statusu.",
       "notMeasured": "n/p",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Lokalizācija",
           "helpText": "Lokalizācija tulkotajiem sugu vispārīgajiem nosaukumiem."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU pavedieni",
-          "helpText": "CPU pavedienu skaits. Iestatiet 0, lai izmantotu visus pieejamos pavedienus."
+        "inferenceThreads": {
+          "label": "Secinājumu CPU pavedieni",
+          "helpText": "Modeļa secinājumiem izmantoto CPU pavedienu skaits. Iestatiet 0, lai izmantotu visus pieejamos pavedienus. Neietekmē modeļus, kas darbojas ar GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Iespējot privātuma filtrēšanu",
         "disabled": "Privātuma filtrēšana ir atspējota",
         "confidenceLabel": "Ticamības slieksnis cilvēku noteikšanai",
-        "confidenceHelp": "Iestatiet ticamības līmeni cilvēku balss noteikšanai, zemāka vērtība padara filtru jutīgāku"
+        "confidenceHelp": "Iestatiet ticamības līmeni cilvēku balss noteikšanai, zemāka vērtība padara filtru jutīgāku",
+        "vadEnable": "Iespējot Privātuma Aizsardzību (Silero VAD)",
+        "vadHelp": "Darbojas ar atsevišķu neironu runas noteikšanas modeli blakus klasifikatoram uzticamai balss filtrēšanai. Patērē papildu sistēmas resursus (aptuveni 20-30 MB RAM un CPU inferenci uz segmentu).",
+        "vadThresholdLabel": "Privātuma Aizsardzības slieksnis",
+        "vadThresholdHelp": "Jutības slieksnis balss aktivitātes detektoram (noklusējums 0,35). Zemākas vērtības padara filtru jutīgāku pret klusu vai attālu runu."
       },
       "falsePositivePrevention": {
         "title": "Viltus pozitīvo novēršana",
@@ -5317,21 +5354,25 @@
         "title": "Modeļa reģions",
         "modeAuto": "Automātiski",
         "modeAutoHint": "Izvēlēties labāko reģionālo variantu pēc stacijas atrašanās vietas",
-        "modeGlobal": "Globāls",
-        "modeGlobalHint": "Vienmēr izmantot vispasaules modeli",
-        "pinLabel": "Piespraust noteiktu reģionu",
-        "pinnedBadge": "Piesprausts",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Piespraust {region}",
         "switchToAuto": "Pārslēgties uz automātisko",
         "loading": "Ielādē reģionus...",
         "loadFailed": "Neizdevās ielādēt reģiona datus",
-        "mapLoading": "Ielādē pārklājuma karti...",
         "mapUnavailable": "Pārklājuma karte nav pieejama",
         "mapAria": "{region} pārklājuma karte",
-        "countriesCore": "Aptver: {countries}",
-        "countriesPartial": "Daļējs pārklājums: {countries}",
-        "countriesMore": "un vēl {count}",
-        "countriesLess": "Rādīt mazāk",
         "why": {
           "noLocation": "Automātiskajai atlasei nepieciešama stacijas atrašanās vieta. Iestatiet to Galvenajos iestatījumos; līdz tam tiek izmantots globālais modelis.",
           "outsideCoverage": "Jūsu atrašanās vieta ir ārpus visu reģionālo modeļu pārklājuma, tāpēc tiek izmantots globālais modelis.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Reģionālie varianti parādīti reģionam {region}, iestatīti ar modeļa reģiona izvēli augstāk",
         "regionContextNone": "Ir pieejami reģionālie varianti. Izvēlieties reģionu modeļa reģiona izvēlē augstāk vai rādiet visus variantus.",
         "otherRegions": "Citi reģioni",
+        "filterPlaceholder": "Filtrēt reģionus",
+        "filterAria": "Filtrēt reģioniem pielāgotās versijas",
+        "filterNoMatch": "Neviens reģions neatbilst \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Ielādē modeļus...",
       "retry": "Mēģināt vēlreiz",
       "builtIn": "Iebūvēts",
-      "builtInDescription": "BirdNET komandas iebūvēts putnu sugu klasifikators.",
       "species": "{count} sugas",
       "install": "Instalēt",
       "installing": "Instalē...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Pārinstalē...",
       "reinstallComplete": "Faili veiksmīgi pārbaudīti",
       "geomodelBadge": "Ietver BirdNET v3.0 ģeomodelis",
-      "entryIncompatible": "Šis modelis nav pieejams šajā sistēmā."
+      "preview": {
+        "badge": "Priekšskatījums",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Izstrādātāja priekšskatījums, nav galīgais laidiens. Šī ir agrīna versija testēšanai; rezultāti var mainīties pirms stabilās versijas.",
+        "dialogNotice": "Jūs instalējat izstrādātāja priekšskatījumu ({build}). Piemērots izmēģināšanai, taču vēl nav ieteicams kā jūsu vienīgais klasifikators."
+      },
+      "entryIncompatible": "Šis modelis nav pieejams šajā sistēmā.",
+      "regionGlobal": "Globāls",
+      "hardwareLabel": "Aparatūra",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, zero {# modeļu var darboties ātrāk jūsu aparatūrā} one {# modelis var darboties ātrāk jūsu aparatūrā} other {# modeļi var darboties ātrāk jūsu aparatūrā}}",
+        "review": "Pārskatīt",
+        "dismiss": "Noraidīt",
+        "badgeTitle": "Jūsu aparatūrai ir pieejama ātrāka versija",
+        "swap": "Optimizēt",
+        "dialogTitle": "Optimizējiet savus modeļus",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} uz {to}",
+        "apply": "Lietot",
+        "applyAll": "Lietot visu",
+        "applying": "Lieto...",
+        "applied": "Lietots",
+        "applyFailed": "Neizdevās lietot",
+        "upToDate": "Visi jūsu modeļi jau ir optimizēti šai aparatūrai.",
+        "licenseNote": "Aizstāšana notiek viena modeļa ietvaros, tāpēc tā licence nemainās."
+      }
     },
     "bird": {
       "title": "Putnu noteikšana",

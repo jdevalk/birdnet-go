@@ -30,6 +30,7 @@
   import { downloadBlob } from '$lib/utils/fileHelpers';
   import type {
     CatalogEntry,
+    CatalogVariant,
     DownloadProgress,
     InstalledModel,
     ModelRegionsResponse,
@@ -79,7 +80,14 @@
     pickPreselectedVariant,
     translateReason,
     normalizeRegionMode,
+    DEFAULT_REGION_MODE,
+    GLOBAL_REGION_MODE,
+    optimizeOffers,
+    variantHardwareLabel,
+    CHANNEL_PREVIEW,
+    type OptimizeOffer,
   } from '$lib/utils/variantSelection';
+  import OptimizeReviewDialog from '$lib/desktop/features/settings/components/OptimizeReviewDialog.svelte';
   import { safeArrayAccess } from '$lib/utils/security';
   import { loggers } from '$lib/utils/logger';
   import { t } from '$lib/i18n';
@@ -99,6 +107,7 @@
     XCircle,
     X,
     Check,
+    Sparkles,
     Settings as SettingsIcon,
   } from '@lucide/svelte';
 
@@ -250,8 +259,8 @@
   const liveModelRegion = $derived(normalizeRegionMode(birdnet?.modelRegion));
   const activeRegionSlug = $derived.by<string>(() => {
     if (!regionsData) return '';
-    if (liveModelRegion === 'global') return '';
-    if (liveModelRegion === 'auto')
+    if (liveModelRegion === GLOBAL_REGION_MODE) return '';
+    if (liveModelRegion === DEFAULT_REGION_MODE)
       return regionsData.locationConfigured ? regionsData.resolved.slug : '';
     return regionNameMap.has(liveModelRegion) ? liveModelRegion : '';
   });
@@ -320,7 +329,140 @@
   const hasBirdNetV3Model = $derived(installedModels.some(m => m.catalogId === 'birdnet-v3.0'));
 
   // ── Derived catalog views ─────────────────────────────────────────────
-  const installedEntries = $derived(catalog.filter(e => e.installed));
+  // Installed models, with the permanent built-in classifier (BirdNET v2.4) sorted
+  // first so it heads the list where the old hardcoded static card used to sit.
+  // JS sort is stable, so the remaining entries keep their catalog order.
+  const installedEntries = $derived(
+    catalog.filter(e => e.installed).sort((a, b) => Number(!!b.permanent) - Number(!!a.permanent))
+  );
+
+  // ── Within-model "optimize" offers ────────────────────────────────────
+  // Derived entirely client-side from the catalog: an installed model whose
+  // host-recommended variant differs from the installed one and is compatible.
+  const offers = $derived(optimizeOffers(catalog));
+  const offerByEntry = $derived(new Map(offers.map(o => [o.entry.id, o])));
+
+  // Session-scoped banner dismissal, guarded so a private-window/blocked
+  // sessionStorage never throws (see frontend/CLAUDE.md).
+  const OPTIMIZE_BANNER_DISMISS_KEY = 'birdnet.optimizeBannerDismissed';
+  function readOptimizeDismissed(): boolean {
+    try {
+      return sessionStorage.getItem(OPTIMIZE_BANNER_DISMISS_KEY) === '1';
+    } catch {
+      return false;
+    }
+  }
+  let optimizeBannerDismissed = $state(readOptimizeDismissed());
+  function dismissOptimizeBanner() {
+    optimizeBannerDismissed = true;
+    try {
+      sessionStorage.setItem(OPTIMIZE_BANNER_DISMISS_KEY, '1');
+    } catch {
+      /* sessionStorage unavailable: dismissal is in-memory only for this session */
+    }
+  }
+
+  // Review dialog + apply-flow state. Applies reuse the normal install/variant-swap
+  // path (startInstall); a within-model swap never changes the license, so no extra
+  // consent is needed beyond the review dialog itself.
+  let optimizeReviewOpen = $state(false);
+  let appliedOptimizeIds = $state(new Set<string>());
+  // Entry ids whose optimize swap failed this session (drives the dialog's per-row
+  // failed marker); the shared installError banner carries the detail.
+  let failedOptimizeIds = $state(new Set<string>());
+  // The entry id whose optimize swap is in flight (drives the dialog's per-row
+  // spinner) and the sequential apply-all queue of entry ids still to apply.
+  let optimizeApplyingId = $state<string | null>(null);
+  let applyAllQueue = $state<string[]>([]);
+  // Plain (untracked) marker so the completion effect can detect installingId
+  // transitioning back to null without re-triggering itself.
+  let lastInstallingId: string | null = null;
+
+  function openOptimizeReview() {
+    optimizeReviewOpen = true;
+  }
+  function closeOptimizeReview() {
+    optimizeReviewOpen = false;
+  }
+
+  // Apply one offer: start the within-model swap to its recommended variant. Clear
+  // any prior failed marker for it so a retry shows progress, not the stale failure.
+  function applyOffer(offer: OptimizeOffer) {
+    if (galleryActionInFlight) return;
+    if (failedOptimizeIds.has(offer.entry.id)) {
+      const next = new Set(failedOptimizeIds);
+      next.delete(offer.entry.id);
+      failedOptimizeIds = next;
+    }
+    optimizeApplyingId = offer.entry.id;
+    startInstall(offer.entry.id, offer.entry.name, offer.to.id);
+  }
+
+  // Apply every current offer, sequentially: queue their entry ids and start the
+  // first; the completion effect below advances the queue as each swap finishes.
+  function applyAllOffers() {
+    if (galleryActionInFlight) return;
+    applyAllQueue = offers.map(o => o.entry.id);
+    applyNextInQueue();
+  }
+  function applyNextInQueue() {
+    while (applyAllQueue.length > 0) {
+      const nextId = applyAllQueue[0];
+      const offer = offerByEntry.get(nextId);
+      if (offer && !appliedOptimizeIds.has(nextId)) {
+        optimizeApplyingId = nextId;
+        startInstall(offer.entry.id, offer.entry.name, offer.to.id);
+        return;
+      }
+      applyAllQueue = applyAllQueue.slice(1);
+    }
+  }
+
+  // Detect an optimize swap completing (installingId returns to null after being
+  // set to the applying id): mark it applied on success, then advance the batch
+  // queue. A failed swap (installError names the id) is not marked applied but still
+  // advances the queue so one failure does not stall the rest.
+  $effect(() => {
+    const current = installingId;
+    if (lastInstallingId !== null && current === null && lastInstallingId === optimizeApplyingId) {
+      const done = lastInstallingId;
+      optimizeApplyingId = null;
+      const failed = installError?.modelId === done;
+      if (failed) failedOptimizeIds = new Set(failedOptimizeIds).add(done);
+      else appliedOptimizeIds = new Set(appliedOptimizeIds).add(done);
+      if (applyAllQueue[0] === done) {
+        applyAllQueue = applyAllQueue.slice(1);
+        applyNextInQueue();
+      }
+    }
+    lastInstallingId = current;
+  });
+
+  // Choose which variant a card should describe: the installed variant on the
+  // Installed tab, the host-recommended (else default) variant on the Available tab.
+  // Returns null for a flat (variant-less) entry.
+  function displayVariantFor(
+    entry: CatalogEntry,
+    mode: 'available' | 'installed'
+  ): CatalogVariant | null {
+    const variants = entry.variants ?? [];
+    if (variants.length === 0) return null;
+    if (mode === 'installed') {
+      return variants.find(v => v.id === entry.installedVariantId) ?? null;
+    }
+    return (
+      variants.find(v => v.id === entry.recommendedVariantId) ??
+      variants.find(v => v.default) ??
+      null
+    );
+  }
+
+  // The region display for a variant-bearing entry's card: the variant's region
+  // name (localized), or the "Global" label when the variant is global.
+  function displayRegionName(variant: CatalogVariant | null): string {
+    if (!variant?.region) return t('analysis.gallery.regionGlobal');
+    return regionNameMap.get(variant.region) ?? variant.region;
+  }
   const availableWildlife = $derived(
     catalog.filter(e => !e.installed && e.category === 'wildlife')
   );
@@ -1790,13 +1932,13 @@
     >
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <NumberField
-          label={t('settings.main.fields.tensorflowThreads.label')}
+          label={t('settings.main.fields.inferenceThreads.label')}
           value={birdnet?.threads ?? 0}
           onUpdate={value => updateBirdnetSetting('threads', value)}
           min={0}
           max={32}
           step={1}
-          helpText={t('settings.main.fields.tensorflowThreads.helpText')}
+          helpText={t('settings.main.fields.inferenceThreads.helpText')}
           disabled={store.isLoading || store.isSaving}
         />
       </div>
@@ -1927,6 +2069,35 @@
         </p>
       {/if}
 
+      <!-- Optimize banner: one or more installed models have a faster or
+           better-matched build available for this host. Dismissible for the
+           session; opens the review dialog. -->
+      {#if offers.length > 0 && !optimizeBannerDismissed}
+        <div
+          class="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-[var(--color-primary)]/30 bg-[var(--color-primary)]/10 px-4 py-3 text-sm"
+          role="status"
+        >
+          <Sparkles class="size-5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
+          <p class="min-w-0 flex-1 font-medium text-[var(--color-base-content)]">
+            {t('analysis.gallery.optimize.bannerTitle', { count: offers.length })}
+          </p>
+          <button
+            type="button"
+            onclick={openOptimizeReview}
+            class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs font-medium text-[var(--color-primary-content)] transition-colors hover:bg-[var(--color-primary)]/80"
+          >
+            {t('analysis.gallery.optimize.review')}
+          </button>
+          <button
+            type="button"
+            onclick={dismissOptimizeBanner}
+            class="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-base-200)] px-3 py-1.5 text-xs font-medium text-[var(--color-base-content)] transition-colors hover:bg-[var(--color-base-300)]"
+          >
+            {t('analysis.gallery.optimize.dismiss')}
+          </button>
+        </div>
+      {/if}
+
       <SettingsTabs tabs={galleryTabs} bind:activeTab={galleryTab} showActions={false} />
     </SettingsSection>
 
@@ -2003,6 +2174,43 @@
   </div>
 {/snippet}
 
+<!-- Variant-aware metadata rows for a gallery card: region, species count, and a
+     friendly hardware chip, all describing the RELEVANT variant (the installed one
+     on the Installed tab, the recommended one on the Available tab) rather than the
+     entry-level globals. Flat (variant-less) entries keep the entry region/species. -->
+{#snippet cardMetaRows(entry: CatalogEntry, mode: 'available' | 'installed')}
+  {@const dv = displayVariantFor(entry, mode)}
+  {#if entry.variants && entry.variants.length > 0}
+    <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.regionLabel')}</div>
+    <div class="text-[var(--color-base-content)]/80">{displayRegionName(dv)}</div>
+    <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.speciesLabel')}</div>
+    <div class="text-[var(--color-base-content)]/80">
+      {t('analysis.gallery.species', { count: dv?.speciesCount ?? entry.speciesCount })}
+    </div>
+    <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.hardwareLabel')}</div>
+    <div>
+      {#if dv}
+        <span
+          class="inline-flex items-center gap-1 rounded-full bg-[var(--color-base-300)] px-2 py-0.5 text-xs text-[var(--color-base-content)]"
+        >
+          {variantHardwareLabel(dv)}
+        </span>
+      {:else}
+        <span class="text-[var(--color-base-content)]/80">-</span>
+      {/if}
+    </div>
+  {:else}
+    {#if entry.region}
+      <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.regionLabel')}</div>
+      <div class="text-[var(--color-base-content)]/80">{entry.region}</div>
+    {/if}
+    <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.speciesLabel')}</div>
+    <div class="text-[var(--color-base-content)]/80">
+      {t('analysis.gallery.species', { count: entry.speciesCount })}
+    </div>
+  {/if}
+{/snippet}
+
 {#snippet installedTabContent()}
   <div class="space-y-4">
     {#if loading}
@@ -2016,38 +2224,10 @@
       {@render catalogErrorBanner()}
     {:else}
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <!-- Built-in BirdNET model (always present) -->
-        <div
-          class="rounded-lg border border-[var(--color-base-300)] bg-[var(--color-base-200)] p-4"
-        >
-          <div class="flex items-start gap-3">
-            <img src={logoBirdnet} alt="" class="size-10 shrink-0 rounded-lg" />
-            <div class="min-w-0 flex-1">
-              <h4 class="text-sm font-semibold text-[var(--color-base-content)]">BirdNET v2.4</h4>
-              <p class="mt-0.5 line-clamp-2 text-xs text-[var(--color-base-content)]/80">
-                {t('analysis.gallery.builtInDescription')}
-              </p>
-              <p class="mt-1 text-xs text-[var(--color-base-content)]/80">
-                Cornell Lab of Ornithology / Chemnitz University
-              </p>
-            </div>
-          </div>
-          <div
-            class="mt-3 flex items-center justify-between border-t border-[var(--color-base-300)] pt-3"
-          >
-            <div class="flex items-center gap-2 text-xs text-[var(--color-base-content)]/80">
-              <span>v2.4</span>
-              <span>{t('analysis.gallery.species', { count: '6,000+' })}</span>
-            </div>
-            <span
-              class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/15 px-2.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
-            >
-              {t('analysis.gallery.builtIn')}
-            </span>
-          </div>
-        </div>
-
-        <!-- Installed additional models -->
+        <!-- Installed models. The permanent built-in classifier (BirdNET v2.4) sorts
+             first and renders a built-in badge instead of Remove/Reinstall; every
+             installed model with a better host-recommended variant shows an Optimize
+             action. -->
         {#each installedEntries as entry (entry.id)}
           {@const isDeleting = deletingId === entry.id}
           {@const isReinstalling = reinstallingId === entry.id}
@@ -2058,6 +2238,10 @@
                button's own running state. -->
           {@const reinstallPaused = galleryActionInFlight && !isReinstalling}
           {@const removePaused = galleryActionInFlight && !isDeleting}
+          {@const offer = offerByEntry.get(entry.id)}
+          {@const isSwapping = installingId === entry.id}
+          {@const optimizePaused = galleryActionInFlight && !isSwapping}
+          {@const cardProgress = reinstallProgress ?? (isSwapping ? downloadProgress : null)}
           {@const logo = getModelLogo(entry.id)}
           <div
             class="rounded-lg border border-[var(--color-base-300)] bg-[var(--color-base-200)] p-4"
@@ -2077,7 +2261,26 @@
                 </div>
               {/if}
               <div class="min-w-0 flex-1">
-                <h4 class="text-sm font-semibold text-[var(--color-base-content)]">{entry.name}</h4>
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <h4 class="text-sm font-semibold text-[var(--color-base-content)]">
+                    {entry.name}
+                  </h4>
+                  {#if entry.channel === CHANNEL_PREVIEW}
+                    <span
+                      class="inline-flex items-center rounded-full bg-[var(--color-warning)]/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-[var(--color-warning)]"
+                    >
+                      {t('analysis.gallery.preview.badge')}
+                    </span>
+                  {/if}
+                  {#if entry.buildLabel}
+                    <span class="font-mono text-xs text-[var(--color-base-content)]/70">
+                      {t('analysis.gallery.preview.buildLabel', {
+                        version: entry.version,
+                        build: entry.buildLabel,
+                      })}
+                    </span>
+                  {/if}
+                </div>
                 <p class="mt-0.5 line-clamp-2 text-xs text-[var(--color-base-content)]/80">
                   {entry.description}
                 </p>
@@ -2096,20 +2299,24 @@
               </div>
             </div>
             <!-- Progress bar (shown during reinstall, not for companion entries) -->
-            {#if reinstallProgress}
+            {#if cardProgress}
               <div class="mt-3 space-y-1.5">
-                {#if reinstallProgress.status === 'complete'}
+                {#if cardProgress.status === 'complete'}
                   <div
                     class="flex items-center gap-2 text-sm font-medium text-[var(--color-success)]"
                   >
                     <Check class="h-4 w-4" />
-                    <span>{t('analysis.gallery.reinstallComplete')}</span>
+                    <span
+                      >{isSwapping
+                        ? t('analysis.gallery.progress.complete')
+                        : t('analysis.gallery.reinstallComplete')}</span
+                    >
                   </div>
                 {:else}
                   <div class="h-2 w-full overflow-hidden rounded-full bg-[var(--color-base-300)]">
                     <div
                       class="h-full rounded-full bg-[var(--color-primary)] transition-all duration-300"
-                      style:width="{progressPercent(reinstallProgress)}%"
+                      style:width="{progressPercent(cardProgress)}%"
                     ></div>
                   </div>
                   <div
@@ -2117,15 +2324,15 @@
                   >
                     <span>
                       {statusLabel(
-                        reinstallProgress.status
-                      )}{#if reinstallProgress.status === 'downloading' && reinstallProgress.totalFiles > 1}
-                        ({reinstallProgress.currentFile}/{reinstallProgress.totalFiles})
+                        cardProgress.status
+                      )}{#if cardProgress.status === 'downloading' && cardProgress.totalFiles > 1}
+                        ({cardProgress.currentFile}/{cardProgress.totalFiles})
                       {/if}
                     </span>
-                    {#if reinstallProgress.status === 'downloading' && reinstallProgress.totalBytes > 0}
+                    {#if cardProgress.status === 'downloading' && cardProgress.totalBytes > 0}
                       <span>
-                        {formatBytes(reinstallProgress.downloadedBytes)} / {formatBytes(
-                          reinstallProgress.totalBytes
+                        {formatBytes(cardProgress.downloadedBytes)} / {formatBytes(
+                          cardProgress.totalBytes
                         )}
                       </span>
                     {/if}
@@ -2152,18 +2359,7 @@
             <div
               class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-[var(--color-base-300)] pt-3 text-xs"
             >
-              {#if entry.region}
-                <div class="text-[var(--color-base-content)]/80">
-                  {t('analysis.gallery.regionLabel')}
-                </div>
-                <div class="text-[var(--color-base-content)]/80">{entry.region}</div>
-              {/if}
-              <div class="text-[var(--color-base-content)]/80">
-                {t('analysis.gallery.speciesLabel')}
-              </div>
-              <div class="text-[var(--color-base-content)]/80">
-                {t('analysis.gallery.species', { count: entry.speciesCount })}
-              </div>
+              {@render cardMetaRows(entry, 'installed')}
               <div class="text-[var(--color-base-content)]/80">
                 {t('analysis.gallery.license.license')}
               </div>
@@ -2197,66 +2393,114 @@
                 </span>
               </div>
             {/if}
-            <!-- Action footer -->
+            <!-- Optimize badge: a faster/better-matched build is available here. -->
+            {#if offer}
+              <div class="mt-2">
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/15 px-2.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
+                  title={t('analysis.gallery.optimize.badgeTitle')}
+                >
+                  <Sparkles class="size-3" aria-hidden="true" />
+                  {t('analysis.gallery.optimize.badgeTitle')}
+                </span>
+              </div>
+            {/if}
+            <!-- Action footer. The permanent built-in classifier shows a built-in
+                 badge instead of Remove and hides Reinstall; only its variant can be
+                 swapped (the Optimize action). -->
             <div class="mt-3 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onclick={e => {
-                  if (reinstallPaused) {
-                    e.preventDefault();
-                    return;
-                  }
-                  handleReinstall(entry);
-                }}
-                disabled={isReinstalling}
-                aria-disabled={reinstallPaused ? 'true' : undefined}
-                aria-describedby={reinstallPaused ? GALLERY_ACTION_STATUS_ID : undefined}
-                title={reinstallPaused ? t('analysis.gallery.actionInProgress') : undefined}
-                class={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-base-content)]/80 transition-colors',
-                  isReinstalling || reinstallPaused
-                    ? 'opacity-50'
-                    : 'hover:bg-[var(--color-base-300)]',
-                  reinstallPaused && 'cursor-not-allowed'
-                )}
-                aria-label="{t('analysis.gallery.reinstall')} {entry.name}"
-              >
-                {#if isReinstalling}
-                  <Loader2 class="size-3.5 animate-spin" />
-                  {t('analysis.gallery.reinstalling')}
-                {:else}
-                  <RefreshCw class="size-3.5" />
-                  {t('analysis.gallery.reinstall')}
-                {/if}
-              </button>
-              <button
-                type="button"
-                onclick={e => {
-                  if (removePaused) {
-                    e.preventDefault();
-                    return;
-                  }
-                  openRemoveDialog(entry);
-                }}
-                disabled={isDeleting}
-                aria-disabled={removePaused ? 'true' : undefined}
-                aria-describedby={removePaused ? GALLERY_ACTION_STATUS_ID : undefined}
-                title={removePaused ? t('analysis.gallery.actionInProgress') : undefined}
-                class={cn(
-                  'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-error)] transition-colors',
-                  isDeleting || removePaused ? 'opacity-50' : 'hover:bg-[var(--color-error)]/10',
-                  removePaused && 'cursor-not-allowed'
-                )}
-                aria-label="{t('analysis.gallery.remove')} {entry.name}"
-              >
-                {#if isDeleting}
-                  <Loader2 class="size-3.5 animate-spin" />
-                  {t('analysis.gallery.removing')}
-                {:else}
-                  <Trash2 class="size-3.5" />
-                  {t('analysis.gallery.remove')}
-                {/if}
-              </button>
+              {#if offer}
+                <button
+                  type="button"
+                  onclick={e => {
+                    if (optimizePaused) {
+                      e.preventDefault();
+                      return;
+                    }
+                    openLicenseDialog(entry);
+                  }}
+                  disabled={isSwapping}
+                  aria-disabled={optimizePaused ? 'true' : undefined}
+                  aria-describedby={optimizePaused ? GALLERY_ACTION_STATUS_ID : undefined}
+                  title={optimizePaused ? t('analysis.gallery.actionInProgress') : undefined}
+                  class={cn(
+                    'inline-flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-primary-content)] transition-colors',
+                    optimizePaused
+                      ? 'cursor-not-allowed opacity-50'
+                      : 'hover:bg-[var(--color-primary)]/80'
+                  )}
+                  aria-label="{t('analysis.gallery.optimize.swap')} {entry.name}"
+                >
+                  <Sparkles class="size-3.5" aria-hidden="true" />
+                  {t('analysis.gallery.optimize.swap')}
+                </button>
+              {/if}
+              {#if entry.permanent}
+                <span
+                  class="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)]/15 px-2.5 py-0.5 text-xs font-medium text-[var(--color-primary)]"
+                >
+                  {t('analysis.gallery.builtIn')}
+                </span>
+              {:else}
+                <button
+                  type="button"
+                  onclick={e => {
+                    if (reinstallPaused) {
+                      e.preventDefault();
+                      return;
+                    }
+                    handleReinstall(entry);
+                  }}
+                  disabled={isReinstalling}
+                  aria-disabled={reinstallPaused ? 'true' : undefined}
+                  aria-describedby={reinstallPaused ? GALLERY_ACTION_STATUS_ID : undefined}
+                  title={reinstallPaused ? t('analysis.gallery.actionInProgress') : undefined}
+                  class={cn(
+                    'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-base-content)]/80 transition-colors',
+                    isReinstalling || reinstallPaused
+                      ? 'opacity-50'
+                      : 'hover:bg-[var(--color-base-300)]',
+                    reinstallPaused && 'cursor-not-allowed'
+                  )}
+                  aria-label="{t('analysis.gallery.reinstall')} {entry.name}"
+                >
+                  {#if isReinstalling}
+                    <Loader2 class="size-3.5 animate-spin" />
+                    {t('analysis.gallery.reinstalling')}
+                  {:else}
+                    <RefreshCw class="size-3.5" />
+                    {t('analysis.gallery.reinstall')}
+                  {/if}
+                </button>
+                <button
+                  type="button"
+                  onclick={e => {
+                    if (removePaused) {
+                      e.preventDefault();
+                      return;
+                    }
+                    openRemoveDialog(entry);
+                  }}
+                  disabled={isDeleting}
+                  aria-disabled={removePaused ? 'true' : undefined}
+                  aria-describedby={removePaused ? GALLERY_ACTION_STATUS_ID : undefined}
+                  title={removePaused ? t('analysis.gallery.actionInProgress') : undefined}
+                  class={cn(
+                    'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium text-[var(--color-error)] transition-colors',
+                    isDeleting || removePaused ? 'opacity-50' : 'hover:bg-[var(--color-error)]/10',
+                    removePaused && 'cursor-not-allowed'
+                  )}
+                  aria-label="{t('analysis.gallery.remove')} {entry.name}"
+                >
+                  {#if isDeleting}
+                    <Loader2 class="size-3.5 animate-spin" />
+                    {t('analysis.gallery.removing')}
+                  {:else}
+                    <Trash2 class="size-3.5" />
+                    {t('analysis.gallery.remove')}
+                  {/if}
+                </button>
+              {/if}
             </div>
           </div>
         {/each}
@@ -2302,9 +2546,26 @@
         </div>
       {/if}
       <div class="min-w-0 flex-1">
-        <h4 class="text-sm font-semibold text-[var(--color-base-content)]">
-          {entry.name}
-        </h4>
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <h4 class="text-sm font-semibold text-[var(--color-base-content)]">
+            {entry.name}
+          </h4>
+          {#if entry.channel === CHANNEL_PREVIEW}
+            <span
+              class="inline-flex items-center rounded-full bg-[var(--color-warning)]/15 px-2 py-0.5 text-xs font-bold uppercase tracking-wide text-[var(--color-warning)]"
+            >
+              {t('analysis.gallery.preview.badge')}
+            </span>
+          {/if}
+          {#if entry.buildLabel}
+            <span class="font-mono text-xs text-[var(--color-base-content)]/70">
+              {t('analysis.gallery.preview.buildLabel', {
+                version: entry.version,
+                build: entry.buildLabel,
+              })}
+            </span>
+          {/if}
+        </div>
         <p class="mt-0.5 line-clamp-2 text-xs text-[var(--color-base-content)]/80">
           {entry.description}
         </p>
@@ -2322,6 +2583,23 @@
         {/if}
       </div>
     </div>
+
+    <!-- Developer-preview notice: v3.0 and any future preview build are flagged as
+         not the final GA release so users know what they are installing. -->
+    {#if entry.channel === CHANNEL_PREVIEW}
+      <div
+        class="mt-3 flex items-start gap-2 rounded-lg bg-[var(--color-warning)]/10 p-3 text-xs"
+        role="note"
+      >
+        <TriangleAlert
+          class="h-4 w-4 shrink-0 mt-0.5 text-[var(--color-warning)]"
+          aria-hidden="true"
+        />
+        <span class="text-[var(--color-base-content)]"
+          >{t('analysis.gallery.preview.cardNotice')}</span
+        >
+      </div>
+    {/if}
 
     <!-- Progress bar (shown during install, not for companion entries) -->
     {#if progress}
@@ -2378,14 +2656,7 @@
     <div
       class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 border-t border-[var(--color-base-300)] pt-3 text-xs"
     >
-      {#if entry.region}
-        <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.regionLabel')}</div>
-        <div class="text-[var(--color-base-content)]">{entry.region}</div>
-      {/if}
-      <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.speciesLabel')}</div>
-      <div class="text-[var(--color-base-content)]">
-        {t('analysis.gallery.species', { count: entry.speciesCount })}
-      </div>
+      {@render cardMetaRows(entry, 'available')}
       <div class="text-[var(--color-base-content)]/80">{t('analysis.gallery.license.license')}</div>
       <div>
         {#if entry.commercialUse}
@@ -2552,7 +2823,7 @@
 <!-- License Acceptance Dialog -->
 <dialog
   bind:this={licenseDialogRef}
-  class="m-auto w-full max-w-md rounded-xl border border-[var(--color-base-300)] bg-[var(--color-base-100)] p-0 shadow-xl backdrop:bg-black/50"
+  class="m-auto w-full max-w-3xl rounded-xl border border-[var(--color-base-300)] bg-[var(--color-base-100)] p-0 shadow-xl backdrop:bg-black/50"
   aria-labelledby="license-dialog-title"
 >
   {#if licenseModel}
@@ -2560,6 +2831,22 @@
       <h3 id="license-dialog-title" class="text-lg font-semibold text-[var(--color-base-content)]">
         {t('analysis.gallery.license.title')}
       </h3>
+      {#if licenseModel.channel === CHANNEL_PREVIEW}
+        <div
+          class="mt-4 flex items-start gap-2 rounded-lg bg-[var(--color-warning)]/10 p-3 text-sm"
+          role="note"
+        >
+          <TriangleAlert
+            class="h-4 w-4 shrink-0 mt-0.5 text-[var(--color-warning)]"
+            aria-hidden="true"
+          />
+          <span class="text-[var(--color-base-content)]">
+            {t('analysis.gallery.preview.dialogNotice', {
+              build: licenseModel.buildLabel ?? licenseModel.version,
+            })}
+          </span>
+        </div>
+      {/if}
       <div class="mt-4 space-y-3">
         <table
           class="w-full overflow-hidden rounded-lg border-separate border-spacing-0 bg-[var(--color-base-200)] text-sm"
@@ -2721,12 +3008,14 @@
 
       <div class="mt-6 flex justify-end gap-3">
         <button
+          type="button"
           onclick={closeRemoveDialog}
           class="rounded-lg border border-[var(--color-base-300)] px-4 py-2 text-sm font-medium text-[var(--color-base-content)] hover:bg-[var(--color-base-200)] transition-colors"
         >
           {t('common.cancel')}
         </button>
         <button
+          type="button"
           onclick={handleUninstall}
           class="inline-flex items-center gap-2 rounded-lg bg-[var(--color-error)] px-4 py-2 text-sm font-medium text-white hover:bg-[var(--color-error)]/80 transition-colors"
         >
@@ -2737,6 +3026,20 @@
     </div>
   {/if}
 </dialog>
+
+<!-- Optimize Review Dialog -->
+<OptimizeReviewDialog
+  open={optimizeReviewOpen}
+  {offers}
+  regionNames={regionNameMap}
+  inFlight={galleryActionInFlight}
+  applyingId={optimizeApplyingId}
+  appliedIds={appliedOptimizeIds}
+  failedIds={failedOptimizeIds}
+  onApply={applyOffer}
+  onApplyAll={applyAllOffers}
+  onClose={closeOptimizeReview}
+/>
 
 <!-- Range Filter Species Modal -->
 {#if rangeFilterState.showModal}

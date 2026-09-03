@@ -150,15 +150,7 @@
         },
         "encryption": {
           "type": "boolean",
-          "description": "If true, enables encryption for backup archives. Requires EncryptionKey to be set."
-        },
-        "encryption_key": {
-          "type": "string",
-          "description": "Base64-encoded encryption key used for AES-256-GCM encryption of backup archives. Must be kept secret and safe."
-        },
-        "sanitize_config": {
-          "type": "boolean",
-          "description": "If true, sensitive information (like passwords, API keys) will be removed from the configuration file copy that is included in the backup archive."
+          "description": "If true, enables encryption for backup archives. The AES-256-GCM key is generated and managed automatically in encryption.key in the config directory; there is no key to configure."
         },
         "retention": {
           "$ref": "#/$defs/BackupRetention",
@@ -1547,7 +1539,11 @@
         },
         "confidence": {
           "type": "number",
-          "description": "confidence threshold for human detection"
+          "description": "confidence threshold for label-based human detection"
+        },
+        "vad": {
+          "$ref": "#/$defs/VADSettings",
+          "description": "dedicated Silero VAD speech gate that augments the label-based filter"
         }
       },
       "additionalProperties": false,
@@ -2663,6 +2659,25 @@
       "additionalProperties": false,
       "type": "object",
       "description": "UltrasonicFilterConfig controls the post-detection ultrasonic validation filter for bat detections."
+    },
+    "VADSettings": {
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "true to enable the VAD speech gate (opt-in, default false)"
+        },
+        "threshold": {
+          "type": "number",
+          "description": "speech-probability gate in (0,1]; default 0.35"
+        },
+        "modelpath": {
+          "type": "string",
+          "description": "optional override for the embedded silero .onnx; must be a sequence-export model (inputs input/h/c), not the stock upstream frame model; empty uses the embedded model"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "VADSettings configures the Silero voice-activity-detection gate that augments the label-based privacy filter."
     },
     "VideoEmbedConfig": {
       "properties": {

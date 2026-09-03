@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} er installeret for {oldRegion}, men din nye placering svarer til {newRegion}. Du kan skifte varianter fra modelgalleriet i Indstillinger.",
         "staleGlobalMessage": "{modelName} er installeret for {oldRegion}, men din nye placering er uden for dens dækning. Du kan skifte til den globale variant fra modelgalleriet i Indstillinger."
       },
+      "modelPath": {
+        "reconciledTitle": "Modelfilstier repareret for {modelName}",
+        "reconciledMessage": "De konfigurerede filstier for {modelName} var forældede og er blevet repareret, så de matcher den installerede model på {modelPath}.",
+        "substitutedTitle": "Den konfigurerede modelfil for {modelName} blev ikke fundet",
+        "substitutedMessage": "Modelfilen, der er konfigureret til {modelName}, blev ikke fundet på disken, så den installerede model på {modelPath} bruges i stedet. Din konfiguration blev ikke ændret.",
+        "unreadableTitle": "Den konfigurerede modelfil for {modelName} kunne ikke læses",
+        "unreadableMessage": "Modelfilen, der er konfigureret til {modelName}, findes, men kunne ikke læses, så den installerede model på {modelPath} bruges i stedet. Din konfiguration blev ikke ændret. Kontrollér filens tilladelser, og at dens lager er monteret.",
+        "builtinMessage": "Modelfilen, der er konfigureret til {modelName}, blev ikke fundet på disken, og der er ingen installeret model tilgængelig til at erstatte den, så den indbyggede model bruges i stedet. Din konfiguration blev ikke ændret.",
+        "notRegisteredTitle": "Ingen model analyserer {sourceName}",
+        "notRegisteredMessage": "Ingen lyd når {models} på lydkilden \"{sourceName}\", så der produceres ingen detektioner. Åbn modelgalleriet i Indstillinger for at tjekke status."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Aktuel værdi: {value}% (grænse: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "AI-modeller & Inferens",
       "loading": "Indlæser inferensstatus",
       "error": "Kunne ikke indlæse inferensstatus",
+      "vad": {
+        "section": "Privatlivsbeskyttelse",
+        "title": "Silero VAD",
+        "active": "Aktiv",
+        "activeHelp": "Modellen til taledetektering er indlæst og bedømmer lyd.",
+        "idle": "Inaktiv",
+        "idleHelp": "Aktiveret og klar; modellen indlæses, når det første lydsegment bedømmes.",
+        "disabled": "Deaktiveret",
+        "disabledHelp": "Privatlivsbeskyttelse er slået fra i indstillingerne for privatlivsfilteret.",
+        "unavailable": "Ingen model",
+        "unavailableHelp": "Der er ingen model til taledetektering tilgængelig i denne build. Angiv en sti til en VAD-model i indstillingerne for privatlivsfilteret, eller brug en build med en indlejret model.",
+        "description": "Silero VAD er en specialiseret akustisk model, der registrerer menneskelig tale. Den driver privatlivsfilteret og kasserer lyd, når der er tale til stede, så stemmer holdes ude af dine optagelser.",
+        "threshold": "Tærskelværdi",
+        "speechHits": "Taletræffere",
+        "recentTitle": "Nylig tale",
+        "recentEmpty": "Ingen tale registreret endnu",
+        "colWhen": "Tidspunkt",
+        "colProbability": "Sandsynlighed",
+        "colSource": "Kilde"
+      },
       "sectionHardware": "Hardware",
       "sectionBackends": "Inferens-backends",
       "sectionModels": "Modeller",
@@ -1766,6 +1797,8 @@
       "sources": "Lydkilder",
       "noSources": "Ingen kilder tilsluttet",
       "primaryFallback": "primær (fallback)",
+      "sourceNotRunning": "analyserer ikke",
+      "sourceNotRunningTooltip": "Denne kilde er tildelt modellen i indstillingerne, men dens lyd når ikke modellen, så den producerer ingen detektioner. Åbn modelgalleriet i Indstillinger for at tjekke dens status.",
       "notMeasured": "n/a",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Landestandard",
           "helpText": "Landestandard for oversatte artsfællesnavne."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU-tråde",
-          "helpText": "Antal CPU-tråde. Sæt til 0 for at bruge alle tilgængelige tråde."
+        "inferenceThreads": {
+          "label": "CPU-tråde til inferens",
+          "helpText": "Antal CPU-tråde, der bruges til modelinferens. Sæt til 0 for at bruge alle tilgængelige tråde. Har ingen effekt på modeller, der kører på en GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Aktivér privatlivsfiltrering",
         "disabled": "Privatlivsfiltrering er deaktiveret",
         "confidenceLabel": "Konfidenstærskel for menneskelig detektion",
-        "confidenceHelp": "Indstil konfidensniveauet for detektering af menneskelige stemmer. Lavere værdier gør filteret mere følsomt"
+        "confidenceHelp": "Indstil konfidensniveauet for detektering af menneskelige stemmer. Lavere værdier gør filteret mere følsomt",
+        "vadEnable": "Aktivér Privatlivsbeskyttelse (Silero VAD)",
+        "vadHelp": "Kører en dedikeret neural taledetekteringsmodel sammen med klassifikatoren for robust talefiltrering. Forbruger yderligere systemressourcer (ca. 20-30 MB RAM og CPU-inferens pr. segment).",
+        "vadThresholdLabel": "Tærskel for privatlivsbeskyttelse",
+        "vadThresholdHelp": "Følsomhedstærskel for taleaktivitetsdetektoren (standard 0,35). Lavere værdier gør filtret mere følsomt over for svag eller fjern tale."
       },
       "falsePositivePrevention": {
         "title": "Forebyggelse af falske positiver",
@@ -5317,21 +5354,25 @@
         "title": "Modelregion",
         "modeAuto": "Automatisk",
         "modeAutoHint": "Vælg den bedste regionale variant ud fra stationsplaceringen",
-        "modeGlobal": "Global",
-        "modeGlobalHint": "Brug altid den verdensomspændende model",
-        "pinLabel": "Fastgør en specifik region",
-        "pinnedBadge": "Fastgjort",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Fastgør {region}",
         "switchToAuto": "Skift til automatisk",
         "loading": "Indlæser regioner...",
         "loadFailed": "Kunne ikke indlæse regionsdata",
-        "mapLoading": "Indlæser dækningskort...",
         "mapUnavailable": "Dækningskort ikke tilgængeligt",
         "mapAria": "Dækningskort for {region}",
-        "countriesCore": "Dækker: {countries}",
-        "countriesPartial": "Delvis dækning: {countries}",
-        "countriesMore": "og {count} mere",
-        "countriesLess": "Vis færre",
         "why": {
           "noLocation": "Automatisk valg kræver en stationsplacering. Indstil den i Hovedindstillinger; den globale model bruges indtil da.",
           "outsideCoverage": "Din placering er uden for alle regionale modellers dækning, så den globale model bruges.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Regionale varianter vises for {region}, angivet af valget af modelregion ovenfor",
         "regionContextNone": "Regionale varianter er tilgængelige. Vælg en region i valget af modelregion ovenfor, eller vis alle varianter.",
         "otherRegions": "Andre regioner",
+        "filterPlaceholder": "Filtrer regioner",
+        "filterAria": "Filtrer regionstilpassede versioner",
+        "filterNoMatch": "Ingen regioner matcher \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Indlæser modeller...",
       "retry": "Prøv igen",
       "builtIn": "Indbygget",
-      "builtInDescription": "Indbygget fuglearts-klassifikator fra BirdNET-teamet.",
       "species": "{count} arter",
       "install": "Installer",
       "installing": "Installerer...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Geninstallerer...",
       "reinstallComplete": "Filer verificeret succesfuldt",
       "geomodelBadge": "Inkluderer BirdNET v3.0 geomodel",
-      "entryIncompatible": "Denne model er ikke tilgængelig på dette system."
+      "preview": {
+        "badge": "Forhåndsvisning",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Forhåndsvisning til udviklere, ikke den endelige udgivelse. Dette er en tidlig version til test; resultaterne kan ændre sig inden den stabile version.",
+        "dialogNotice": "Du er ved at installere en forhåndsvisning til udviklere ({build}). Den er fin til at afprøve, men anbefales endnu ikke som din eneste klassifikator."
+      },
+      "entryIncompatible": "Denne model er ikke tilgængelig på dette system.",
+      "regionGlobal": "Global",
+      "hardwareLabel": "Hardware",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# model kan køre hurtigere på din hardware} other {# modeller kan køre hurtigere på din hardware}}",
+        "review": "Gennemgå",
+        "dismiss": "Afvis",
+        "badgeTitle": "Et hurtigere build er tilgængeligt til din hardware",
+        "swap": "Optimer",
+        "dialogTitle": "Optimer dine modeller",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} til {to}",
+        "apply": "Anvend",
+        "applyAll": "Anvend alle",
+        "applying": "Anvender...",
+        "applied": "Anvendt",
+        "applyFailed": "Kunne ikke anvende",
+        "upToDate": "Alle dine modeller er allerede optimeret til denne hardware.",
+        "licenseNote": "Udskiftning forbliver inden for den samme model, så licensen ændres ikke."
+      }
     },
     "bird": {
       "title": "Fugleregistrering",

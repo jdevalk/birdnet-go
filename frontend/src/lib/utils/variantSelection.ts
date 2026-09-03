@@ -103,6 +103,9 @@ export function variantLabel(
   variant: CatalogVariant,
   regionNames?: ReadonlyMap<string, string>
 ): string {
+  // The embedded baseline carries no precision or descriptive id ("builtin"), so
+  // give it its own localized label rather than showing the raw id.
+  if (variant.builtIn) return t('analysis.gallery.builtIn');
   const precision = variant.precision?.toUpperCase() ?? '';
   // Derive the non-precision descriptor from the id. Strip any "@region" suffix
   // first (the region is appended separately) so a regional id like
@@ -127,11 +130,159 @@ export function variantLabel(
 }
 
 /**
+ * The hardware-class token vocabulary, kept in lockstep with the server's
+ * authoritative set (`internal/api/v2/models/models.go` variantHardwareClass) and
+ * used as the `analysis.gallery.hardware.<token>` i18n key suffix. Centralized so the
+ * mapper, the label resolver, and their tests reference one source of truth rather
+ * than repeating the raw token strings. `builtIn` is the embedded baseline.
+ */
+export const HARDWARE_CLASS = {
+  builtIn: 'builtIn',
+  gpuNvidia: 'gpuNvidia',
+  gpuIntel: 'gpuIntel',
+  amd64Cpu: 'amd64Cpu',
+  arm64Cpu: 'arm64Cpu',
+  armCpu: 'armCpu',
+  cpu: 'cpu',
+} as const;
+
+/**
+ * A hardware-class token: either server-emitted (any of HARDWARE_CLASS) or from the
+ * client-side fallback below. The fallback emits only the subset it can derive from
+ * the request: it cannot make the CPU arch explicit, so it never returns
+ * amd64Cpu/arm64Cpu. Both paths resolve the same `analysis.gallery.hardware.<token>`
+ * key set.
+ */
+export type VariantHardwareClass = (typeof HARDWARE_CLASS)[keyof typeof HARDWARE_CLASS];
+
+/**
+ * The recommended (or otherwise chosen) execution backend token for a variant,
+ * taken from its recommendation reasons. Prefers the `backend.recommended` reason,
+ * then any reason carrying a `backend` arg. Returns undefined when the request was
+ * not eligible for recommendations (no reasons), so callers fall back to id parsing.
+ */
+function chosenBackendToken(variant: CatalogVariant): string | undefined {
+  const reasons = variant.reasons ?? [];
+  const recommended = reasons.find(r => r.code === 'backend.recommended' && r.args?.backend);
+  if (recommended?.args?.backend) return recommended.args.backend;
+  const anyBackend = reasons.find(r => r.args?.backend);
+  return anyBackend?.args?.backend;
+}
+
+/**
+ * Derive a friendly hardware class for a variant entirely client-side. The BuiltIn
+ * baseline is its own class. Otherwise the chosen backend token decides: a CUDA or
+ * TensorRT path is a discrete GPU, an OpenVINO GPU path is an Intel GPU. When no
+ * backend token is available (an unauthenticated request carries no reasons), the
+ * variant id is the fallback: an "arm" descriptor marks an ARM CPU build, everything
+ * else is a generic CPU. Precision alone is NOT used: an INT8 build is not
+ * necessarily ARM (a future x86 INT8 variant would be mislabeled), so only the
+ * explicit "arm" token in the id classifies as ARM.
+ */
+export function variantHardwareClass(variant: CatalogVariant): VariantHardwareClass {
+  if (variant.builtIn) return HARDWARE_CLASS.builtIn;
+  const backend = chosenBackendToken(variant);
+  if (backend === 'cuda' || backend === 'tensorrt') return HARDWARE_CLASS.gpuNvidia;
+  if (backend === 'openvino-gpu') return HARDWARE_CLASS.gpuIntel;
+  if (variant.id.toLowerCase().includes('arm')) return HARDWARE_CLASS.armCpu;
+  return HARDWARE_CLASS.cpu;
+}
+
+/**
+ * Localized hardware chip label for a variant, the plain-language answer to "which
+ * hardware is this build for" that replaces raw precision (FP16/FP32) as the primary
+ * label. Prefers the server-computed `hardwareClass` token, which is authoritative
+ * because it is derived from the live host architecture and the chosen backend (so a
+ * CPU build reads "AMD64 CPU" or "ARM64 CPU" as appropriate); falls back to the
+ * coarser client-side class when an older server omits the token. Either token maps
+ * to `analysis.gallery.hardware.<token>`, except the built-in baseline.
+ */
+export function variantHardwareLabel(variant: CatalogVariant): string {
+  // The server omits hardwareClass (omitempty) rather than sending "", so nullish
+  // coalescing is the correct fallback: only an absent token falls through to the
+  // coarser client-side class.
+  const cls = variant.hardwareClass ?? variantHardwareClass(variant);
+  if (cls === HARDWARE_CLASS.builtIn) return t('analysis.gallery.builtIn');
+  return t(`analysis.gallery.hardware.${cls}`);
+}
+
+/**
+ * A within-model "optimize" offer: an installed model whose recommended variant for
+ * this host differs from the installed one and is compatible. `from` is the
+ * installed variant, `to` the recommended one, and `reasons` the localized headline
+ * reasons for the recommendation. Offers are always same-model (a better build of a
+ * model the user already has), never cross-model.
+ */
+export interface OptimizeOffer {
+  entry: CatalogEntry;
+  /**
+   * The installed variant being replaced, or null when the installed variant id is
+   * no longer in the catalog (a build deprecated and dropped). The offer still
+   * surfaces in that case, precisely so the user can move off the dead variant; only
+   * the "from" label is unavailable.
+   */
+  from: CatalogVariant | null;
+  to: CatalogVariant;
+  reasons: string[];
+}
+
+/**
+ * Derive the within-model optimize offers from the catalog, entirely client-side.
+ * An entry qualifies when it is installed, carries variants, its installed variant
+ * differs from the host-recommended variant, and that recommended variant is
+ * compatible and present in the list. The permanent BirdNET v2.4 model participates
+ * like any other installed model (its BuiltIn baseline is the installed variant when
+ * no DFT build is active).
+ */
+export function optimizeOffers(catalog: CatalogEntry[]): OptimizeOffer[] {
+  const offers: OptimizeOffer[] = [];
+  for (const entry of catalog) {
+    const variants = entry.variants ?? [];
+    if (variants.length === 0 || !entry.installed) continue;
+
+    const installedId = entry.installedVariantId;
+    const recommendedId = entry.recommendedVariantId;
+    if (!installedId || !recommendedId || installedId === recommendedId) continue;
+
+    const to = variants.find(v => v.id === recommendedId);
+    if (!to?.compatible) continue;
+    // `from` may be absent when the installed variant was dropped from the catalog;
+    // the offer still stands (move off the dead variant onto the recommendation).
+    const from = variants.find(v => v.id === installedId) ?? null;
+
+    offers.push({ entry, from, to, reasons: topReasons(to.reasons) });
+  }
+  return offers;
+}
+
+/**
+ * The catalog release channel marking a developer-preview (not-GA) build. The gallery
+ * flags an entry on this channel with a PREVIEW badge and a not-GA notice. Mirrors the
+ * Go `classifier.ChannelPreview` constant.
+ */
+export const CHANNEL_PREVIEW = 'preview';
+
+/**
+ * The catalog release channel marking a stable (GA) build, the default an entry
+ * without an explicit channel resolves to. Mirrors the Go `classifier.ChannelStable`
+ * constant.
+ */
+export const CHANNEL_STABLE = 'stable';
+
+/**
  * The canonical "automatic" region mode. An empty string, null, and undefined
  * all mean automatic in the gallery, mirroring the Go `ModelRegion` field's
  * `omitempty` (an unset region is omitted from JSON entirely).
  */
 export const DEFAULT_REGION_MODE = 'auto';
+
+/**
+ * The explicit "global" region mode: force the location-independent global
+ * variant regardless of the configured location. Distinct from
+ * DEFAULT_REGION_MODE ('auto', which resolves from the location) and from a
+ * concrete region slug. Mirrors the Go `ModelRegionGlobal` sentinel.
+ */
+export const GLOBAL_REGION_MODE = 'global';
 
 /**
  * Normalize a stored region mode to its canonical form: '', null and undefined

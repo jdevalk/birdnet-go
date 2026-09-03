@@ -409,6 +409,7 @@ func init() {
 	RegisterComponent("notification", "notification")
 	RegisterComponent("securefs", "securefs")
 	RegisterComponent("secrets", "secrets")
+	RegisterComponent("httpclient", "httpclient")
 	RegisterComponent("monitor", "monitor")
 	RegisterComponent("app", "app")
 	RegisterComponent("api", "api")
@@ -440,7 +441,6 @@ func init() {
 	RegisterComponent("audiocore/engine", "audiocore.engine")
 	RegisterComponent("audiocore/schedule", "audiocore.schedule")
 	RegisterComponent("audiocore/equalizer", "audiocore.equalizer")
-	RegisterComponent("audiocore/hlsmux", "audiocore.hlsmux")
 }
 
 // Helper functions for auto-detection and categorization

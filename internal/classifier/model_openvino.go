@@ -3,6 +3,8 @@ package classifier
 import (
 	"os"
 	"runtime"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/conf"
@@ -101,9 +103,17 @@ func openVINOPlanFor(backendPref, devicePref, modelID, libraryPath string, outpu
 // (2026-06-18), f16 collapses on realistic low-SNR audio (max confidence error
 // ~0.8, wrong top-1, confidences fall to ~0) while a loud single-species clip
 // survives by luck; f32 is bit-exact with ORT (~6e-6) and still ~4.6x faster than
-// ORT CPU. CPU f16 (incl. ARM A76) and Perch v2 f16-GPU are unaffected, so the
-// BirdNET-v2.4 override is scoped to its GPU path. Do NOT widen it to f16 without
-// re-running the inference/openvino_parity_functional_test.go soundscape parity check.
+// ORT CPU. CPU f16 (incl. ARM A76) is unaffected, so the override is scoped to
+// the GPU path. Do NOT widen it to f16 without re-running the
+// inference/openvino_parity_functional_test.go soundscape parity check.
+//
+// Perch v2 is likewise forced to f32 on the GPU. Its f16-GPU path was validated
+// on an Iris Xe iGPU, but on an Intel Arc A380 (dGPU) the f16 kernel returns
+// all-NaN logits for every window, which the pipeline then promoted to bogus
+// detections. The plan carries only the device class ("GPU"), not the adapter,
+// so the override necessarily covers every Intel GPU; f32 costs some throughput
+// on adapters where f16 worked, but stays well within real time. Do NOT relax it
+// to f16 without validating on a discrete Arc part.
 //
 // The bat embedding model is the exception that is forced to f32 on EVERY device:
 // its embedding head overflows at f16 on genuine f16 hardware (the A76 CPU's f16 NEON
@@ -114,7 +124,7 @@ func openVINOPrecisionFor(modelID, device string) string {
 	if modelID == RegistryIDBat {
 		return inference.OVPrecisionF32
 	}
-	if device == inference.OVDeviceGPU && modelID == DefaultModelVersion {
+	if device == inference.OVDeviceGPU && (modelID == DefaultModelVersion || modelID == RegistryIDPerchV2) {
 		return inference.OVPrecisionF32
 	}
 	return ""
@@ -137,14 +147,72 @@ func openVINOCPUAllowed(devicePref string) bool {
 // is idempotent and fast on repeat); a load failure means no usable OV at all.
 func openVINOGPUAvailable(libraryPath string) bool {
 	if err := inference.InitOpenVINO(libraryPath); err != nil {
-		// Surface the load failure: without this, an explicit openvino/gpu opt-in
-		// with a bad OpenVINOPath would silently fall back to ORT carrying only a
-		// generic "not eligible" message, hiding the real library-load cause.
-		GetLogger().Warn("OpenVINO library load failed during device planning; treating GPU as unavailable",
+		// A merely-absent OpenVINO library is the expected CPU-only case, not a
+		// fault: device planning falls back to ONNX Runtime and logs that fallback
+		// at INFO (logOpenVINODeclined). Log the absent case at Debug so a recurring
+		// line does not read as a problem in a support dump, and reserve Warn for a
+		// present-but-broken library (wrong version, missing symbol) whose load
+		// failure a user would actually want surfaced. This still surfaces the real
+		// cause of a broken explicit openvino/gpu opt-in, while staying quiet on a
+		// host that simply never installed OpenVINO.
+		if isLibraryAbsent(err) {
+			GetLogger().Debug("OpenVINO library not installed; treating GPU as unavailable",
+				logger.Error(err))
+		} else {
+			GetLogger().Warn("OpenVINO library load failed during device planning; treating GPU as unavailable",
+				logger.Error(err))
+		}
+		return false
+	}
+	// Enumerate devices in a short-lived child process rather than in-process:
+	// ov_core_get_available_devices walks the vendor driver stack, and a fault
+	// there aborts the process before Go can recover (glibc heap-corruption
+	// SIGABRT during cgo, issue #4236 - a systemd crash-loop on the first GPU
+	// enablement). A crashing probe child degrades to the ordinary ORT
+	// fallback instead. The probe result is cached per process, so this costs
+	// one child run per library path.
+	devices, err := inference.OpenVINOProbeDevices(libraryPath)
+	if err != nil {
+		GetLogger().Warn("OpenVINO device probe failed; treating GPU as unavailable",
 			logger.Error(err))
 		return false
 	}
-	return inference.OpenVINOHasDevice(inference.OVDeviceGPU)
+	return slices.Contains(devices, inference.OVDeviceGPU)
+}
+
+// isLibraryAbsent reports whether err indicates the OpenVINO shared library is
+// simply not installed (the dynamic loader could not find the file), as opposed
+// to present but broken. The loader reports a missing library only through its
+// error text across the cgo boundary, so the message is the signal, matched
+// case-insensitively for Linux dlopen ("cannot open shared object file"), macOS
+// dyld ("image not found") and Windows LoadLibrary ("the specified module could
+// not be found"), plus os.ErrNotExist for any path stat'd before the load.
+//
+// It is best-effort and deliberately conservative about staying quiet. A
+// "permission denied" load failure is a present-but-broken case, not an absent
+// one, so it is excluded and stays a Warn. Two residual imperfections are
+// accepted because the only consequence is the Warn-vs-Debug log level (device
+// planning falls back to ONNX Runtime either way, and logOpenVINODeclined still
+// records the fallback at Info): a missing transitive dependency yields the same
+// "cannot open shared object file" text as an absent primary and is treated as
+// absent, and a non-English loader locale may not match the English text and so
+// falls through to Warn.
+func isLibraryAbsent(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	// A present-but-inaccessible library is broken, not absent; keep it a Warn.
+	if strings.Contains(msg, "permission denied") {
+		return false
+	}
+	return strings.Contains(msg, "cannot open shared object file") || // Linux dlopen
+		strings.Contains(msg, "no such file or directory") ||
+		strings.Contains(msg, "image not found") || // macOS dyld
+		strings.Contains(msg, "the specified module could not be found") // Windows LoadLibrary
 }
 
 // openVINOPlan returns the OpenVINO plan for the primary BirdNET classifier, or
@@ -191,9 +259,9 @@ func openVINOPrecisionLabel(precision string) string {
 // openVINOEffectivePrecision maps an OpenVINO INFERENCE_PRECISION_HINT to the
 // effective runtime precision label shown on the inference status card, using the
 // shared Quantization vocabulary ("FP16"/"FP32"). An empty hint means the backend
-// default, which is f16 (see openVINOPrecisionFor), so it maps to FP16; the only
-// explicit override currently emitted is OVPrecisionF32 (BirdNET v2.4 on the GPU),
-// which maps to FP32.
+// default, which is f16 (see openVINOPrecisionFor), so it maps to FP16; the
+// explicit override OVPrecisionF32 (BirdNET v2.4 and Perch v2 on the GPU, the bat
+// embedding model on every device) maps to FP32.
 func openVINOEffectivePrecision(precisionHint string) string {
 	if precisionHint == inference.OVPrecisionF32 {
 		return string(QuantizationFP32)

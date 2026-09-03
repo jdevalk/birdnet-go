@@ -394,6 +394,15 @@ export type TranslationKey =
   | 'notifications.content.region.staleTitle'
   | 'notifications.content.region.staleMessage' // params: modelName, oldRegion, newRegion
   | 'notifications.content.region.staleGlobalMessage' // params: modelName, oldRegion
+  | 'notifications.content.modelPath.reconciledTitle' // params: modelName
+  | 'notifications.content.modelPath.reconciledMessage' // params: modelName, modelPath
+  | 'notifications.content.modelPath.substitutedTitle' // params: modelName
+  | 'notifications.content.modelPath.substitutedMessage' // params: modelName, modelPath
+  | 'notifications.content.modelPath.unreadableTitle' // params: modelName
+  | 'notifications.content.modelPath.unreadableMessage' // params: modelName, modelPath
+  | 'notifications.content.modelPath.builtinMessage' // params: modelName
+  | 'notifications.content.modelPath.notRegisteredTitle' // params: sourceName
+  | 'notifications.content.modelPath.notRegisteredMessage' // params: models, sourceName
   | 'notifications.content.alert.firedTitle' // params: rule_name
   | 'notifications.content.alert.metricExceeded' // params: value, threshold
   | 'notifications.content.alert.detectionOccurred' // params: species_name, confidence
@@ -1314,6 +1323,24 @@ export type TranslationKey =
   | 'system.inference.title'
   | 'system.inference.loading'
   | 'system.inference.error'
+  | 'system.inference.vad.section'
+  | 'system.inference.vad.title'
+  | 'system.inference.vad.active'
+  | 'system.inference.vad.activeHelp'
+  | 'system.inference.vad.idle'
+  | 'system.inference.vad.idleHelp'
+  | 'system.inference.vad.disabled'
+  | 'system.inference.vad.disabledHelp'
+  | 'system.inference.vad.unavailable'
+  | 'system.inference.vad.unavailableHelp'
+  | 'system.inference.vad.description'
+  | 'system.inference.vad.threshold'
+  | 'system.inference.vad.speechHits'
+  | 'system.inference.vad.recentTitle'
+  | 'system.inference.vad.recentEmpty'
+  | 'system.inference.vad.colWhen'
+  | 'system.inference.vad.colProbability'
+  | 'system.inference.vad.colSource'
   | 'system.inference.sectionHardware'
   | 'system.inference.sectionBackends'
   | 'system.inference.sectionModels'
@@ -1365,6 +1392,8 @@ export type TranslationKey =
   | 'system.inference.sources'
   | 'system.inference.noSources'
   | 'system.inference.primaryFallback'
+  | 'system.inference.sourceNotRunning'
+  | 'system.inference.sourceNotRunningTooltip'
   | 'system.inference.notMeasured'
   | 'system.inference.unitMs'
   | 'system.inference.unitKhz'
@@ -1958,8 +1987,8 @@ export type TranslationKey =
   | 'settings.main.fields.overlap.helpText'
   | 'settings.main.fields.locale.label'
   | 'settings.main.fields.locale.helpText'
-  | 'settings.main.fields.tensorflowThreads.label'
-  | 'settings.main.fields.tensorflowThreads.helpText'
+  | 'settings.main.fields.inferenceThreads.label'
+  | 'settings.main.fields.inferenceThreads.helpText'
   | 'settings.main.errors.localesLoadFailed'
   | 'settings.main.errors.providersLoadFailed'
   | 'settings.main.errors.rangeFilterTestFailed'
@@ -2268,6 +2297,10 @@ export type TranslationKey =
   | 'settings.filters.privacyFiltering.disabled'
   | 'settings.filters.privacyFiltering.confidenceLabel'
   | 'settings.filters.privacyFiltering.confidenceHelp'
+  | 'settings.filters.privacyFiltering.vadEnable'
+  | 'settings.filters.privacyFiltering.vadHelp'
+  | 'settings.filters.privacyFiltering.vadThresholdLabel'
+  | 'settings.filters.privacyFiltering.vadThresholdHelp'
   | 'settings.filters.falsePositivePrevention.title'
   | 'settings.filters.falsePositivePrevention.description'
   | 'settings.filters.falsePositivePrevention.enableDogBark'
@@ -3875,21 +3908,25 @@ export type TranslationKey =
   | 'analysis.gallery.region.title'
   | 'analysis.gallery.region.modeAuto'
   | 'analysis.gallery.region.modeAutoHint'
-  | 'analysis.gallery.region.modeGlobal'
-  | 'analysis.gallery.region.modeGlobalHint'
-  | 'analysis.gallery.region.pinLabel'
-  | 'analysis.gallery.region.pinnedBadge'
+  | 'analysis.gallery.region.modeManual'
+  | 'analysis.gallery.region.modeManualHint'
+  | 'analysis.gallery.region.worldwideTitle'
+  | 'analysis.gallery.region.worldwideSubtitle'
+  | 'analysis.gallery.region.worldwideResourceNote'
+  | 'analysis.gallery.region.selectedBadge'
+  | 'analysis.gallery.region.orSpecificRegion'
+  | 'analysis.gallery.region.search'
+  | 'analysis.gallery.region.searchNoResults' // params: query
+  | 'analysis.gallery.region.manualPrompt'
+  | 'analysis.gallery.region.countriesOverflow' // params: count
+  | 'analysis.gallery.region.coreCoverage'
+  | 'analysis.gallery.region.partialCoverage'
   | 'analysis.gallery.region.pinAction' // params: region
   | 'analysis.gallery.region.switchToAuto'
   | 'analysis.gallery.region.loading'
   | 'analysis.gallery.region.loadFailed'
-  | 'analysis.gallery.region.mapLoading'
   | 'analysis.gallery.region.mapUnavailable'
   | 'analysis.gallery.region.mapAria' // params: region
-  | 'analysis.gallery.region.countriesCore' // params: countries
-  | 'analysis.gallery.region.countriesPartial' // params: countries
-  | 'analysis.gallery.region.countriesMore' // params: count
-  | 'analysis.gallery.region.countriesLess'
   | 'analysis.gallery.region.why.noLocation'
   | 'analysis.gallery.region.why.outsideCoverage'
   | 'analysis.gallery.region.why.ambiguous' // params: region, runnerUp
@@ -3911,6 +3948,9 @@ export type TranslationKey =
   | 'analysis.gallery.variants.regionContext' // params: region
   | 'analysis.gallery.variants.regionContextNone'
   | 'analysis.gallery.variants.otherRegions'
+  | 'analysis.gallery.variants.filterPlaceholder'
+  | 'analysis.gallery.variants.filterAria'
+  | 'analysis.gallery.variants.filterNoMatch' // params: query
   | 'analysis.gallery.variants.latency' // params: ms
   | 'analysis.gallery.variants.precisionInfo'
   | 'analysis.gallery.variants.precisionHelp'
@@ -3935,7 +3975,6 @@ export type TranslationKey =
   | 'analysis.gallery.loading'
   | 'analysis.gallery.retry'
   | 'analysis.gallery.builtIn'
-  | 'analysis.gallery.builtInDescription'
   | 'analysis.gallery.species' // params: count
   | 'analysis.gallery.install'
   | 'analysis.gallery.installing'
@@ -3982,7 +4021,34 @@ export type TranslationKey =
   | 'analysis.gallery.reinstalling'
   | 'analysis.gallery.reinstallComplete'
   | 'analysis.gallery.geomodelBadge'
+  | 'analysis.gallery.preview.badge'
+  | 'analysis.gallery.preview.buildLabel' // params: version, build
+  | 'analysis.gallery.preview.cardNotice'
+  | 'analysis.gallery.preview.dialogNotice' // params: build
   | 'analysis.gallery.entryIncompatible'
+  | 'analysis.gallery.regionGlobal'
+  | 'analysis.gallery.hardwareLabel'
+  | 'analysis.gallery.hardware.gpuNvidia'
+  | 'analysis.gallery.hardware.gpuIntel'
+  | 'analysis.gallery.hardware.armCpu'
+  | 'analysis.gallery.hardware.amd64Cpu'
+  | 'analysis.gallery.hardware.arm64Cpu'
+  | 'analysis.gallery.hardware.cpu'
+  | 'analysis.gallery.optimize.bannerTitle' // params: count
+  | 'analysis.gallery.optimize.review'
+  | 'analysis.gallery.optimize.dismiss'
+  | 'analysis.gallery.optimize.badgeTitle'
+  | 'analysis.gallery.optimize.swap'
+  | 'analysis.gallery.optimize.dialogTitle'
+  | 'analysis.gallery.optimize.installedBuild'
+  | 'analysis.gallery.optimize.fromTo' // params: from, to
+  | 'analysis.gallery.optimize.apply'
+  | 'analysis.gallery.optimize.applyAll'
+  | 'analysis.gallery.optimize.applying'
+  | 'analysis.gallery.optimize.applied'
+  | 'analysis.gallery.optimize.applyFailed'
+  | 'analysis.gallery.optimize.upToDate'
+  | 'analysis.gallery.optimize.licenseNote'
   | 'analysis.bird.title'
   | 'analysis.bird.description'
   | 'analysis.bat.title'
@@ -4168,6 +4234,27 @@ export type TranslationParams = {
   'notifications.content.region.staleGlobalMessage': {
     modelName: string | number;
     oldRegion: string | number;
+  };
+  'notifications.content.modelPath.reconciledTitle': { modelName: string | number };
+  'notifications.content.modelPath.reconciledMessage': {
+    modelName: string | number;
+    modelPath: string | number;
+  };
+  'notifications.content.modelPath.substitutedTitle': { modelName: string | number };
+  'notifications.content.modelPath.substitutedMessage': {
+    modelName: string | number;
+    modelPath: string | number;
+  };
+  'notifications.content.modelPath.unreadableTitle': { modelName: string | number };
+  'notifications.content.modelPath.unreadableMessage': {
+    modelName: string | number;
+    modelPath: string | number;
+  };
+  'notifications.content.modelPath.builtinMessage': { modelName: string | number };
+  'notifications.content.modelPath.notRegisteredTitle': { sourceName: string | number };
+  'notifications.content.modelPath.notRegisteredMessage': {
+    models: string | number;
+    sourceName: string | number;
   };
   'notifications.content.alert.firedTitle': { rule_name: string | number };
   'notifications.content.alert.metricExceeded': {
@@ -4510,11 +4597,10 @@ export type TranslationParams = {
     version: string | number;
     species: string | number;
   };
+  'analysis.gallery.region.searchNoResults': { query: string | number };
+  'analysis.gallery.region.countriesOverflow': { count: string | number };
   'analysis.gallery.region.pinAction': { region: string | number };
   'analysis.gallery.region.mapAria': { region: string | number };
-  'analysis.gallery.region.countriesCore': { countries: string | number };
-  'analysis.gallery.region.countriesPartial': { countries: string | number };
-  'analysis.gallery.region.countriesMore': { count: string | number };
   'analysis.gallery.region.why.ambiguous': { region: string | number; runnerUp: string | number };
   'analysis.gallery.region.why.resolved': { region: string | number };
   'analysis.gallery.region.why.pinned': { region: string | number };
@@ -4525,6 +4611,7 @@ export type TranslationParams = {
   'analysis.gallery.variants.showHardware': { count: string | number };
   'analysis.gallery.variants.showAllRegions': { count: string | number };
   'analysis.gallery.variants.regionContext': { region: string | number };
+  'analysis.gallery.variants.filterNoMatch': { query: string | number };
   'analysis.gallery.variants.latency': { ms: string | number };
   'analysis.gallery.removeSuccess': { name: string | number };
   'analysis.gallery.reasons.backendRecommended': { backend: string | number };
@@ -4537,6 +4624,10 @@ export type TranslationParams = {
   'analysis.gallery.species': { count: string | number };
   'analysis.gallery.removeDialog.title': { name: string | number };
   'analysis.gallery.errors.actionFailed': { name: string | number };
+  'analysis.gallery.preview.buildLabel': { version: string | number; build: string | number };
+  'analysis.gallery.preview.dialogNotice': { build: string | number };
+  'analysis.gallery.optimize.bannerTitle': { count: string | number };
+  'analysis.gallery.optimize.fromTo': { from: string | number; to: string | number };
 };
 
 /**

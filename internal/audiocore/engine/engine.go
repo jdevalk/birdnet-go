@@ -268,6 +268,19 @@ func (e *AudioEngine) StopStream(sourceID string) error {
 	return nil
 }
 
+// resolveTransport selects the RTSP transport for a stream: the per-stream
+// value when set, otherwise the engine-wide default. The per-stream value is
+// the source of truth in the new streams format, so it wins; the engine
+// default covers streams that leave it unset. A final empty-string guard in
+// the ffmpeg package still applies conf.DefaultTransport if both are empty, so
+// FFmpeg never receives an empty -rtsp_transport value.
+func (e *AudioEngine) resolveTransport(streamTransport string) string {
+	if streamTransport != "" {
+		return streamTransport
+	}
+	return e.transport
+}
+
 // StartStream restarts a quiet-hours-suppressed FFmpeg stream under its
 // existing runtime sourceID.
 func (e *AudioEngine) StartStream(sourceID, url, transport string) error {
@@ -275,9 +288,7 @@ func (e *AudioEngine) StartStream(sourceID, url, transport string) error {
 	if !ok {
 		return fmt.Errorf("restart stream: %w: %s", audiocore.ErrSourceNotFound, sourceID)
 	}
-	if transport == "" {
-		transport = e.transport
-	}
+	transport = e.resolveTransport(transport)
 	sampleRate := src.SampleRate
 	if sampleRate <= 0 {
 		sampleRate = defaultSampleRate
@@ -320,7 +331,13 @@ func (e *AudioEngine) StartStream(sourceID, url, transport string) error {
 // for the primary model. This must be called before AddSource to ensure
 // buffers are allocated with the correct model key and size.
 // clipBytes, overlapBytes, and readSize should be derived from the model's
-// ModelSpec.BufferDimensions(), matching the secondary model allocation path.
+// ModelSpec.BufferDimensions(overlap) with the resolved per-model overlap,
+// matching the secondary model allocation path.
+//
+// The primary* fields written here are not mutex-guarded: SetPrimaryModel and the
+// AddSource/RemoveSource readers must be serialized by the caller. The audio
+// pipeline does this with p.sourcesMu (startup and every restart hold it), so an
+// overlap hot-reload that re-applies these dims stays race-free.
 func (e *AudioEngine) SetPrimaryModel(id string, clipBytes, overlapBytes, readSize int) {
 	e.primaryModelID = id
 	e.primaryClipBytes = clipBytes
@@ -441,7 +458,7 @@ func (e *AudioEngine) AddSource(cfg *audiocore.SourceConfig) error {
 			ChannelMode:      cfg.ChannelMode,
 			MediaMode:        cfg.MediaMode,
 			FFmpegPath:       e.ffmpegPath,
-			Transport:        e.transport,
+			Transport:        e.resolveTransport(cfg.Transport),
 			FFmpegParameters: e.ffmpegParameters,
 			LogLevel:         e.logLevel,
 			Debug:            e.debug,
@@ -647,7 +664,7 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 			ChannelMode:      newCfg.ChannelMode,
 			MediaMode:        newCfg.MediaMode,
 			FFmpegPath:       e.ffmpegPath,
-			Transport:        e.transport,
+			Transport:        e.resolveTransport(newCfg.Transport),
 			FFmpegParameters: e.ffmpegParameters,
 			LogLevel:         e.logLevel,
 			Debug:            e.debug,
@@ -686,7 +703,7 @@ func (e *AudioEngine) ReconfigureSource(sourceID string, newCfg *audiocore.Sourc
 	// snapshots and emits the SourceReconfigured event with the fully updated entry.
 	// Without the sync, a channel/media-mode-only change re-triggers on every later
 	// reconfigure and restarts the stream indefinitely.
-	syncedModes := e.registry.SyncReconfiguredParams(sourceID, newCfg.ChannelMode, newCfg.MediaMode, newCfg.SourceSampleRate, newCfg.SourceChannels)
+	syncedModes := e.registry.SyncReconfiguredParams(sourceID, newCfg.ChannelMode, newCfg.MediaMode, newCfg.Transport, newCfg.SourceSampleRate, newCfg.SourceChannels)
 	syncedParams := e.registry.UpdateAudioParams(sourceID, sampleRate, bitDepth, channels)
 	if !syncedModes || !syncedParams {
 		// The source was fetched at the top of this function and the reconfigure

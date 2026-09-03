@@ -276,7 +276,7 @@ func (m *mockStore) SearchDetections(filters *datastore.SearchFilters) ([]datast
 
 // Dynamic threshold methods
 func (m *mockStore) SaveDynamicThreshold(threshold *datastore.DynamicThreshold) error { return nil }
-func (m *mockStore) GetDynamicThreshold(speciesName, modelName string) (*datastore.DynamicThreshold, error) {
+func (m *mockStore) GetDynamicThreshold(speciesName string) (*datastore.DynamicThreshold, error) {
 	return nil, fmt.Errorf("not found")
 }
 func (m *mockStore) GetAllDynamicThresholds(limit ...int) ([]datastore.DynamicThreshold, error) {
@@ -440,9 +440,7 @@ type mockFailingStore struct {
 
 func newMockFailingStore() *mockFailingStore {
 	return &mockFailingStore{
-		mockStore: mockStore{
-			images: make(map[string]*datastore.ImageCache),
-		},
+		images: make(map[string]*datastore.ImageCache),
 	}
 }
 
@@ -1081,8 +1079,8 @@ func TestBackgroundRequestsRateLimited(t *testing.T) {
 
 	fetchAttempts := make(chan time.Time, 2*numStaleEntries)
 	mockProvider := &mockProviderWithContext{
-		mockImageProvider: mockImageProvider{fetchDelay: 5 * time.Millisecond},
-		fetchChannel:      fetchAttempts,
+		fetchDelay:   5 * time.Millisecond,
+		fetchChannel: fetchAttempts,
 	}
 
 	store := newMockStore()

@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, beforeAll, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/svelte';
 import type { CatalogEntry } from '$lib/types/models';
+import { CHANNEL_STABLE } from '$lib/utils/variantSelection';
 
 // Page-level coverage for the model-gallery install-error split:
 // a failed install must NOT blank the grid (installError is a separate banner from
@@ -84,6 +85,7 @@ import AnalysisSettingsPage from './AnalysisSettingsPage.svelte';
 import * as modelsApi from '$lib/utils/modelsApi';
 import { settingsStore } from '$lib/stores/settings';
 import { toastActions } from '$lib/stores/toast';
+import { t } from '$lib/i18n';
 
 // A network-shaped download failure (matches isNetworkDownloadError's real regex).
 const NETWORK_ERROR = 'HTTP request failed for https://huggingface.co/model: connection refused';
@@ -100,6 +102,7 @@ function birdEntry(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
     region: '',
     speciesCount: 100,
     version: '1.0',
+    channel: CHANNEL_STABLE,
     installed: false,
     compatible: true,
     totalSizeBytes: 1_000_000,
@@ -320,5 +323,123 @@ describe('AnalysisSettingsPage model gallery in-flight guard and region refetch'
         expect.stringContaining('analysis.gallery.removeSuccess')
       )
     );
+    // The i18n mock echoes the key and strips params, so the toast string alone
+    // cannot prove the model name is interpolated. Assert on the t() call itself
+    // that the {name} param is passed through, closing that gap (#1566).
+    expect(t).toHaveBeenCalledWith('analysis.gallery.removeSuccess', { name: 'Installed Model' });
+  });
+});
+
+describe('AnalysisSettingsPage model gallery optimize + permanent card', () => {
+  beforeEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    settingsStore.update(s => ({
+      ...s,
+      originalData: {
+        ...s.originalData,
+        birdnet: { ...s.originalData.birdnet, modelRegion: undefined },
+      },
+    }));
+    vi.mocked(modelsApi.fetchInstalled).mockResolvedValue([]);
+    vi.mocked(modelsApi.fetchModelRegions).mockRejectedValue(new Error('no regions in test'));
+  });
+
+  // A permanent BirdNET v2.4 entry installed on its BuiltIn baseline, with a faster
+  // DFT build recommended for this host (so it carries an optimize offer).
+  function v24Installed(overrides: Partial<CatalogEntry> = {}): CatalogEntry {
+    return birdEntry({
+      id: 'birdnet-v2.4',
+      name: 'BirdNET v2.4',
+      installed: true,
+      permanent: true,
+      installedVariantId: 'builtin',
+      recommendedVariantId: 'fp32-dfttrunc',
+      variants: [
+        {
+          id: 'builtin',
+          builtIn: true,
+          default: true,
+          installed: true,
+          speciesCount: 6522,
+          sizeBytes: 0,
+          compatible: true,
+          recommended: false,
+        },
+        {
+          id: 'fp32-dfttrunc',
+          precision: 'fp32',
+          default: false,
+          installed: false,
+          speciesCount: 6522,
+          sizeBytes: 54_000_000,
+          compatible: true,
+          recommended: true,
+          reasons: [{ code: 'backend.recommended', args: { backend: 'onnxruntime-cpu' } }],
+        },
+      ],
+      ...overrides,
+    });
+  }
+
+  it('shows the optimize banner when an installed model has a better variant, and dismisses it', async () => {
+    vi.mocked(modelsApi.fetchCatalog).mockResolvedValue({ catalog: [v24Installed()] });
+    render(AnalysisSettingsPage);
+    await fireEvent.click(await screen.findByRole('tab', { name: /analysis\.tabs\.models/ }));
+
+    // The banner is visible with the Review action.
+    expect(await screen.findByText('analysis.gallery.optimize.bannerTitle')).toBeInTheDocument();
+    const review = await screen.findByRole('button', {
+      name: /analysis\.gallery\.optimize\.review/,
+    });
+
+    // Review opens the dialog.
+    await fireEvent.click(review);
+    expect(await screen.findByText('analysis.gallery.optimize.dialogTitle')).toBeInTheDocument();
+
+    // Dismiss hides the banner for the session.
+    await fireEvent.click(
+      await screen.findByRole('button', { name: /analysis\.gallery\.optimize\.dismiss/ })
+    );
+    await waitFor(() =>
+      expect(screen.queryByText('analysis.gallery.optimize.bannerTitle')).toBeNull()
+    );
+  });
+
+  it('shows no optimize banner when the installed variant is already the recommended one', async () => {
+    vi.mocked(modelsApi.fetchCatalog).mockResolvedValue({
+      catalog: [v24Installed({ installedVariantId: 'fp32-dfttrunc' })],
+    });
+    render(AnalysisSettingsPage);
+    await fireEvent.click(await screen.findByRole('tab', { name: /analysis\.tabs\.models/ }));
+    // Give the card grid time to render, then assert the banner never appears.
+    await screen.findByRole('tab', { name: /analysis\.gallery\.tabs\.installed/ });
+    expect(screen.queryByText('analysis.gallery.optimize.bannerTitle')).toBeNull();
+  });
+
+  it('renders the permanent card with a built-in badge, no Remove/Reinstall, and an Optimize action', async () => {
+    vi.mocked(modelsApi.fetchCatalog).mockResolvedValue({ catalog: [v24Installed()] });
+    render(AnalysisSettingsPage);
+    await fireEvent.click(await screen.findByRole('tab', { name: /analysis\.tabs\.models/ }));
+
+    // The Optimize (swap) action is present on the permanent card.
+    expect(
+      await screen.findByRole('button', {
+        name: /analysis\.gallery\.optimize\.swap.*BirdNET v2\.4/,
+      })
+    ).toBeInTheDocument();
+
+    // The permanent model cannot be removed or reinstalled from its card.
+    expect(
+      screen.queryByRole('button', { name: /analysis\.gallery\.remove.*BirdNET v2\.4/ })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: /analysis\.gallery\.reinstall.*BirdNET v2\.4/ })
+    ).toBeNull();
+
+    // The built-in label appears at least twice on the permanent card: the footer
+    // built-in badge and the baseline hardware chip. (The review dialog, also in the
+    // DOM, renders it again for the offer's from-variant, so assert a lower bound.)
+    expect(screen.getAllByText('analysis.gallery.builtIn').length).toBeGreaterThanOrEqual(2);
   });
 });

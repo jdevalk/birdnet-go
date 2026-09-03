@@ -44,6 +44,7 @@ import { getLogger } from '$lib/utils/logger';
 import { safeGet, safeSpread } from '$lib/utils/security';
 import { settingsAPI } from '$lib/utils/settingsApi.js';
 import { coerceSettings } from '$lib/utils/settingsCoercion';
+import { DEFAULT_REGION_MODE } from '$lib/utils/variantSelection';
 import { weatherDefaults } from '$lib/utils/weatherDefaults';
 import { derived, get, writable } from 'svelte/store';
 import { toastActions } from './toast.js';
@@ -353,6 +354,16 @@ export interface PrivacyFilterSettings {
   enabled: boolean;
   confidence: number;
   debug: boolean;
+  // Dedicated Silero VAD speech gate. Backend-managed (toggled via config/API,
+  // modelPath set by the model gallery install); no dedicated UI yet. Declared
+  // here so a settings save round-trip preserves it rather than stripping it.
+  vad?: PrivacyFilterVadSettings;
+}
+
+export interface PrivacyFilterVadSettings {
+  enabled: boolean;
+  threshold: number;
+  modelPath: string;
 }
 
 export interface PrivacyFilter {
@@ -420,7 +431,7 @@ export interface MQTTSettings {
   retain?: boolean;
   tls: {
     enabled: boolean;
-    skipVerify: boolean;
+    insecureSkipVerify: boolean;
   };
   homeAssistant?: HomeAssistantSettings;
 }
@@ -913,7 +924,7 @@ function createEmptySettings(): SettingsFormData {
       latitude: 0,
       longitude: 0,
       locationConfigured: false,
-      modelRegion: 'auto',
+      modelRegion: DEFAULT_REGION_MODE,
       rangeFilter: {
         threshold: 0.03,
         passUnmappedSpecies: false,
@@ -992,8 +1003,13 @@ function createEmptySettings(): SettingsFormData {
       },
       privacyFilter: {
         enabled: false,
-        confidence: 0.5,
+        confidence: 0.05,
         debug: false,
+        vad: {
+          enabled: false,
+          threshold: 0.35,
+          modelPath: '',
+        },
       },
       dogBarkFilter: {
         enabled: false,
@@ -1031,7 +1047,7 @@ function createEmptySettings(): SettingsFormData {
         retain: false,
         tls: {
           enabled: false,
-          skipVerify: false,
+          insecureSkipVerify: false,
         },
         homeAssistant: {
           enabled: false,

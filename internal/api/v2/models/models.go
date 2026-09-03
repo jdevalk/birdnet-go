@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -96,9 +97,16 @@ type CatalogEntryResponse struct {
 	Region        string `json:"region"`
 	SpeciesCount  int    `json:"speciesCount"`
 	Version       string `json:"version"`
-	UpstreamURL   string `json:"upstreamUrl,omitempty"`
-	Installed     bool   `json:"installed"`
-	Compatible    bool   `json:"compatible"`
+	// Channel is the release channel: "stable" for a GA build, "preview" for a
+	// developer-preview build the gallery flags as not the final release. Always
+	// populated (defaults to "stable") so the frontend never has to guess.
+	Channel string `json:"channel"`
+	// BuildLabel is a human-facing build tag shown next to Version for a non-stable
+	// channel (e.g. "preview3.1"); omitted for stable releases.
+	BuildLabel  string `json:"buildLabel,omitempty"`
+	UpstreamURL string `json:"upstreamUrl,omitempty"`
+	Installed   bool   `json:"installed"`
+	Compatible  bool   `json:"compatible"`
 	// IncompatibleReason is a structured, localizable code (an i18n key stem such
 	// as "backend.onnx_unavailable"), never a raw English message, so the fully
 	// i18n'd gallery can translate it; a client renders it through the same reason
@@ -109,6 +117,10 @@ type CatalogEntryResponse struct {
 	IncompatibleReason string `json:"incompatibleReason,omitempty"`
 	TotalSizeBytes     int64  `json:"totalSizeBytes"`
 	HasGeomodel        bool   `json:"hasGeomodel"`
+	// Permanent marks the built-in BirdNET v2.4 classifier: always installed, never
+	// uninstallable, only its variant may be swapped. The gallery renders a built-in
+	// badge instead of Remove/Reinstall for it.
+	Permanent bool `json:"permanent,omitempty"`
 	// InstalledVariantID is the id of the currently installed variant, or "" when
 	// the model is not installed or is a flat (pre-variant) entry.
 	InstalledVariantID string `json:"installedVariantId,omitempty"`
@@ -124,14 +136,17 @@ type CatalogEntryResponse struct {
 // CatalogVariantResponse describes one selectable hardware or regional variant of
 // a catalog entry for the gallery UI.
 type CatalogVariantResponse struct {
-	ID                string `json:"id"`
-	Region            string `json:"region,omitempty"`
-	Precision         string `json:"precision,omitempty"`
-	SpeciesCount      int    `json:"speciesCount"`
-	Default           bool   `json:"default"`
-	Installed         bool   `json:"installed"`
-	SizeBytes         int64  `json:"sizeBytes"`
-	HeadlineLatencyMs int    `json:"headlineLatencyMs,omitempty"`
+	ID           string `json:"id"`
+	Region       string `json:"region,omitempty"`
+	Precision    string `json:"precision,omitempty"`
+	SpeciesCount int    `json:"speciesCount"`
+	Default      bool   `json:"default"`
+	Installed    bool   `json:"installed"`
+	// BuiltIn marks the embedded baseline variant (the built-in BirdNET v2.4 model).
+	// It carries no downloadable files; the gallery labels it and shows no size.
+	BuiltIn           bool  `json:"builtIn,omitempty"`
+	SizeBytes         int64 `json:"sizeBytes"`
+	HeadlineLatencyMs int   `json:"headlineLatencyMs,omitempty"`
 	// Compatible reports whether this variant can run on the host. It defaults to
 	// true (no hardware evaluation performed) so a client that did not receive
 	// recommendations does not render every variant as incompatible.
@@ -143,6 +158,14 @@ type CatalogVariantResponse struct {
 	// is not eligible for hardware recommendations.
 	Reasons  []VariantReasonResponse `json:"reasons,omitempty"`
 	Blockers []VariantReasonResponse `json:"blockers,omitempty"`
+	// HardwareClass is a coarse, localizable token naming the hardware this variant
+	// targets, for the gallery's plain-language chip (never raw precision like
+	// "fp16"). One of: "gpuNvidia", "gpuIntel", "amd64Cpu", "arm64Cpu", "armCpu",
+	// "cpu", "builtIn". The frontend maps it to analysis.gallery.hardware.<token>.
+	// The CPU tokens are made architecture-explicit from the host arch when the
+	// request is eligible for recommendations; otherwise the intrinsic "cpu"/"gpu"
+	// class (from the variant's own recommended backends) is emitted.
+	HardwareClass string `json:"hardwareClass,omitempty"`
 }
 
 // VariantReasonResponse is a structured, localizable reason for a variant's
@@ -157,6 +180,12 @@ type VariantReasonResponse struct {
 // absent body or empty variantId installs (or switches to) the default variant.
 type installModelRequest struct {
 	VariantID string `json:"variantId"`
+	// AllowIncompatible overrides the hardware-compatibility gate. When false (the
+	// default), installing a variant the catalog marks incompatible with the
+	// detected hardware is rejected with 409. When true, an advanced user can force
+	// the install; it still proceeds but a WARN is logged so the choice is visible
+	// in logs and support dumps.
+	AllowIncompatible bool `json:"allowIncompatible"`
 }
 
 // ListModels returns classifier models that are enabled in the configuration.
@@ -233,8 +262,12 @@ func (c *Handler) GetModelCatalog(ctx echo.Context) error {
 	// neutral Compatible=true with no reasons.
 	var recsByVariant map[string]map[string]recommend.Recommendation
 	var recommendedVariant map[string]string
+	// hostArch stays "" for an ineligible request, so the hardware-class tokens
+	// degrade to the architecture-neutral "cpu"/"gpu" class rather than leaking the
+	// host architecture on the public endpoint.
+	hostArch := ""
 	if c.recommendationsAllowed(ctx) {
-		recsByVariant, recommendedVariant = c.rankCatalog(visible, ortStatus)
+		recsByVariant, recommendedVariant, hostArch = c.rankCatalog(visible, ortStatus)
 	}
 
 	for i := range visible {
@@ -275,15 +308,18 @@ func (c *Handler) GetModelCatalog(ctx echo.Context) error {
 			Region:               entry.Region,
 			SpeciesCount:         entry.SpeciesCount,
 			Version:              entry.Version,
+			Channel:              channelOrDefault(entry.Channel),
+			BuildLabel:           entry.BuildLabel,
 			UpstreamURL:          entry.UpstreamURL,
 			Installed:            installed,
 			Compatible:           compatible,
 			IncompatibleReason:   incompatibleReason,
 			TotalSizeBytes:       totalSize,
 			HasGeomodel:          classifier.HasGeomodelFiles(entry),
+			Permanent:            classifier.IsPermanentEntry(entry),
 			InstalledVariantID:   installedVariantID,
 			RecommendedVariantID: recommendedVariant[entry.ID],
-			Variants:             buildVariantResponses(entry, installed, installedVariantID, recsByVariant[entry.ID]),
+			Variants:             buildVariantResponses(entry, installed, installedVariantID, recsByVariant[entry.ID], hostArch),
 		})
 	}
 
@@ -315,7 +351,7 @@ func (c *Handler) GetModelCatalog(ctx echo.Context) error {
 // omitted, and hides a Legacy (superseded) variant unless it is the one
 // currently installed, so the gallery never offers a fresh install of a
 // deprecated build.
-func buildVariantResponses(entry *classifier.CatalogEntry, installed bool, installedVariantID string, recs map[string]recommend.Recommendation) []CatalogVariantResponse {
+func buildVariantResponses(entry *classifier.CatalogEntry, installed bool, installedVariantID string, recs map[string]recommend.Recommendation, hostArch string) []CatalogVariantResponse {
 	if len(entry.Variants) == 0 {
 		return nil
 	}
@@ -348,21 +384,176 @@ func buildVariantResponses(entry *classifier.CatalogEntry, installed bool, insta
 			SpeciesCount:      v.SpeciesCount,
 			Default:           v.Default,
 			Installed:         isInstalledVariant,
+			BuiltIn:           v.BuiltIn,
 			SizeBytes:         sizeBytes,
 			HeadlineLatencyMs: headlineLatencyMs,
 			// Neutral default: without a recommendation the variant is not claimed
 			// incompatible. Overwritten below when recommendations are present.
 			Compatible: true,
 		}
-		if rec, ok := recs[v.ID]; ok {
+		rec, hasRec := recs[v.ID]
+		if hasRec {
 			resp.Compatible = rec.Compatible
 			resp.Recommended = rec.Recommended
 			resp.Reasons = toReasonResponses(rec.Reasons)
 			resp.Blockers = toReasonResponses(rec.Blockers)
 		}
+		resp.HardwareClass = variantHardwareClass(v, &rec, hasRec, hostArch)
 		variants = append(variants, resp)
 	}
 	return variants
+}
+
+// Hardware-class tokens emitted on CatalogVariantResponse.HardwareClass. The
+// frontend maps each to a localized chip via analysis.gallery.hardware.<token>,
+// so the vocabulary stays locale-owned client-side while the classification (which
+// needs the live host arch and the chosen backend) is authoritative here.
+const (
+	hwClassBuiltIn   = "builtIn"
+	hwClassGPUNvidia = "gpuNvidia"
+	hwClassGPUIntel  = "gpuIntel"
+	hwClassAMD64CPU  = "amd64Cpu"
+	hwClassARM64CPU  = "arm64Cpu"
+	hwClassARMCPU    = "armCpu"
+	hwClassCPU       = "cpu"
+)
+
+// Backend tokens used when classifying a variant's hardware target. The OpenVINO
+// and ONNX tokens are sourced from their canonical owner (hwprofile) so a rename
+// there is a compile error here rather than a silent misclassification; cuda and
+// tensorrt have no exported source (recommend's copies are unexported), so they
+// mirror those tokens as literals.
+const (
+	backendCUDA        = "cuda"
+	backendTensorRT    = "tensorrt"
+	backendOpenVINOGPU = hwprofile.CapOpenVINOGPU
+	backendONNXCPU     = hwprofile.CapONNXRuntimeCPU
+	backendOpenVINOCPU = hwprofile.CapOpenVINOCPU
+)
+
+// channelOrDefault normalizes an empty release channel to the stable channel so
+// the API always reports a concrete channel and the frontend never has to guess
+// what an absent channel means.
+func channelOrDefault(channel string) string {
+	if channel == "" {
+		return classifier.ChannelStable
+	}
+	return channel
+}
+
+// variantHardwareClass derives the coarse hardware-target token for a variant's
+// gallery chip (never raw precision). It prefers the backend the recommender chose
+// for THIS host, so the chip matches how the variant will actually run for the
+// viewer, and falls back to the variant's own recommended backends when no host
+// recommendation is present (an ineligible request, a blocked variant with no
+// reasons, or a flat entry). GPU builds report the discrete-vs-Intel split; a CPU
+// build is made architecture-explicit (amd64Cpu/arm64Cpu) from an ARM-only variant
+// requirement or, failing that, the host arch, and stays the generic "cpu" when the
+// host arch is unknown. The built-in baseline wins over everything.
+func variantHardwareClass(v *classifier.CatalogVariant, rec *recommend.Recommendation, hasRec bool, hostArch string) string {
+	if v.BuiltIn {
+		return hwClassBuiltIn
+	}
+	backend := ""
+	if hasRec {
+		backend = recommendedBackendToken(rec.Reasons)
+	}
+	if backend == "" {
+		backend = intrinsicGPUBackend(v.Backends)
+	}
+	switch backend {
+	case backendCUDA, backendTensorRT:
+		return hwClassGPUNvidia
+	case backendOpenVINOGPU:
+		return hwClassGPUIntel
+	}
+	// A CPU-class build. Make the arch explicit: an ARM-restricted variant is
+	// labelled by the ARM width it targets (arm64Cpu vs armCpu), regardless of host;
+	// otherwise the arch-neutral CPU build is labelled for the viewer's host arch
+	// (accurate because the gallery is host-specific), or stays the generic "cpu"
+	// when the host arch is unknown (an ineligible request).
+	if armClass := variantARMClass(v); armClass != "" {
+		return armClass
+	}
+	switch hostArch {
+	case archARM64:
+		return hwClassARM64CPU
+	case archARM:
+		return hwClassARMCPU
+	case archAMD64:
+		return hwClassAMD64CPU
+	}
+	return hwClassCPU
+}
+
+// Host architecture identifiers (runtime.GOARCH), mirrored from hwprofile so the
+// CPU-class token can be made architecture-explicit.
+const (
+	archAMD64 = "amd64"
+	archARM64 = "arm64"
+	archARM   = "arm"
+)
+
+// recommendedBackendToken extracts the chosen backend token from a variant's
+// recommendation reasons: the explicit backend.recommended reason, else the first
+// reason carrying a backend arg. Mirrors the frontend chosenBackendToken fallback.
+func recommendedBackendToken(reasons []recommend.Reason) string {
+	fallback := ""
+	for i := range reasons {
+		b := reasons[i].Args[recommend.ReasonArgBackend]
+		if b == "" {
+			continue
+		}
+		if reasons[i].Code == recommend.ReasonBackendRecommended {
+			return b
+		}
+		if fallback == "" {
+			fallback = b
+		}
+	}
+	return fallback
+}
+
+// intrinsicGPUBackend returns the variant's recommended GPU backend token when the
+// variant is a GPU-oriented build (recommended on a GPU backend and NOT recommended
+// on any CPU backend), else "" so it classifies as a CPU build. A build recommended
+// on both CPU and GPU (e.g. a general fp32) is treated as a CPU build: the CPU is
+// its plain-language target and the GPU-optimized build is offered as a separate
+// variant.
+func intrinsicGPUBackend(backends map[string]classifier.BackendSupport) string {
+	if backends[backendONNXCPU].Recommended || backends[backendOpenVINOCPU].Recommended {
+		return ""
+	}
+	switch {
+	case backends[backendCUDA].Recommended || backends[backendTensorRT].Recommended:
+		return backendCUDA
+	case backends[backendOpenVINOGPU].Recommended:
+		return backendOpenVINOGPU
+	}
+	return ""
+}
+
+// variantARMClass returns the ARM CPU class a variant is restricted to, or "" when
+// it is not ARM-restricted. It reads the arch requirement: a 64-bit ARM token (the
+// aarch64 family "aarch64"/"aarch64-a76", or "arm64") yields arm64Cpu; a 32-bit ARM
+// token ("arm"/"armv7l"/"armhf") yields armCpu, so a 32-bit host is never mislabelled
+// as ARM64. For older entries that predate arch requirements it falls back to an
+// "arm" token in the variant id (the catalog's arm builds are 64-bit, e.g.
+// "int8-arm"), yielding arm64Cpu.
+func variantARMClass(v *classifier.CatalogVariant) string {
+	for _, a := range v.Requirements.Arch {
+		lower := strings.ToLower(a)
+		if strings.HasPrefix(lower, "aarch") || lower == archARM64 {
+			return hwClassARM64CPU
+		}
+		if strings.Contains(lower, "arm") {
+			return hwClassARMCPU
+		}
+	}
+	if strings.Contains(strings.ToLower(v.ID), "arm") {
+		return hwClassARM64CPU
+	}
+	return ""
 }
 
 // recommendationsAllowed reports whether this request may receive the
@@ -378,12 +569,13 @@ func (c *Handler) recommendationsAllowed(ctx echo.Context) bool {
 // rankCatalog computes the per-host variant recommendations for the visible
 // catalog, indexed by catalog ID then variant ID, plus the recommended variant
 // per entry.
-func (c *Handler) rankCatalog(entries []classifier.CatalogEntry, ort inference.ORTStatus) (byVariant map[string]map[string]recommend.Recommendation, recommended map[string]string) {
+func (c *Handler) rankCatalog(entries []classifier.CatalogEntry, ort inference.ORTStatus) (byVariant map[string]map[string]recommend.Recommendation, recommended map[string]string, hostArch string) {
 	profileFn := c.hardwareProfile
 	if profileFn == nil {
 		profileFn = defaultHardwareProfile
 	}
 	profile := profileFn(ort)
+	hostArch = profile.Arch
 	recs := recommend.Rank(&recommend.Input{
 		Capabilities:   profile.Capabilities(),
 		TotalRAMBytes:  profile.TotalRAMBytes,
@@ -406,7 +598,75 @@ func (c *Handler) rankCatalog(entries []classifier.CatalogEntry, ort inference.O
 			recommended[r.CatalogID] = r.VariantID
 		}
 	}
-	return byVariant, recommended
+	return byVariant, recommended, hostArch
+}
+
+// requestedVariantCompatibility reports the hardware compatibility of the
+// requested variant of entry, reusing the same recommender and host profile
+// GetModelCatalog uses so the install gate and the gallery's compatible flag stay
+// in agreement. gated is false for an entry the recommender does not rank (a flat
+// entry with no variants, or a variant it produced no verdict for), for which
+// there is nothing to gate; callers must treat gated==false as "allow". An empty
+// variantID resolves to the entry's default variant, matching install semantics.
+func (c *Handler) requestedVariantCompatibility(entry *classifier.CatalogEntry, variantID string, ort inference.ORTStatus) (compatible, gated bool, blockers []recommend.Reason, hostArch string) {
+	if entry == nil || len(entry.Variants) == 0 {
+		return true, false, nil, ""
+	}
+	resolvedID := variantID
+	if resolvedID == "" {
+		resolvedID = classifier.DefaultVariantID(entry)
+	}
+	byVariant, _, hostArch := c.rankCatalog([]classifier.CatalogEntry{*entry}, ort)
+	rec, ok := byVariant[entry.ID][resolvedID]
+	if !ok {
+		// The recommender produced no verdict for this variant (profiling seam
+		// returned nothing, or a variant the ranker skipped). Do not block on a
+		// missing verdict; offering the model is safer than a spurious rejection.
+		return true, false, nil, hostArch
+	}
+	return rec.Compatible, true, rec.Blockers, hostArch
+}
+
+// variantOrDefault renders a variant id for messages and logs, mapping the empty
+// (default) selection to a readable token instead of an empty string.
+func variantOrDefault(variantID string) string {
+	if variantID == "" {
+		return "(default)"
+	}
+	return variantID
+}
+
+// hostArchOrUnknown renders a host architecture for messages, mapping an empty
+// (unresolved) arch to a readable token.
+func hostArchOrUnknown(arch string) string {
+	if arch == "" {
+		return "unknown"
+	}
+	return arch
+}
+
+// formatBlockers renders recommender blocker reasons as a compact, deterministic
+// string for an error message or log field (e.g. "arch.unsupported[required=aarch64]").
+// Args are sorted so the output is stable across the map's iteration order.
+func formatBlockers(blockers []recommend.Reason) string {
+	if len(blockers) == 0 {
+		return "incompatible with this host"
+	}
+	parts := make([]string, 0, len(blockers))
+	for i := range blockers {
+		b := &blockers[i]
+		if len(b.Args) == 0 {
+			parts = append(parts, b.Code)
+			continue
+		}
+		args := make([]string, 0, len(b.Args))
+		for k, v := range b.Args {
+			args = append(args, k+"="+v)
+		}
+		slices.Sort(args)
+		parts = append(parts, b.Code+"["+strings.Join(args, ",")+"]")
+	}
+	return strings.Join(parts, "; ")
 }
 
 // defaultHardwareProfile resolves the live host profile from the already-probed
@@ -466,10 +726,10 @@ func (c *Handler) InstallModel(ctx echo.Context) error {
 		return c.HandleError(ctx, nil, "unknown catalog ID: "+catalogID, http.StatusNotFound)
 	}
 
-	// Hidden entries are foundation-only: excluded from the gallery and not meant
-	// to be installed by ID. Some (the DFT-truncated BirdNET v2.4 variants) carry
-	// the permanent registry ID, which Uninstall then refuses, so an inadvertent
-	// install would leave an unremovable, unused model on disk. Reject them here.
+	// Hidden entries are foundation-only: excluded from the gallery and not meant to
+	// be installed by ID. The permanent BirdNET v2.4 entry is intentionally NOT
+	// hidden: it is always installed, and an install request against it is a
+	// within-model variant swap routed to InstallOrReplace -> replacePrimaryVariant.
 	if entry.Hidden {
 		return c.HandleError(ctx, nil, "catalog entry "+catalogID+" is not available for installation", http.StatusNotFound)
 	}
@@ -495,14 +755,47 @@ func (c *Handler) InstallModel(ctx echo.Context) error {
 		return c.HandleError(ctx, nil, "unknown variant "+req.VariantID+" for model "+catalogID, http.StatusBadRequest)
 	}
 
-	// Reject installation of ONNX-dependent models when ORT is unavailable.
-	if entry.RequiresONNX {
-		ortStatus := inference.CheckORTAvailability(c.CurrentSettings().BirdNET.ONNXRuntimePath)
+	// Probe ORT once: it gates ONNX-only variants below and also feeds the hardware
+	// profile the compatibility gate consults, mirroring how GetModelCatalog probes
+	// it a single time per request.
+	ortStatus := inference.CheckORTAvailability(c.CurrentSettings().BirdNET.ONNXRuntimePath)
+
+	// Reject installation of ONNX-dependent models when ORT is unavailable. The gate
+	// is variant-scoped: an entry may be ORT-free overall (e.g. BirdNET v2.4, whose
+	// BuiltIn baseline runs on the embedded TFLite model) yet expose ONNX-only
+	// variants (the DFT-truncated builds). VariantNeedsONNX refines the entry-level
+	// flag so swapping to the embedded baseline is never blocked, while selecting an
+	// ONNX build still requires the runtime.
+	if entry.RequiresONNX || classifier.VariantNeedsONNX(&entry, req.VariantID) {
 		if !ortStatus.Available {
 			return c.HandleError(ctx, nil,
 				"model requires ONNX Runtime "+inference.ORTRequiredVersion()+": "+ortStatus.Error,
 				http.StatusConflict)
 		}
+	}
+
+	// Hardware-compatibility gate. A variant the catalog marks incompatible with the
+	// detected hardware (an ARM-only int8 build on an x86 host, a variant needing
+	// more RAM than the host has) is rejected with 409 unless the request explicitly
+	// opts in via allowIncompatible. Reusing the same recommender GetModelCatalog
+	// uses keeps this gate and the gallery's compatible flag in agreement, and closes
+	// the hole where a direct API call could install an incompatible variant and, on
+	// switch, delete the working compatible one with no warning anywhere. An explicit
+	// override still installs, but logs a WARN so the choice is visible in support dumps.
+	compatible, gated, blockers, hostArch := c.requestedVariantCompatibility(&entry, req.VariantID, ortStatus)
+	if gated && !compatible {
+		if !req.AllowIncompatible {
+			return c.HandleError(ctx, nil,
+				fmt.Sprintf("variant %s of model %s is not compatible with the detected hardware (%s): %s; pass allowIncompatible to override",
+					variantOrDefault(req.VariantID), catalogID, hostArchOrUnknown(hostArch), formatBlockers(blockers)),
+				http.StatusConflict)
+		}
+		c.LogWarnIfEnabled("Installing model variant incompatible with detected hardware",
+			logger.String("catalog_id", catalogID),
+			logger.String("variant_id", variantOrDefault(req.VariantID)),
+			logger.String("host_arch", hostArchOrUnknown(hostArch)),
+			logger.String("blockers", formatBlockers(blockers)),
+			logger.String("operation", "model_install_incompatible_override"))
 	}
 
 	// Start async install in a background goroutine.
@@ -553,6 +846,14 @@ func (c *Handler) ReinstallModel(ctx echo.Context) error {
 	// Hidden entries are foundation-only and not installable by ID (see InstallModel).
 	if entry.Hidden {
 		return c.HandleError(ctx, nil, "catalog entry "+catalogID+" is not available for installation", http.StatusNotFound)
+	}
+
+	// The permanent BirdNET v2.4 entry is now visible (so its variant can be
+	// swapped), but reinstall has no meaning for it: the BuiltIn baseline has no
+	// downloadable files, and a DFT variant is (re)acquired by swapping to it via
+	// InstallOrReplace. Refuse reinstall explicitly rather than let it fall through.
+	if classifier.IsPermanentEntry(&entry) {
+		return c.HandleError(ctx, nil, "the built-in "+entry.Name+" model cannot be reinstalled", http.StatusConflict)
 	}
 
 	if c.ModelManager == nil {

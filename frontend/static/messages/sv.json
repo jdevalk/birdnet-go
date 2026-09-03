@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} är installerad för {oldRegion}, men din nya plats motsvarar {newRegion}. Du kan byta varianter från modellgalleriet i Inställningar.",
         "staleGlobalMessage": "{modelName} är installerad för {oldRegion}, men din nya plats är utanför dess täckning. Du kan byta till den globala varianten från modellgalleriet i Inställningar."
       },
+      "modelPath": {
+        "reconciledTitle": "Modellens filsökvägar reparerade för {modelName}",
+        "reconciledMessage": "De konfigurerade filsökvägarna för {modelName} var inaktuella och har reparerats för att matcha den installerade modellen på {modelPath}.",
+        "substitutedTitle": "Den konfigurerade modellfilen för {modelName} hittades inte",
+        "substitutedMessage": "Modellfilen som konfigurerats för {modelName} hittades inte på disken, så den installerade modellen på {modelPath} används i stället. Din konfiguration lämnades oförändrad.",
+        "unreadableTitle": "Den konfigurerade modellfilen för {modelName} kunde inte läsas",
+        "unreadableMessage": "Modellfilen som konfigurerats för {modelName} finns men kunde inte läsas, så den installerade modellen på {modelPath} används i stället. Din konfiguration lämnades oförändrad. Kontrollera filens behörigheter och att dess lagring är monterad.",
+        "builtinMessage": "Modellfilen som konfigurerats för {modelName} hittades inte på disken och det finns ingen installerad modell tillgänglig att ersätta den med, så den inbyggda modellen används i stället. Din konfiguration lämnades oförändrad.",
+        "notRegisteredTitle": "Ingen modell analyserar {sourceName}",
+        "notRegisteredMessage": "Inget ljud når {models} på ljudkällan \"{sourceName}\", så det produceras inga detektioner. Öppna modellgalleriet i Inställningar för att kontrollera status."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Nuvarande värde: {value}% (tröskel: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "AI-modeller & Inferens",
       "loading": "Laddar inferensstatus",
       "error": "Kunde inte ladda inferensstatus",
+      "vad": {
+        "section": "Integritetsskydd",
+        "title": "Silero VAD",
+        "active": "Aktiv",
+        "activeHelp": "Taldetekteringsmodellen är inläst och bedömer ljud.",
+        "idle": "Vänteläge",
+        "idleHelp": "Aktiverad och klar; modellen läses in när det första ljudsegmentet bedöms.",
+        "disabled": "Inaktiverad",
+        "disabledHelp": "Integritetsskyddet är avstängt i sekretessfilterinställningarna.",
+        "unavailable": "Ingen modell",
+        "unavailableHelp": "Ingen taldetekteringsmodell är tillgänglig i detta bygge. Ange en sökväg till en VAD-modell i sekretessfilterinställningarna, eller använd ett bygge med inbäddad modell.",
+        "description": "Silero VAD är en specialiserad akustisk modell som upptäcker mänskligt tal. Den driver integritetsfiltret och kasserar ljud när tal är närvarande så att röster hålls borta från dina inspelningar.",
+        "threshold": "Tröskelvärde",
+        "speechHits": "Talträffar",
+        "recentTitle": "Senaste talet",
+        "recentEmpty": "Inget tal upptäckt ännu",
+        "colWhen": "Tidpunkt",
+        "colProbability": "Sannolikhet",
+        "colSource": "Källa"
+      },
       "sectionHardware": "Hårdvara",
       "sectionBackends": "Inferens-backends",
       "sectionModels": "Modeller",
@@ -1766,6 +1797,8 @@
       "sources": "Ljudkällor",
       "noSources": "Inga källor anslutna",
       "primaryFallback": "primär (reserv)",
+      "sourceNotRunning": "analyserar inte",
+      "sourceNotRunningTooltip": "Denna källa är tilldelad modellen i inställningarna, men dess ljud når inte modellen, så den producerar inga detektioner. Öppna modellgalleriet i Inställningar för att kontrollera dess status.",
       "notMeasured": "-",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Språk",
           "helpText": "Språk för översatta artnamn."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU-trådar",
-          "helpText": "Antal CPU-trådar. Ange 0 för att använda alla tillgängliga trådar."
+        "inferenceThreads": {
+          "label": "CPU-trådar för inferens",
+          "helpText": "Antal CPU-trådar som används för modellinferens. Ange 0 för att använda alla tillgängliga trådar. Har ingen effekt på modeller som körs på en GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Aktivera integritetsfiltrering",
         "disabled": "Integritetsfiltrering är inaktiverad",
         "confidenceLabel": "Konfidenströskelvärde för mänsklig detektering",
-        "confidenceHelp": "Ange konfidensnivå för detektering av mänsklig röst, lägre värde gör filtret känsligare"
+        "confidenceHelp": "Ange konfidensnivå för detektering av mänsklig röst, lägre värde gör filtret känsligare",
+        "vadEnable": "Aktivera Integritetsskydd (Silero VAD)",
+        "vadHelp": "Kör en dedikerad neural talidentifieringsmodell jämte klassificeraren för robust röstfiltrering. Förbrukar ytterligare systemresurser (ca 20-30 MB RAM och CPU-inferens per segment).",
+        "vadThresholdLabel": "Tröskelvärde för Integritetsskydd",
+        "vadThresholdHelp": "Känslighetströskel för talaktivitetsdetektorn (standard 0.35). Lägre värden gör filtret känsligare för tyst eller avlägset tal."
       },
       "falsePositivePrevention": {
         "title": "Förebyggande av falska positiva",
@@ -5317,21 +5354,25 @@
         "title": "Modellregion",
         "modeAuto": "Automatisk",
         "modeAutoHint": "Välj den bästa regionala varianten utifrån stationsplatsen",
-        "modeGlobal": "Global",
-        "modeGlobalHint": "Använd alltid den världsomspännande modellen",
-        "pinLabel": "Fäst en specifik region",
-        "pinnedBadge": "Fäst",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Fäst {region}",
         "switchToAuto": "Växla till automatisk",
         "loading": "Laddar regioner...",
         "loadFailed": "Kunde inte ladda regiondata",
-        "mapLoading": "Läser in täckningskarta...",
         "mapUnavailable": "Täckningskarta ej tillgänglig",
         "mapAria": "Täckningskarta för {region}",
-        "countriesCore": "Täcker: {countries}",
-        "countriesPartial": "Delvis täckning: {countries}",
-        "countriesMore": "och {count} till",
-        "countriesLess": "Visa färre",
         "why": {
           "noLocation": "Automatiskt val kräver en stationsplats. Ange den i Huvudinställningar; den globala modellen används fram tills dess.",
           "outsideCoverage": "Din plats är utanför alla regionala modellers täckning, så den globala modellen används.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Regionala varianter visas för {region}, inställt via modellregionsvalet ovan",
         "regionContextNone": "Regionala varianter är tillgängliga. Välj en region i modellregionsvalet ovan, eller visa alla varianter.",
         "otherRegions": "Andra regioner",
+        "filterPlaceholder": "Filtrera regioner",
+        "filterAria": "Filtrera regionsanpassade byggen",
+        "filterNoMatch": "Inga regioner matchar \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Laddar modeller...",
       "retry": "Försök igen",
       "builtIn": "Inbyggd",
-      "builtInDescription": "Inbyggd fågelartsklassificerare från BirdNET-teamet.",
       "species": "{count} arter",
       "install": "Installera",
       "installing": "Installerar...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Installerar om...",
       "reinstallComplete": "Filer verifierade",
       "geomodelBadge": "Inkluderar BirdNET v3.0 geomodell",
-      "entryIncompatible": "Den här modellen är inte tillgänglig på detta system."
+      "preview": {
+        "badge": "Förhandsvisning",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Förhandsvisning för utvecklare, inte den slutgiltiga versionen. Detta är ett tidigt bygge för testning; resultaten kan ändras före den stabila versionen.",
+        "dialogNotice": "Du installerar en förhandsvisning för utvecklare ({build}). Fungerar bra för att prova på, men rekommenderas inte som din enda klassificerare ännu."
+      },
+      "entryIncompatible": "Den här modellen är inte tillgänglig på detta system.",
+      "regionGlobal": "Global",
+      "hardwareLabel": "Hårdvara",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# modell kan köras snabbare på din hårdvara} other {# modeller kan köras snabbare på din hårdvara}}",
+        "review": "Granska",
+        "dismiss": "Avfärda",
+        "badgeTitle": "Ett snabbare bygge är tillgängligt för din hårdvara",
+        "swap": "Optimera",
+        "dialogTitle": "Optimera dina modeller",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} till {to}",
+        "apply": "Tillämpa",
+        "applyAll": "Tillämpa alla",
+        "applying": "Tillämpar...",
+        "applied": "Tillämpad",
+        "applyFailed": "Kunde inte tillämpa",
+        "upToDate": "Alla dina modeller är redan optimerade för denna hårdvara.",
+        "licenseNote": "Bytet sker inom samma modell, så dess licens ändras inte."
+      }
     },
     "bird": {
       "title": "Fågeldetektering",

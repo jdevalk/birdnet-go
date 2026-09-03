@@ -463,6 +463,17 @@
         "staleMessage": "A(z) {modelName} a(z) {oldRegion} régióhoz van telepítve, de az új helyszíne a következőnek felel meg: {newRegion}. Változatot a Beállítások modellgalériájában válthat.",
         "staleGlobalMessage": "A(z) {modelName} a(z) {oldRegion} régióhoz van telepítve, de az új helyszíne kívül esik a lefedettségén. A globális változatra a Beállítások modellgalériájában válthat."
       },
+      "modelPath": {
+        "reconciledTitle": "A(z) {modelName} modell fájlelérési útjai javítva",
+        "reconciledMessage": "A(z) {modelName} beállított fájlelérési útjai elavultak voltak, és javításra kerültek, hogy megfeleljenek a(z) {modelPath} helyen telepített modellnek.",
+        "substitutedTitle": "A(z) {modelName} modellhez beállított modellfájl nem található",
+        "substitutedMessage": "A(z) {modelName} modellhez beállított modellfájl nem található a lemezen, ezért helyette a(z) {modelPath} helyen telepített modell van használatban. A konfigurációja változatlan maradt.",
+        "unreadableTitle": "A(z) {modelName} modellhez beállított modellfájlt nem sikerült beolvasni",
+        "unreadableMessage": "A(z) {modelName} modellhez beállított modellfájl létezik, de nem sikerült beolvasni, ezért helyette a(z) {modelPath} helyen telepített modell van használatban. A konfigurációja változatlan maradt. Ellenőrizze a fájl jogosultságait és azt, hogy a tárolója csatolva van-e.",
+        "builtinMessage": "A(z) {modelName} modellhez beállított modellfájl nem található a lemezen, és nem érhető el telepített modell a helyettesítésére, ezért helyette a beépített modell van használatban. A konfigurációja változatlan maradt.",
+        "notRegisteredTitle": "Egyetlen modell sem elemzi a következőt: {sourceName}",
+        "notRegisteredMessage": "Nem jut el hang a(z) {models} számára a(z) \"{sourceName}\" hangforráson, így nem jönnek létre detektálások. Nyissa meg a modellgalériát a Beállításokban az állapot ellenőrzéséhez."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Jelenlegi érték: {value}% (küszöbérték: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "AI Modellek és Következtetés",
       "loading": "Következtetési állapot betöltése",
       "error": "Következtetési állapot betöltése sikertelen",
+      "vad": {
+        "section": "Adatvédelmi őr",
+        "title": "Silero VAD",
+        "active": "Aktív",
+        "activeHelp": "A beszédfelismerő modell betöltve, és értékeli a hangot.",
+        "idle": "Tétlen",
+        "idleHelp": "Engedélyezve és készen áll; a modell az első hangrészlet értékelésekor töltődik be.",
+        "disabled": "Letiltva",
+        "disabledHelp": "Az Adatvédelmi Őr ki van kapcsolva az adatvédelmi szűrő beállításaiban.",
+        "unavailable": "Nincs modell",
+        "unavailableHelp": "Ebben a verzióban nem érhető el beszédfelismerő modell. Állítson be egy VAD modell útvonalat az adatvédelmi szűrő beállításaiban, vagy használjon beágyazott modellt tartalmazó verziót.",
+        "description": "A Silero VAD egy speciális akusztikai modell, amely érzékeli az emberi beszédet. Ez hajtja a privátszféra-szűrőt, eldobva a hangot beszéd jelenlétekor, hogy a hangok ne kerüljenek bele a felvételekbe.",
+        "threshold": "Küszöbérték",
+        "speechHits": "Beszédtalálatok",
+        "recentTitle": "Legutóbbi beszéd",
+        "recentEmpty": "Még nem érzékelt beszédet",
+        "colWhen": "Időpont",
+        "colProbability": "Valószínűség",
+        "colSource": "Forrás"
+      },
       "sectionHardware": "Hardver",
       "sectionBackends": "Következtetési Hátterek",
       "sectionModels": "Modellek",
@@ -1766,6 +1797,8 @@
       "sources": "Hangforrások",
       "noSources": "Nincs csatlakoztatott hangforrás",
       "primaryFallback": "elsődleges (tartalék)",
+      "sourceNotRunning": "nem elemzi",
+      "sourceNotRunningTooltip": "Ez a forrás hozzá van rendelve a modellhez a beállításokban, de a hangja nem jut el a modellhez, így nem készít észleléseket. Nyissa meg a modellgalériát a Beállításokban az állapotának ellenőrzéséhez.",
       "notMeasured": "n/a",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Területi beállítás",
           "helpText": "A lefordított faj közhasználatú nevek területi beállítása."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU szálak",
-          "helpText": "CPU szálak száma. 0-ra állítva az összes elérhető szálat használja."
+        "inferenceThreads": {
+          "label": "Következtetési CPU szálak",
+          "helpText": "A modellkövetkeztetéshez használt CPU szálak száma. 0-ra állítva az összes elérhető szálat használja. Nincs hatással a GPU-n futó modellekre."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Adatvédelmi szűrés engedélyezése",
         "disabled": "Az adatvédelmi szűrés le van tiltva",
         "confidenceLabel": "Megbízhatósági küszöbérték az emberi detektáláshoz",
-        "confidenceHelp": "Állítsa be az emberi hang detektálás megbízhatósági szintjét, az alacsonyabb érték érzékenyebbé teszi a szűrőt"
+        "confidenceHelp": "Állítsa be az emberi hang detektálás megbízhatósági szintjét, az alacsonyabb érték érzékenyebbé teszi a szűrőt",
+        "vadEnable": "Adatvédelmi Őr engedélyezése (Silero VAD)",
+        "vadHelp": "Egy külön neurális beszédérzékelő modellt futtat az osztályozó mellett a megbízható hangszűrés érdekében. További rendszererőforrásokat használ (kb. 20-30 MB RAM és CPU-inferencia szegmensenként).",
+        "vadThresholdLabel": "Adatvédelmi Őr küszöbértéke",
+        "vadThresholdHelp": "A hangaktivitás-érzékelő érzékenységi küszöbértéke (alapértelmezett 0.35). Alacsonyabb értékek esetén a szűrő érzékenyebb a halk vagy távoli beszédre."
       },
       "falsePositivePrevention": {
         "title": "Hamis pozitív megelőzés",
@@ -5317,21 +5354,25 @@
         "title": "Modellrégió",
         "modeAuto": "Automatikus",
         "modeAutoHint": "A legjobb regionális változat kiválasztása az állomás helyszíne alapján",
-        "modeGlobal": "Globális",
-        "modeGlobalHint": "Mindig a világszintű modell használata",
-        "pinLabel": "Adott régió rögzítése",
-        "pinnedBadge": "Rögzítve",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "{region} rögzítése",
         "switchToAuto": "Váltás automatikusra",
         "loading": "Régiók betöltése...",
         "loadFailed": "Nem sikerült betölteni a régióadatokat",
-        "mapLoading": "Lefedettségi térkép betöltése...",
         "mapUnavailable": "A lefedettségi térkép nem érhető el",
         "mapAria": "{region} lefedettségi térképe",
-        "countriesCore": "Lefedi: {countries}",
-        "countriesPartial": "Részleges lefedettség: {countries}",
-        "countriesMore": "és további {count}",
-        "countriesLess": "Kevesebb megjelenítése",
         "why": {
           "noLocation": "Az automatikus kiválasztáshoz állomáshelyszín szükséges. Adja meg a Fő beállításokban; addig a globális modell kerül használatra.",
           "outsideCoverage": "Az Ön helyszíne kívül esik az összes regionális modell lefedettségén, ezért a globális modell kerül használatra.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Megjelenített regionális változatok ehhez: {region}, a fenti modellrégió-választás alapján",
         "regionContextNone": "Elérhetők regionális változatok. Válassz egy régiót a fenti modellrégió-választásban, vagy jelenítsd meg az összes változatot.",
         "otherRegions": "Egyéb régiók",
+        "filterPlaceholder": "Régiók szűrése",
+        "filterAria": "Régióra szabott buildek szűrése",
+        "filterNoMatch": "Egyetlen régió sem felel meg ennek: \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Modellek betöltése...",
       "retry": "Újra",
       "builtIn": "Beépített",
-      "builtInDescription": "A BirdNET csapat beépített madárfaj-osztályozója.",
       "species": "{count} faj",
       "install": "Telepítés",
       "installing": "Telepítés...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Újratelepítés...",
       "reinstallComplete": "Fájlok sikeresen ellenőrizve",
       "geomodelBadge": "Tartalmazza a BirdNET v3.0 geomodellt",
-      "entryIncompatible": "Ez a modell nem érhető el ezen a rendszeren."
+      "preview": {
+        "badge": "Előzetes",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Fejlesztői előzetes, nem végleges kiadás. Ez egy korai tesztverzió; az eredmények a stabil verzió előtt még változhatnak.",
+        "dialogNotice": "Fejlesztői előzetest ({build}) készülsz telepíteni. Kipróbálásra jó, de egyelőre nem ajánlott egyedüli osztályozóként használni."
+      },
+      "entryIncompatible": "Ez a modell nem érhető el ezen a rendszeren.",
+      "regionGlobal": "Globális",
+      "hardwareLabel": "Hardver",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# modell gyorsabban futhat a hardvereden} other {# modell gyorsabban futhat a hardvereden}}",
+        "review": "Áttekintés",
+        "dismiss": "Elutasítás",
+        "badgeTitle": "Egy gyorsabb verzió érhető el a hardveredhez",
+        "swap": "Optimalizálás",
+        "dialogTitle": "Modellek optimalizálása",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} -> {to}",
+        "apply": "Alkalmazás",
+        "applyAll": "Összes alkalmazása",
+        "applying": "Alkalmazás...",
+        "applied": "Alkalmazva",
+        "applyFailed": "Nem sikerült alkalmazni",
+        "upToDate": "Minden modelled optimalizálva van erre a hardverre.",
+        "licenseNote": "A csere ugyanazon a modellen belül marad, így a licence nem változik."
+      }
     },
     "bird": {
       "title": "Madárészlelés",

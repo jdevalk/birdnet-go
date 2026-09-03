@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} est installé pour {oldRegion}, mais votre nouvel emplacement correspond à {newRegion}. Vous pouvez changer de variante depuis la galerie de modèles dans les Paramètres.",
         "staleGlobalMessage": "{modelName} est installé pour {oldRegion}, mais votre nouvel emplacement est en dehors de sa couverture. Vous pouvez passer à la variante globale depuis la galerie de modèles dans les Paramètres."
       },
+      "modelPath": {
+        "reconciledTitle": "Chemins de fichiers du modèle réparés pour {modelName}",
+        "reconciledMessage": "Les chemins de fichiers configurés pour {modelName} étaient obsolètes et ont été réparés pour correspondre au modèle installé à l'emplacement {modelPath}.",
+        "substitutedTitle": "Le fichier de modèle configuré pour {modelName} est introuvable",
+        "substitutedMessage": "Le fichier de modèle configuré pour {modelName} est introuvable sur le disque, le modèle installé à l'emplacement {modelPath} est donc utilisé à la place. Votre configuration n'a pas été modifiée.",
+        "unreadableTitle": "Le fichier de modèle configuré pour {modelName} n'a pas pu être lu",
+        "unreadableMessage": "Le fichier de modèle configuré pour {modelName} existe mais n'a pas pu être lu, le modèle installé à l'emplacement {modelPath} est donc utilisé à la place. Votre configuration n'a pas été modifiée. Vérifiez les permissions du fichier et que son stockage est monté.",
+        "builtinMessage": "Le fichier de modèle configuré pour {modelName} est introuvable sur le disque et aucun modèle installé n'est disponible pour le remplacer, le modèle intégré est donc utilisé à la place. Votre configuration n'a pas été modifiée.",
+        "notRegisteredTitle": "Aucun modèle n'analyse {sourceName}",
+        "notRegisteredMessage": "Aucun audio ne parvient à {models} sur la source audio \"{sourceName}\", aucune détection n'est donc produite. Ouvrez la galerie de modèles dans les Paramètres pour vérifier l'état."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Valeur actuelle : {value}% (seuil : {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "Modèles IA et inférence",
       "loading": "Chargement de l'état de l'inférence",
       "error": "Impossible de charger l'état de l'inférence",
+      "vad": {
+        "section": "Protection de confidentialité",
+        "title": "Silero VAD",
+        "active": "Actif",
+        "activeHelp": "Le modèle de détection vocale est chargé et évalue l'audio.",
+        "idle": "En attente",
+        "idleHelp": "Activé et prêt ; le modèle est chargé lors de l'évaluation du premier segment audio.",
+        "disabled": "Désactivé",
+        "disabledHelp": "La protection de confidentialité est désactivée dans les paramètres du filtre de confidentialité.",
+        "unavailable": "Aucun modèle",
+        "unavailableHelp": "Aucun modèle de détection vocale n'est disponible dans cette version. Définissez un chemin de modèle VAD dans les paramètres du filtre de confidentialité, ou utilisez une version avec le modèle intégré.",
+        "description": "Silero VAD est un modèle acoustique spécialisé qui détecte la voix humaine. Il alimente le filtre de confidentialité, rejetant l'audio lorsque de la parole est présente afin que les voix soient exclues de vos enregistrements.",
+        "threshold": "Seuil",
+        "speechHits": "Détections vocales",
+        "recentTitle": "Voix récente",
+        "recentEmpty": "Aucune voix détectée pour le moment",
+        "colWhen": "Quand",
+        "colProbability": "Probabilité",
+        "colSource": "Source"
+      },
       "sectionHardware": "Matériel",
       "sectionBackends": "Moteurs d'inférence",
       "sectionModels": "Modèles",
@@ -1766,6 +1797,8 @@
       "sources": "Sources audio",
       "noSources": "Aucune source attachée",
       "primaryFallback": "primaire (secours)",
+      "sourceNotRunning": "n'analyse pas",
+      "sourceNotRunningTooltip": "Cette source est assignée au modèle dans les paramètres, mais son audio ne parvient pas au modèle, elle ne produit donc aucune détection. Ouvrez la galerie de modèles dans les Paramètres pour vérifier son état.",
       "notMeasured": "n/d",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Langue",
           "helpText": "Langue pour les noms communs d'espèces traduits."
         },
-        "tensorflowThreads": {
-          "label": "Threads CPU TensorFlow",
-          "helpText": "Nombre de threads CPU. Mettre à 0 pour utiliser tous les threads disponibles."
+        "inferenceThreads": {
+          "label": "Threads CPU pour l'inférence",
+          "helpText": "Nombre de threads CPU utilisés pour l'inférence du modèle. Mettre à 0 pour utiliser tous les threads disponibles. N'a aucun effet sur les modèles s'exécutant sur un GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Activer le filtrage de confidentialité",
         "disabled": "Le filtrage de confidentialité est désactivé",
         "confidenceLabel": "Seuil de confiance pour la détection humaine",
-        "confidenceHelp": "Définir le niveau de confiance pour la détection de voix humaine, une valeur plus faible rend le filtre plus sensible"
+        "confidenceHelp": "Définir le niveau de confiance pour la détection de voix humaine, une valeur plus faible rend le filtre plus sensible",
+        "vadEnable": "Activer la protection de confidentialité (Silero VAD)",
+        "vadHelp": "Exécute un modèle neuronal dédié de détection de la parole aux côtés du classificateur pour un filtrage vocal robuste. Consomme des ressources système supplémentaires (environ 20-30 Mo de RAM et de l'inférence CPU par segment).",
+        "vadThresholdLabel": "Seuil de protection de confidentialité",
+        "vadThresholdHelp": "Seuil de sensibilité pour le détecteur d'activité vocale (0,35 par défaut). Des valeurs plus faibles rendent le filtre plus sensible aux voix faibles ou éloignées."
       },
       "falsePositivePrevention": {
         "title": "Prévention des faux positifs",
@@ -5317,21 +5354,25 @@
         "title": "Région du modèle",
         "modeAuto": "Automatique",
         "modeAutoHint": "Choisir la meilleure variante régionale selon l'emplacement de la station",
-        "modeGlobal": "Global",
-        "modeGlobalHint": "Toujours utiliser le modèle mondial",
-        "pinLabel": "Épingler une région spécifique",
-        "pinnedBadge": "Épinglé",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Épingler {region}",
         "switchToAuto": "Passer en automatique",
         "loading": "Chargement des régions...",
         "loadFailed": "Échec du chargement des données de région",
-        "mapLoading": "Chargement de la carte de couverture...",
         "mapUnavailable": "Carte de couverture indisponible",
         "mapAria": "Carte de couverture de {region}",
-        "countriesCore": "Couvre : {countries}",
-        "countriesPartial": "Couverture partielle : {countries}",
-        "countriesMore": "et {count} de plus",
-        "countriesLess": "Afficher moins",
         "why": {
           "noLocation": "La sélection automatique nécessite un emplacement de station. Définissez-le dans les Paramètres principaux ; le modèle global est utilisé jusque-là.",
           "outsideCoverage": "Votre emplacement est en dehors de la couverture de tous les modèles régionaux, le modèle global est donc utilisé.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Variantes régionales affichées pour {region}, définies par la sélection de région du modèle ci-dessus",
         "regionContextNone": "Des variantes régionales sont disponibles. Choisissez une région dans la sélection de région du modèle ci-dessus ou affichez toutes les variantes.",
         "otherRegions": "Autres régions",
+        "filterPlaceholder": "Filtrer les régions",
+        "filterAria": "Filtrer les versions adaptées aux régions",
+        "filterNoMatch": "Aucune région ne correspond à \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Chargement des modèles...",
       "retry": "Réessayer",
       "builtIn": "Intégré",
-      "builtInDescription": "Classificateur d'espèces d'oiseaux intégré par l'équipe BirdNET.",
       "species": "{count} espèces",
       "install": "Installer",
       "installing": "Installation...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Réinstallation...",
       "reinstallComplete": "Fichiers vérifiés avec succès",
       "geomodelBadge": "Inclut le BirdNET v3.0 geomodel",
-      "entryIncompatible": "Ce modèle n'est pas disponible sur ce système."
+      "preview": {
+        "badge": "Aperçu",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Aperçu développeur, pas la version finale. Il s'agit d'une version préliminaire pour les tests; les résultats peuvent changer avant la version stable.",
+        "dialogNotice": "Vous installez un aperçu développeur ({build}). Idéal pour tester, mais pas encore recommandé comme classificateur unique."
+      },
+      "entryIncompatible": "Ce modèle n'est pas disponible sur ce système.",
+      "regionGlobal": "Global",
+      "hardwareLabel": "Matériel",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# modèle peut fonctionner plus rapidement sur votre matériel} other {# modèles peuvent fonctionner plus rapidement sur votre matériel}}",
+        "review": "Examiner",
+        "dismiss": "Ignorer",
+        "badgeTitle": "Une version plus rapide est disponible pour votre matériel",
+        "swap": "Optimiser",
+        "dialogTitle": "Optimiser vos modèles",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} vers {to}",
+        "apply": "Appliquer",
+        "applyAll": "Tout appliquer",
+        "applying": "Application...",
+        "applied": "Appliqué",
+        "applyFailed": "Échec de l'application",
+        "upToDate": "Tous vos modèles sont déjà optimisés pour ce matériel.",
+        "licenseNote": "Le changement reste au sein du même modèle, sa licence ne change donc pas."
+      }
     },
     "bird": {
       "title": "Bird Detection",

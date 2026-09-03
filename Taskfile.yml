@@ -102,14 +102,14 @@ vars:
   # would not be caught here.
   #
   # Measured on a Raspberry Pi 5 (Cortex-A76), medians of -benchtime=2s -count=5
-  # over internal/audiocore/hlsmux BenchmarkStreamWrite10ms and
-  # BenchmarkStreamWrite32k: 11.2% and 12.8% faster respectively. Those cover
-  # encode plus fMP4 fragmentation, so the encoder-only gain is larger by an
-  # unmeasured margin. (go-aac's README reports 14% on the same hardware, but for
-  # the trellis kernel alone; it lists the both-kernels figure as pending, so it
-  # is not directly comparable.) Both consumers (native AAC clip export, native HLS)
-  # are still opt-in behind BIRDNET_AAC_ENCODER / BIRDNET_HLS_ENCODER=native, so
-  # today this speeds up those gated paths rather than a default deployment.
+  # over the HLS muxer's BenchmarkStreamWrite10ms and BenchmarkStreamWrite32k
+  # (the muxer since extracted to github.com/tphakala/go-hls): 11.2% and 12.8%
+  # faster respectively. Those cover encode plus fMP4 fragmentation, so the
+  # encoder-only gain is larger by an unmeasured margin. (go-aac's README reports
+  # 14% on the same hardware, but for the trellis kernel alone; it lists the
+  # both-kernels figure as pending, so it is not directly comparable.) Native HLS
+  # live streaming is now the unconditional default, so this speeds up a default
+  # deployment; native AAC clip export is still opt-in behind BIRDNET_AAC_ENCODER.
   BASE_BUILD_TAGS: 'goaac_simd'
   # Emits nothing when the joined list is empty, mirroring the ${BUILD_TAGS:+...}
   # guard on the linux_amd64 / linux_arm64 build lines. (noembed_build needs no
@@ -207,11 +207,12 @@ tasks:
       - '[ -f "{{.AVICOMMONS_JSON_FILE}}" ]'
 
   sync-region-snapshots:
-    desc: Refresh the embedded region snapshots and coverage maps from a sibling acoustic-models checkout
+    desc: Refresh the embedded region snapshots, coverage maps, and vendored model manifests from a sibling acoustic-models checkout
     vars:
       ACOUSTIC_MODELS_DIR: '{{.ACOUSTIC_MODELS_DIR | default "../acoustic-models"}}'
       REGION_DATA_DIR: internal/classifier/region/data
       MAPS_DIR: internal/classifier/region/data/maps
+      GEN_MANIFESTS_DIR: internal/classifier/gen/manifests
     cmds:
       - |
         SRC="{{.ACOUSTIC_MODELS_DIR}}/models/manifests"
@@ -220,11 +221,24 @@ tasks:
           echo "Set ACOUSTIC_MODELS_DIR to your acoustic-models checkout." >&2
           exit 1
         fi
+        # Embedded region tables (bbox / tier / countries) read at runtime.
         for f in Perch-v2-Models.regions.json BirdNET-v3.0-Models.regions.json; do
           cp "$SRC/$f" "{{.REGION_DATA_DIR}}/$f"
           echo "synced $f"
         done
-        echo "Refreshed region snapshots. If tiers changed, update golden_tier_test.go."
+        # Vendored model manifests the catalog generator reads. These MUST be
+        # refreshed in lockstep with the region tables above: "go generate
+        # ./internal/classifier" joins models.json against regions.json, so a
+        # stale models.json here silently regenerates the catalog against the old
+        # region set (the two inputs disagree on which tiles exist).
+        for f in Perch-v2-Models.models.json BirdNET-v3.0-Models.models.json; do
+          cp "$SRC/$f" "{{.GEN_MANIFESTS_DIR}}/$f"
+          echo "synced $f"
+        done
+        echo "Refreshed region snapshots and model manifests. Next: run"
+        echo "  go run ./gen -update-labels-checksums   (from internal/classifier; networked)"
+        echo "  go generate ./internal/classifier"
+        echo "and if tiers changed, update golden_tier_test.go."
       - |
         # Sync per-region coverage maps (SVG). The geometry is model-family-agnostic,
         # so a tile's coverage.svg is byte-identical across families; we embed ONE set
@@ -621,7 +635,7 @@ tasks:
         if ! command -v golangci-lint >/dev/null 2>&1; then
           echo "📥 Installing golangci-lint..."
           # Add timeout for install script download and execution
-          if ! timeout 120 bash -c "curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b \$(go env GOPATH)/bin v2.12.2"; then
+          if ! timeout 120 bash -c "curl -sSfL https://golangci-lint.run/install.sh | sh -s -- -b \$(go env GOPATH)/bin v2.13.2"; then
             echo "❌ Failed to install golangci-lint"
             echo "   Check your internet connection and try again"
             exit 1

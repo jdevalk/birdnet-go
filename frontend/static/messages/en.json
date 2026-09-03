@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} is installed for {oldRegion}, but your new location resolves to {newRegion}. You can switch variants from the model gallery in Settings.",
         "staleGlobalMessage": "{modelName} is installed for {oldRegion}, but your new location is outside its coverage. You can switch to the global variant from the model gallery in Settings."
       },
+      "modelPath": {
+        "reconciledTitle": "Model file paths repaired for {modelName}",
+        "reconciledMessage": "Configured file paths for {modelName} were out of date and have been repaired to match the installed model at {modelPath}.",
+        "substitutedTitle": "Configured model file for {modelName} was not found",
+        "substitutedMessage": "The model file configured for {modelName} was not found on disk, so the installed model at {modelPath} is being used instead. Your configuration was left unchanged.",
+        "unreadableTitle": "Configured model file for {modelName} could not be read",
+        "unreadableMessage": "The model file configured for {modelName} exists but could not be read, so the installed model at {modelPath} is being used instead. Your configuration was left unchanged. Check the file's permissions and that its storage is mounted.",
+        "builtinMessage": "The model file configured for {modelName} was not found on disk and no installed model is available to replace it, so the built-in model is being used instead. Your configuration was left unchanged.",
+        "notRegisteredTitle": "No model is analyzing {sourceName}",
+        "notRegisteredMessage": "No audio is reaching {models} on audio source \"{sourceName}\", so no detections are produced. Open the model gallery in Settings to check status."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Current value: {value}% (threshold: {threshold}%)",
@@ -1715,6 +1726,26 @@
       "title": "AI Models & Inference",
       "loading": "Loading inference status",
       "error": "Could not load inference status",
+      "vad": {
+        "section": "Privacy Guard",
+        "title": "Silero VAD",
+        "active": "Active",
+        "activeHelp": "The speech-detection model is loaded and scoring audio.",
+        "idle": "Idle",
+        "idleHelp": "Enabled and ready; the model loads when the first audio chunk is scored.",
+        "disabled": "Disabled",
+        "disabledHelp": "Privacy Guard is turned off in the privacy-filter settings.",
+        "unavailable": "No model",
+        "unavailableHelp": "No speech-detection model is available in this build. Set a VAD model path in the privacy-filter settings, or use a build with the embedded model.",
+        "description": "Silero VAD is a specialized acoustic model that detects human speech. It powers the privacy filter, discarding audio when speech is present so voices are kept out of your recordings.",
+        "threshold": "Threshold",
+        "speechHits": "Speech hits",
+        "recentTitle": "Recent speech",
+        "recentEmpty": "No speech detected yet",
+        "colWhen": "When",
+        "colProbability": "Probability",
+        "colSource": "Source"
+      },
       "sectionHardware": "Hardware",
       "sectionBackends": "Inference Backends",
       "sectionModels": "Models",
@@ -1766,6 +1797,8 @@
       "sources": "Audio sources",
       "noSources": "No sources attached",
       "primaryFallback": "primary (fallback)",
+      "sourceNotRunning": "not analyzing",
+      "sourceNotRunningTooltip": "This source is assigned to the model in settings, but its audio is not reaching the model, so it produces no detections. Open the model gallery in Settings to check its status.",
       "notMeasured": "n/a",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Locale",
           "helpText": "Locale for translated species common names."
         },
-        "tensorflowThreads": {
-          "label": "TensorFlow CPU Threads",
-          "helpText": "Number of CPU threads. Set to 0 to use all available threads."
+        "inferenceThreads": {
+          "label": "Inference CPU Threads",
+          "helpText": "Number of CPU threads used for model inference. Set to 0 to use all available threads. Has no effect on models running on a GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Enable Privacy Filtering",
         "disabled": "Privacy filtering is disabled",
         "confidenceLabel": "Confidence Threshold for Human Detection",
-        "confidenceHelp": "Set the confidence level for human voice detection, lower value makes filter more sensitive"
+        "confidenceHelp": "Set the confidence level for human voice detection, lower value makes filter more sensitive",
+        "vadEnable": "Enable Privacy Guard (Silero VAD)",
+        "vadHelp": "Runs a dedicated neural speech-detection model alongside the classifier for robust voice filtering. Consumes additional system resources (approx. 20-30 MB RAM and CPU inference per segment).",
+        "vadThresholdLabel": "Privacy Guard Threshold",
+        "vadThresholdHelp": "Sensitivity threshold for the Privacy Guard voice activity detector (default 0.35). Lower values make the filter more sensitive to quiet or distant speech."
       },
       "falsePositivePrevention": {
         "title": "False Positive Prevention",
@@ -5316,31 +5353,35 @@
       "region": {
         "title": "Model region",
         "modeAuto": "Automatic",
-        "modeAutoHint": "Pick the best regional variant from the station location",
-        "modeGlobal": "Global",
-        "modeGlobalHint": "Always use the worldwide model",
-        "pinLabel": "Pin a specific region",
-        "pinnedBadge": "Pinned",
-        "pinAction": "Pin {region}",
+        "modeAutoHint": "Detect the best region from your station location",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
+        "pinAction": "Use {region}",
         "switchToAuto": "Switch to automatic",
         "loading": "Loading regions...",
         "loadFailed": "Failed to load region data",
-        "mapLoading": "Loading coverage map...",
         "mapUnavailable": "Coverage map unavailable",
         "mapAria": "{region} coverage map",
-        "countriesCore": "Covers: {countries}",
-        "countriesPartial": "Partial coverage: {countries}",
-        "countriesMore": "and {count} more",
-        "countriesLess": "Show fewer",
         "why": {
-          "noLocation": "Automatic selection needs a station location. Set it in Main settings; the global model is used until then.",
-          "outsideCoverage": "Your location is outside every regional model's coverage, so the global model is used.",
-          "ambiguous": "Your location is near the border between {region} and {runnerUp}. Automatic selection uses {region}; pin either one to make the choice explicit.",
+          "noLocation": "Automatic selection needs a station location. Set it in Main settings; the worldwide model is used until then.",
+          "outsideCoverage": "Your location is outside every regional model's coverage, so the worldwide model is used.",
+          "ambiguous": "Your location is near the border between {region} and {runnerUp}. Automatic selection uses {region}; select either one to make the choice explicit.",
           "resolved": "Detected region from your location: {region}.",
-          "global": "The global model is always used, regardless of the station location.",
-          "pinned": "Pinned to {region}. The station location does not affect model selection.",
+          "global": "The worldwide model is used, regardless of the station location.",
+          "pinned": "Using {region}. The station location does not affect model selection.",
           "pinnedMismatch": "Your location currently resolves to {resolved}.",
-          "pinnedUnknown": "The pinned region \"{region}\" is not available in the current model catalog. Model families fall back to your location or the global model."
+          "pinnedUnknown": "The selected region \"{region}\" is not available in the current model catalog. Model families fall back to your location or the worldwide model."
         }
       },
       "variants": {
@@ -5357,6 +5398,9 @@
         "regionContext": "Regional variants shown for {region}, set by the model region selection above",
         "regionContextNone": "Regional variants are available. Pick a region in the model region selection above to scope them to your area.",
         "otherRegions": "Other regions",
+        "filterPlaceholder": "Filter regions",
+        "filterAria": "Filter region-tuned builds",
+        "filterNoMatch": "No regions match \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Loading models...",
       "retry": "Retry",
       "builtIn": "Built-in",
-      "builtInDescription": "Built-in bird species classifier by the BirdNET team.",
       "species": "{count} species",
       "install": "Install",
       "installing": "Installing...",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Reinstalling...",
       "reinstallComplete": "Files verified successfully",
       "geomodelBadge": "Includes BirdNET v3.0 geomodel",
-      "entryIncompatible": "This model is not available on this system."
+      "preview": {
+        "badge": "Preview",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Developer preview, not the final release. This is an early build for testing; results may change before the stable version.",
+        "dialogNotice": "You are installing a developer preview ({build}). Fine for trying it out, but not recommended as your only classifier yet."
+      },
+      "entryIncompatible": "This model is not available on this system.",
+      "regionGlobal": "Global",
+      "hardwareLabel": "Hardware",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# model can run faster on your hardware} other {# models can run faster on your hardware}}",
+        "review": "Review",
+        "dismiss": "Dismiss",
+        "badgeTitle": "A faster build is available for your hardware",
+        "swap": "Optimize",
+        "dialogTitle": "Optimize your models",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} to {to}",
+        "apply": "Apply",
+        "applyAll": "Apply all",
+        "applying": "Applying...",
+        "applied": "Applied",
+        "applyFailed": "Failed to apply",
+        "upToDate": "All your models are already optimized for this hardware.",
+        "licenseNote": "Swapping stays within the same model, so its license does not change."
+      }
     },
     "bird": {
       "title": "Bird Detection",

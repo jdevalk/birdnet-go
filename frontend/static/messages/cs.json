@@ -463,6 +463,17 @@
         "staleMessage": "{modelName} je nainstalován pro {oldRegion}, ale vaše nová poloha odpovídá {newRegion}. Varianty můžete změnit v galerii modelů v Nastavení.",
         "staleGlobalMessage": "{modelName} je nainstalován pro {oldRegion}, ale vaše nová poloha je mimo jeho pokrytí. Na globální variantu můžete přepnout v galerii modelů v Nastavení."
       },
+      "modelPath": {
+        "reconciledTitle": "Cesty k souborům modelu {modelName} opraveny",
+        "reconciledMessage": "Nakonfigurované cesty k souborům pro {modelName} byly zastaralé a byly opraveny tak, aby odpovídaly nainstalovanému modelu v {modelPath}.",
+        "substitutedTitle": "Nakonfigurovaný soubor modelu pro {modelName} nebyl nalezen",
+        "substitutedMessage": "Soubor modelu nakonfigurovaný pro {modelName} nebyl na disku nalezen, proto se místo něj používá nainstalovaný model v {modelPath}. Vaše konfigurace zůstala nezměněna.",
+        "unreadableTitle": "Nakonfigurovaný soubor modelu pro {modelName} se nepodařilo přečíst",
+        "unreadableMessage": "Soubor modelu nakonfigurovaný pro {modelName} existuje, ale nepodařilo se jej přečíst, proto se místo něj používá nainstalovaný model v {modelPath}. Vaše konfigurace zůstala nezměněna. Zkontrolujte oprávnění souboru a to, zda je jeho úložiště připojeno.",
+        "builtinMessage": "Soubor modelu nakonfigurovaný pro {modelName} nebyl na disku nalezen a není k dispozici žádný nainstalovaný model, který by jej nahradil, proto se místo něj používá vestavěný model. Vaše konfigurace zůstala nezměněna.",
+        "notRegisteredTitle": "Žádný model neanalyzuje {sourceName}",
+        "notRegisteredMessage": "K {models} na zdroji zvuku \"{sourceName}\" se nedostává žádný zvuk, takže se nevytvářejí žádné detekce. Otevřete galerii modelů v Nastavení a zkontrolujte stav."
+      },
       "alert": {
         "firedTitle": "{rule_name}",
         "metricExceeded": "Aktuální hodnota: {value} % (práh: {threshold} %)",
@@ -1715,6 +1726,26 @@
       "title": "Modely AI a inference",
       "loading": "Načítání stavu inference",
       "error": "Nelze načíst stav inference",
+      "vad": {
+        "section": "Ochrana soukromí",
+        "title": "Silero VAD",
+        "active": "Aktivní",
+        "activeHelp": "Model detekce řeči je načten a vyhodnocuje zvuk.",
+        "idle": "Nečinný",
+        "idleHelp": "Povoleno a připraveno; model se načte při vyhodnocování prvního zvukového úseku.",
+        "disabled": "Zakázáno",
+        "disabledHelp": "Ochrana soukromí je vypnuta v nastavení filtru soukromí.",
+        "unavailable": "Žádný model",
+        "unavailableHelp": "V tomto sestavení není k dispozici žádný model detekce řeči. Nastavte cestu k modelu VAD v nastavení filtru soukromí, nebo použijte sestavení s vestavěným modelem.",
+        "description": "Silero VAD je specializovaný akustický model, který detekuje lidskou řeč. Pohání filtr soukromí a zahazuje zvuk, když je přítomna řeč, takže hlasy se neukládají do vašich nahrávek.",
+        "threshold": "Práh",
+        "speechHits": "Zásahy řeči",
+        "recentTitle": "Nedávná řeč",
+        "recentEmpty": "Zatím nebyla detekována žádná řeč",
+        "colWhen": "Čas",
+        "colProbability": "Pravděpodobnost",
+        "colSource": "Zdroj"
+      },
       "sectionHardware": "Hardware",
       "sectionBackends": "Backendy pro inferenci",
       "sectionModels": "Modely",
@@ -1766,6 +1797,8 @@
       "sources": "Zdroje zvuku",
       "noSources": "Žádné připojené zdroje",
       "primaryFallback": "primární (záložní)",
+      "sourceNotRunning": "neanalyzuje",
+      "sourceNotRunningTooltip": "Tento zdroj je v nastavení přiřazen k modelu, ale jeho zvuk se k modelu nedostává, takže nevytváří žádné detekce. Otevřete galerii modelů v Nastavení a zkontrolujte jeho stav.",
       "notMeasured": "n/a",
       "unitMs": "ms",
       "unitKhz": "kHz",
@@ -2612,9 +2645,9 @@
           "label": "Lokalizace",
           "helpText": "Lokalizace pro přeložené běžné názvy druhů."
         },
-        "tensorflowThreads": {
-          "label": "CPU vlákna TensorFlow",
-          "helpText": "Počet CPU vláken. Nastavte na 0 pro použití všech dostupných vláken."
+        "inferenceThreads": {
+          "label": "CPU vlákna pro inferenci",
+          "helpText": "Počet CPU vláken použitých pro inferenci modelu. Nastavte na 0 pro použití všech dostupných vláken. Nemá vliv na modely běžící na GPU."
         }
       },
       "errors": {
@@ -3095,7 +3128,11 @@
         "enable": "Povolit filtrování soukromí",
         "disabled": "Filtrování soukromí je vypnuté",
         "confidenceLabel": "Práh spolehlivosti pro detekci lidí",
-        "confidenceHelp": "Nastavte úroveň spolehlivosti pro detekci lidského hlasu, nižší hodnota dělá filtr citlivějším"
+        "confidenceHelp": "Nastavte úroveň spolehlivosti pro detekci lidského hlasu, nižší hodnota dělá filtr citlivějším",
+        "vadEnable": "Povolit Ochranu Soukromí (Silero VAD)",
+        "vadHelp": "Spouští vyhrazený neuronový model detekce řeči vedle klasifikátoru pro spolehlivé filtrování hlasu. Spotřebovává další systémové prostředky (cca 20-30 MB RAM a inferenci procesoru na segment).",
+        "vadThresholdLabel": "Práh Ochrany Soukromí",
+        "vadThresholdHelp": "Práh citlivosti pro detektor hlasové aktivity (výchozí 0.35). Nižší hodnoty činí filtr citlivějším na tichou nebo vzdálenou řeč."
       },
       "falsePositivePrevention": {
         "title": "Prevence falešně pozitivních detekcí",
@@ -5317,21 +5354,25 @@
         "title": "Oblast modelu",
         "modeAuto": "Automaticky",
         "modeAutoHint": "Vybrat nejlepší regionální variantu podle polohy stanice",
-        "modeGlobal": "Globální",
-        "modeGlobalHint": "Vždy používat celosvětový model",
-        "pinLabel": "Připnout konkrétní oblast",
-        "pinnedBadge": "Připnuto",
+        "modeManual": "Manual region select",
+        "modeManualHint": "Choose a region yourself, or the worldwide model",
+        "worldwideTitle": "Worldwide",
+        "worldwideSubtitle": "Every region, all species",
+        "worldwideResourceNote": "Largest model, uses the most RAM and CPU",
+        "selectedBadge": "Selected",
+        "orSpecificRegion": "Or a specific region",
+        "search": "Search regions or countries",
+        "searchNoResults": "No regions match \"{query}\"",
+        "manualPrompt": "Choose a region below, or the worldwide model.",
+        "countriesOverflow": "+{count}",
+        "coreCoverage": "Core coverage:",
+        "partialCoverage": "Partial coverage:",
         "pinAction": "Připnout {region}",
         "switchToAuto": "Přepnout na automatický",
         "loading": "Načítání oblastí...",
         "loadFailed": "Nepodařilo se načíst data o oblastech",
-        "mapLoading": "Načítání mapy pokrytí...",
         "mapUnavailable": "Mapa pokrytí není k dispozici",
         "mapAria": "Mapa pokrytí regionu {region}",
-        "countriesCore": "Pokrývá: {countries}",
-        "countriesPartial": "Částečné pokrytí: {countries}",
-        "countriesMore": "a {count} dalších",
-        "countriesLess": "Zobrazit méně",
         "why": {
           "noLocation": "Automatický výběr vyžaduje polohu stanice. Nastavte ji v Hlavním nastavení; do té doby se používá globální model.",
           "outsideCoverage": "Vaše poloha je mimo pokrytí všech regionálních modelů, proto se používá globální model.",
@@ -5357,6 +5398,9 @@
         "regionContext": "Zobrazeny regionální varianty pro {region}, nastaveno výběrem oblasti modelu výše",
         "regionContextNone": "K dispozici jsou regionální varianty. Vyberte oblast ve výběru oblasti modelu výše, nebo zobrazte všechny varianty.",
         "otherRegions": "Ostatní oblasti",
+        "filterPlaceholder": "Filtrovat oblasti",
+        "filterAria": "Filtrovat verze přizpůsobené oblastem",
+        "filterNoMatch": "Žádné oblasti neodpovídají \"{query}\"",
         "latency": "~{ms} ms",
         "precisionInfo": "About precision and variants",
         "precisionHelp": "Precision (FP32, FP16, INT8) trades accuracy for size and speed: FP32 is most accurate, INT8 is smallest and fastest. Recommended is the best match for your detected hardware; Default is the model's standard build."
@@ -5386,7 +5430,6 @@
       "loading": "Načítání modelů…",
       "retry": "Zkusit znovu",
       "builtIn": "Vestavěný",
-      "builtInDescription": "Vestavěný klasifikátor ptačích druhů od týmu BirdNET.",
       "species": "{count} druhů",
       "install": "Nainstalovat",
       "installing": "Instaluji…",
@@ -5445,7 +5488,40 @@
       "reinstalling": "Přeinstalování…",
       "reinstallComplete": "Soubory úspěšně ověřeny",
       "geomodelBadge": "Obsahuje BirdNET v3.0 geomodel",
-      "entryIncompatible": "Tento model není v tomto systému k dispozici."
+      "preview": {
+        "badge": "Náhled",
+        "buildLabel": "{version} · {build}",
+        "cardNotice": "Vývojářský náhled, nejedná se o finální verzi. Jde o rané sestavení pro testování; výsledky se mohou před stabilní verzí změnit.",
+        "dialogNotice": "Instalujete vývojářský náhled ({build}). Hodí se k vyzkoušení, ale zatím se nedoporučuje jako váš jediný klasifikátor."
+      },
+      "entryIncompatible": "Tento model není v tomto systému k dispozici.",
+      "regionGlobal": "Globální",
+      "hardwareLabel": "Hardware",
+      "hardware": {
+        "gpuNvidia": "GPU (NVIDIA)",
+        "gpuIntel": "GPU (Intel)",
+        "armCpu": "ARM CPU",
+        "amd64Cpu": "AMD64 CPU",
+        "arm64Cpu": "ARM64 CPU",
+        "cpu": "CPU"
+      },
+      "optimize": {
+        "bannerTitle": "{count, plural, one {# model může běžet rychleji na vašem hardwaru} few {# modely mohou běžet rychleji na vašem hardwaru} many {# modelů může běžet rychleji na vašem hardwaru} other {# modelů může běžet rychleji na vašem hardwaru}}",
+        "review": "Zkontrolovat",
+        "dismiss": "Zavřít",
+        "badgeTitle": "Pro váš hardware je k dispozici rychlejší sestavení",
+        "swap": "Optimalizovat",
+        "dialogTitle": "Optimalizovat modely",
+        "installedBuild": "Installed build",
+        "fromTo": "{from} na {to}",
+        "apply": "Použít",
+        "applyAll": "Použít vše",
+        "applying": "Aplikování...",
+        "applied": "Použito",
+        "applyFailed": "Použití se nezdařilo",
+        "upToDate": "Všechny vaše modely jsou již pro tento hardware optimalizovány.",
+        "licenseNote": "Záměna probíhá v rámci stejného modelu, takže se jeho licence nemění."
+      }
     },
     "bird": {
       "title": "Detekce ptáků",
