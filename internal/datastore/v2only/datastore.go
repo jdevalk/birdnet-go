@@ -1239,6 +1239,7 @@ func (ds *Datastore) GetTopBirdsData(ctx context.Context, selectedDate string, m
 		Count          int     `gorm:"column:count"`
 		MaxConfidence  float64 `gorm:"column:max_confidence"`
 		LatestTime     int64   `gorm:"column:latest_time"`
+		FirstTime      int64   `gorm:"column:first_time"`
 	}
 
 	var results []speciesAggregate
@@ -1255,7 +1256,8 @@ func (ds *Datastore) GetTopBirdsData(ctx context.Context, selectedDate string, m
 			l.scientific_name,
 			COUNT(d.id) as count,
 			MAX(d.confidence) as max_confidence,
-			MAX(d.detected_at) as latest_time
+			MAX(d.detected_at) as latest_time,
+			MIN(d.detected_at) as first_time
 		`).
 		Joins(fmt.Sprintf("JOIN %slabels l ON d.label_id = l.id", prefix)).
 		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
@@ -1276,6 +1278,7 @@ func (ds *Datastore) GetTopBirdsData(ctx context.Context, selectedDate string, m
 	for _, r := range results {
 		// Format the latest time as HH:MM:SS
 		latestTime := time.Unix(r.LatestTime, 0).In(ds.timezone)
+		firstTime := time.Unix(r.FirstTime, 0).In(ds.timezone)
 
 		// Labels may contain legacy concatenated "ScientificName_CommonName" format,
 		// so extract only the scientific name portion.
@@ -1291,6 +1294,7 @@ func (ds *Datastore) GetTopBirdsData(ctx context.Context, selectedDate string, m
 			Confidence:     r.MaxConfidence,
 			Date:           selectedDate,
 			Time:           latestTime.Format(time.TimeOnly),
+			FirstTime:      firstTime.Format(time.TimeOnly),
 		}
 		notes = append(notes, note)
 	}
@@ -2730,7 +2734,7 @@ func (ds *Datastore) GetHourlyAnalyticsData(ctx context.Context, date, species s
 		return nil, err
 	}
 
-	labelID, err := ds.resolveLabelID(ctx, species)
+	labelIDs, err := ds.resolveLabelIDs(ctx, species)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return []datastore.HourlyAnalyticsData{}, nil
@@ -2738,7 +2742,7 @@ func (ds *Datastore) GetHourlyAnalyticsData(ctx context.Context, date, species s
 		return nil, err
 	}
 
-	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelID, nil, sourceIDs...)
+	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelIDs, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2753,16 +2757,20 @@ func (ds *Datastore) GetHourlyAnalyticsData(ctx context.Context, date, species s
 	return result, nil
 }
 
-// resolveLabelID looks up a label ID for a species name.
-// Returns (nil, nil) if species is empty (no filter).
-// Returns (nil, errNotFound) if species not found.
-// Returns (&id, nil) if found.
-// Returns (nil, err) for other errors.
+
+// errNotFound is returned by resolveLabelIDs when no label carries the species name.
 var errNotFound = errors.NewStd("species not found")
 
-func (ds *Datastore) resolveLabelID(ctx context.Context, species string) (*uint, error) {
+// resolveLabelIDs returns every label ID carrying the species' scientific name. A species has one
+// label per AI model, and detections reference the label of the model that made them, so a species
+// filter must span all of its labels: picking one (the first, which on a multi-model station is
+// typically the permanently installed primary model's) silently excluded every detection from the
+// models actually assigned to the audio streams.
+//
+// Returns (nil, nil) for an empty species (no filter), (nil, errNotFound) when no label matches.
+func (ds *Datastore) resolveLabelIDs(ctx context.Context, species string) ([]uint, error) {
 	if species == "" {
-		return nil, nil //nolint:nilnil // nil means no filter, which is valid
+		return nil, nil
 	}
 	labelIDs, err := ds.label.GetLabelIDsByScientificName(ctx, species)
 	if err != nil {
@@ -2771,7 +2779,7 @@ func (ds *Datastore) resolveLabelID(ctx context.Context, species string) (*uint,
 	if len(labelIDs) == 0 {
 		return nil, errNotFound
 	}
-	return &labelIDs[0], nil
+	return labelIDs, nil
 }
 
 // GetDailyAnalyticsData retrieves daily analytics data.
@@ -2781,7 +2789,7 @@ func (ds *Datastore) GetDailyAnalyticsData(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	labelID, err := ds.resolveLabelID(ctx, species)
+	labelIDs, err := ds.resolveLabelIDs(ctx, species)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return []datastore.DailyAnalyticsData{}, nil
@@ -2791,7 +2799,7 @@ func (ds *Datastore) GetDailyAnalyticsData(ctx context.Context, startDate, endDa
 
 	// Bucket dates by the configured timezone, anchored to a query boundary (start, or end for a
 	// left-open range) so an end-only historical query buckets stably regardless of run time.
-	v2Data, err := ds.detection.GetDailyAnalytics(ctx, start, end, ds.zoneOffsetSeconds(dateRangeOffsetAnchor(start, end)), labelID, nil, sourceIDs...)
+	v2Data, err := ds.detection.GetDailyAnalytics(ctx, start, end, ds.zoneOffsetSeconds(dateRangeOffsetAnchor(start, end)), labelIDs, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2831,7 +2839,7 @@ func (ds *Datastore) GetHourlyDistribution(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	labelID, err := ds.resolveLabelID(ctx, species)
+	labelIDs, err := ds.resolveLabelIDs(ctx, species)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return []datastore.HourlyDistributionData{}, nil
@@ -2839,7 +2847,7 @@ func (ds *Datastore) GetHourlyDistribution(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelID, nil, sourceIDs...)
+	v2Data, err := ds.detection.GetHourlyDistribution(ctx, start, end, ds.zoneOffsetSeconds(start), labelIDs, nil, sourceIDs...)
 	if err != nil {
 		return nil, err
 	}
@@ -2860,6 +2868,7 @@ type speciesFirstSeenInfo struct {
 	ScientificName string
 	FirstDetected  int64
 	LastDetected   int64
+	CountInPeriod  int // detections inside the queried window; only the lifetime-first query fills it
 }
 
 // convertToNewSpeciesData converts species first-seen data to NewSpeciesData with common name resolution.
@@ -2892,7 +2901,7 @@ func (ds *Datastore) convertToNewSpeciesData(_ context.Context, data []speciesFi
 			CommonName:     commonName,
 			FirstSeenDate:  firstSeenDate,
 			LastSeenDate:   lastSeenDate,
-			CountInPeriod:  0,
+			CountInPeriod:  d.CountInPeriod,
 		})
 	}
 	return result
@@ -2918,6 +2927,7 @@ func (ds *Datastore) GetNewSpeciesDetections(ctx context.Context, startDate, end
 			ScientificName: d.ScientificName,
 			FirstDetected:  d.FirstDetected,
 			LastDetected:   d.LastDetected,
+			CountInPeriod:  d.CountInPeriod,
 		}
 	}
 
@@ -3188,7 +3198,7 @@ func (ds *Datastore) GetActivityHeatmap(ctx context.Context, startDate, endDate,
 		return datastore.ActivityHeatmapData{}, err
 	}
 
-	labelID, err := ds.resolveLabelID(ctx, species)
+	labelIDs, err := ds.resolveLabelIDs(ctx, species)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return buildActivityHeatmap(nil, ds.timezone, startDate, endDate)
@@ -3196,7 +3206,7 @@ func (ds *Datastore) GetActivityHeatmap(ctx context.Context, startDate, endDate,
 		return datastore.ActivityHeatmapData{}, err
 	}
 
-	timestamps, err := ds.detection.GetDetectionTimestamps(ctx, start, end, labelID)
+	timestamps, err := ds.detection.GetDetectionTimestamps(ctx, start, end, labelIDs)
 	if err != nil {
 		return datastore.ActivityHeatmapData{}, err
 	}
@@ -3321,7 +3331,7 @@ func (ds *Datastore) GetDailyActivityOnset(ctx context.Context, startDate, endDa
 
 	dawn := ds.civilDawnMinuteLookup()
 
-	labelID, err := ds.resolveLabelID(ctx, species)
+	labelIDs, err := ds.resolveLabelIDs(ctx, species)
 	if err != nil {
 		if errors.Is(err, errNotFound) {
 			return buildDailyActivityOnset(nil, ds.timezone, startDate, endDate, onsetDetectionRank, minOnsetDetections, dawn)
@@ -3329,7 +3339,7 @@ func (ds *Datastore) GetDailyActivityOnset(ctx context.Context, startDate, endDa
 		return nil, err
 	}
 
-	timestamps, err := ds.detection.GetDetectionTimestamps(ctx, start, end, labelID)
+	timestamps, err := ds.detection.GetDetectionTimestamps(ctx, start, end, labelIDs)
 	if err != nil {
 		return nil, errors.New(err).
 			Component("datastore").
