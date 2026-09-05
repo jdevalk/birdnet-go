@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +49,7 @@ func TestEngine_NewAndStop(t *testing.T) {
 	// All subsystems should be non-nil after construction.
 	assert.NotNil(t, eng.registry)
 	assert.NotNil(t, eng.router)
-	assert.NotNil(t, eng.ffmpegMgr)
+	assert.NotNil(t, eng.streamMgr)
 	assert.NotNil(t, eng.deviceMgr)
 	assert.NotNil(t, eng.bufferMgr)
 	assert.NotNil(t, eng.logger)
@@ -66,7 +67,7 @@ func TestEngine_Accessors(t *testing.T) {
 	assert.NotNil(t, eng.Registry(), "Registry() should return non-nil")
 	assert.NotNil(t, eng.Router(), "Router() should return non-nil")
 	assert.NotNil(t, eng.BufferManager(), "BufferManager() should return non-nil")
-	assert.NotNil(t, eng.FFmpegManager(), "FFmpegManager() should return non-nil")
+	assert.NotNil(t, eng.StreamManager(), "StreamManager() should return non-nil")
 	assert.NotNil(t, eng.DeviceManager(), "DeviceManager() should return non-nil")
 	assert.Nil(t, eng.Scheduler(), "Scheduler() should be nil when no scheduler provided")
 }
@@ -136,7 +137,7 @@ func TestEngine_AddSource_Stream(t *testing.T) {
 	assert.NotNil(t, cb, "capture buffer should be allocated")
 
 	// Verify FFmpeg stream was started (it appears in AllStreamHealth).
-	health := eng.FFmpegManager().AllStreamHealth()
+	health := eng.StreamManager().AllStreamHealth()
 	assert.Contains(t, health, "test_rtsp_001", "stream should appear in FFmpeg manager")
 }
 
@@ -304,7 +305,7 @@ func TestEngine_RemoveSource(t *testing.T) {
 	require.Error(t, cbErr, "capture buffer should be deallocated")
 
 	// Verify stream is gone from FFmpeg manager.
-	health := eng.FFmpegManager().AllStreamHealth()
+	health := eng.StreamManager().AllStreamHealth()
 	assert.NotContains(t, health, "test_remove_001", "stream should be removed from FFmpeg manager")
 }
 
@@ -372,7 +373,7 @@ func TestEngine_ReconfigureSource(t *testing.T) {
 	assert.NotNil(t, cb2, "new capture buffer should be allocated after reconfigure")
 
 	// Verify the FFmpeg stream was restarted.
-	health := eng.FFmpegManager().AllStreamHealth()
+	health := eng.StreamManager().AllStreamHealth()
 	assert.Contains(t, health, "test_reconfig_001", "stream should be restarted after reconfigure")
 }
 
@@ -597,7 +598,7 @@ func TestEngine_StartStream_ZeroBitDepthFallback(t *testing.T) {
 	require.NoError(t, eng.AddSource(cfg))
 
 	// Stop the stream started by AddSource so we can restart it.
-	require.NoError(t, eng.FFmpegManager().StopStream("test_startstream_bitdepth"))
+	require.NoError(t, eng.StreamManager().StopStream("test_startstream_bitdepth"))
 
 	// Manually zero out BitDepth in the registry to simulate an edge case.
 	eng.Registry().UpdateAudioParams("test_startstream_bitdepth", 48000, 0, 1)
@@ -606,6 +607,57 @@ func TestEngine_StartStream_ZeroBitDepthFallback(t *testing.T) {
 	err := eng.StartStream("test_startstream_bitdepth", "rtsp://192.168.1.100/stream2", "")
 	require.NoError(t, err)
 
-	health := eng.FFmpegManager().AllStreamHealth()
+	health := eng.StreamManager().AllStreamHealth()
 	assert.Contains(t, health, "test_startstream_bitdepth")
+}
+
+// TestDeriveNativeReadIdle asserts the native supervisor read-idle window sits
+// strictly below the liveness silence threshold for every positive threshold, so
+// the supervisor's read-idle always fires before the watchdog would alarm, while
+// an unknown threshold (<=0) yields 0 (let the native default apply).
+func TestDeriveNativeReadIdle(t *testing.T) {
+	t.Parallel()
+
+	// A non-positive threshold means "unknown": return 0 so the native default applies.
+	assert.Zero(t, deriveNativeReadIdle(0), "threshold 0 must return 0")
+	assert.Zero(t, deriveNativeReadIdle(-5*time.Second), "negative threshold must return 0")
+
+	tests := []struct {
+		name      string
+		threshold time.Duration
+		// want is the exact expected readIdle when non-zero; a zero want means
+		// "assert only the strictly-less-than-threshold invariant".
+		want time.Duration
+	}{
+		// Sub-floor thresholds: the 5s jitter floor is bypassed (it would meet or
+		// exceed the threshold), so readIdle is two thirds of the threshold.
+		{name: "1s sub-floor", threshold: 1 * time.Second, want: 1 * time.Second * 2 / 3},
+		{name: "3s sub-floor", threshold: 3 * time.Second, want: 3 * time.Second * 2 / 3},
+		{name: "5s sub-floor", threshold: 5 * time.Second, want: 5 * time.Second * 2 / 3},
+		// Floor-applied band (5s < threshold < 7.5s): two thirds is below 5s, so the
+		// floor lifts readIdle to 5s while staying below the threshold.
+		{name: "6s floor applied", threshold: 6 * time.Second, want: 5 * time.Second},
+		{name: "7s floor applied", threshold: 7 * time.Second, want: 5 * time.Second},
+		// Two-thirds band (7.5s <= threshold < 30s): floor is below two thirds.
+		{name: "8s two-thirds", threshold: 8 * time.Second, want: 8 * time.Second * 2 / 3},
+		{name: "15s two-thirds", threshold: 15 * time.Second, want: 10 * time.Second},
+		// Capped band (threshold >= 30s): clamped at stream.DefaultReadIdle (20s).
+		{name: "30s capped", threshold: 30 * time.Second, want: 20 * time.Second},
+		{name: "60s capped", threshold: 60 * time.Second, want: 20 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := deriveNativeReadIdle(tt.threshold)
+			// For a positive threshold the read-idle must be positive and STRICTLY
+			// below the threshold, never 0 and never at/past it.
+			require.Positive(t, got, "positive threshold must yield a positive read-idle")
+			assert.Less(t, got, tt.threshold,
+				"read-idle must be strictly less than the silence threshold")
+			if tt.want != 0 {
+				assert.Equal(t, tt.want, got, "read-idle must match the expected value")
+			}
+		})
+	}
 }

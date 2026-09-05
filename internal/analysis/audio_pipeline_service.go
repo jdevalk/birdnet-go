@@ -250,7 +250,7 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 
 	// Register watchdog reset callback so analysis monitors are recreated
 	// when the watchdog force-resets a stuck stream.
-	p.engine.FFmpegManager().SetOnStreamReset(func(newSourceID string) {
+	p.engine.StreamManager().SetOnStreamReset(func(newSourceID string) {
 		if err := p.bufferMgr.AddMonitor(newSourceID); err != nil {
 			audiocore.GetLogger().Warn("failed to add monitor after watchdog stream reset",
 				logger.String("source_id", newSourceID),
@@ -316,6 +316,17 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 				return p.quietHoursScheduler.IsSoundCardSuppressed()
 			}
 			return p.quietHoursScheduler.IsStreamSuppressed(sourceID)
+		},
+		// RecoveryState lets the watchdog defer a restart to the native stream
+		// supervisor while it reconnects in place. Sound-card sources and the FFmpeg
+		// producer have no recovery intent, so the lookup miss / RecoveryUnknown both
+		// return the legacy restart path.
+		RecoveryState: func(sourceID string) (audiocore.RecoveryState, time.Time) {
+			h, err := p.engine.StreamManager().StreamHealth(sourceID)
+			if err != nil || h == nil {
+				return audiocore.RecoveryUnknown, time.Time{}
+			}
+			return h.Recovery, h.RecoveryEntered
 		},
 	}
 	p.watchdog = audiocore.NewLivenessWatchdog(
