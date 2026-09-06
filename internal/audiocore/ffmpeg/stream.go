@@ -603,7 +603,7 @@ type Stream struct {
 // bufMgr is an optional buffer manager used to pool stdout read buffers via
 // FrameRef; when nil, readStdout falls back to a fresh per-iteration allocation.
 func NewStream(cfg *StreamConfig, onFrame func(frame audiocore.AudioFrame), onReset func(sourceID string), metrics audiocore.StreamMetrics, bufMgr *buffer.Manager) *Stream {
-	return &Stream{
+	s := &Stream{
 		config:           *cfg,
 		onFrame:          onFrame,
 		onReset:          onReset,
@@ -622,6 +622,13 @@ func NewStream(cfg *StreamConfig, onFrame func(frame audiocore.AudioFrame), onRe
 		maxErrorHistory:  maxErrorHistorySize,
 		bufMgr:           bufMgr,
 	}
+	// Record the ingest engine once at construction, matching the native producer,
+	// so the audio_stream_engine metric is populated for the default FFmpeg path
+	// too (native emits EngineNative in its own constructor).
+	if metrics != nil {
+		metrics.SetStreamEngine(cfg.SourceID, audiocore.EngineFFmpeg)
+	}
+	return s
 }
 
 // transitionState safely transitions the process state and logs the change.
@@ -808,7 +815,7 @@ func (s *Stream) Run(parentCtx context.Context) {
 				fallbackEngaged = s.maybeEngageAudioOnlyFallback()
 				errorMsg := err.Error()
 				sanitizedError := privacy.SanitizeFFmpegError(errorMsg)
-				isSilenceTimeout := strings.Contains(errorMsg, "silence timeout")
+				isSilenceTimeout := isSilenceTimeoutError(err)
 
 				// Publish stream event for alerting rules.
 				// A normal EOF (audio already seen) or a canceled context returns
@@ -837,18 +844,7 @@ func (s *Stream) Run(parentCtx context.Context) {
 					logger.String("operation", "process_ended"))
 
 				if isSilenceTimeout {
-					func() {
-						s.restartCountMu.Lock()
-						defer s.restartCountMu.Unlock()
-						s.restartCount = 0
-					}()
-					func() {
-						s.circuitMu.Lock()
-						defer s.circuitMu.Unlock()
-						if s.consecutiveFailures > 0 {
-							s.consecutiveFailures--
-						}
-					}()
+					s.resetForSilenceTimeout()
 				}
 			} else {
 				getStreamLogger().Info("FFmpeg process ended normally",
@@ -1367,6 +1363,32 @@ func (s *Stream) dispatchAudioData(data []byte, ref *audiocore.FrameRef) {
 	}
 }
 
+// opSilenceTimeout is the structured error operation context stamped on the
+// silence-watchdog restart error built by handleSilenceTimeout. The run loop
+// reads it back to classify a silence restart, so the classification does not
+// depend on the human-readable (and dynamic) error message.
+const opSilenceTimeout = "silence_timeout"
+
+// isSilenceTimeoutError reports whether err (or any error it wraps) is the
+// silence-watchdog restart error produced by handleSilenceTimeout, identified by
+// its operation=silence_timeout context rather than a substring of its message.
+// It walks the whole chain of EnhancedError values so classification still holds
+// if the silence error is ever wrapped inside another EnhancedError with a
+// different operation (errors.As alone would stop at the outer one).
+func isSilenceTimeoutError(err error) bool {
+	for err != nil {
+		var ee *errors.EnhancedError
+		if !errors.As(err, &ee) {
+			return false
+		}
+		if op, _ := ee.GetContext()["operation"].(string); op == opSilenceTimeout {
+			return true
+		}
+		err = ee.Unwrap()
+	}
+	return false
+}
+
 // handleSilenceTimeout checks if stream has stopped producing data and triggers restart.
 func (s *Stream) handleSilenceTimeout(startTime time.Time) error {
 	s.lastDataMu.RLock()
@@ -1402,7 +1424,7 @@ func (s *Stream) handleSilenceTimeout(startTime time.Time) error {
 		return errors.Newf("stream stopped producing data for %v seconds", timeout.Seconds()).
 			Category(errors.CategoryRTSP).
 			Component("ffmpeg-stream").
-			Context("operation", "silence_timeout").
+			Context("operation", opSilenceTimeout).
 			Context("url", s.config.safeURL()).
 			Context("timeout_seconds", timeout.Seconds()).
 			Context("last_data", lastDataDesc).
@@ -2034,6 +2056,30 @@ func (s *Stream) isCircuitOpen() bool {
 	}
 
 	return false
+}
+
+// resetForSilenceTimeout undoes this iteration's failure bookkeeping for a
+// silence-watchdog restart. A silent-but-connected source (a session opened but
+// no audio flowed) is a recoverable condition, not a hard failure, so it must not
+// accumulate restarts or leave the circuit breaker open. It clears restartCount,
+// decrements the consecutive-failure count that recordFailure incremented for
+// this event, and clears circuitOpenTime: recordFailure may have just opened the
+// breaker (isCircuitOpen keys off circuitOpenTime, not the failure count), and
+// leaving it set would suppress ingest for the whole cooldown after a merely
+// silent restart. Before the silence classifier was fixed this path was dead, so
+// this completes the reset it now performs.
+func (s *Stream) resetForSilenceTimeout() {
+	func() {
+		s.restartCountMu.Lock()
+		defer s.restartCountMu.Unlock()
+		s.restartCount = 0
+	}()
+	s.circuitMu.Lock()
+	defer s.circuitMu.Unlock()
+	if s.consecutiveFailures > 0 {
+		s.consecutiveFailures--
+	}
+	s.circuitOpenTime = time.Time{}
 }
 
 // recordFailure records a failure for the circuit breaker with runtime consideration.

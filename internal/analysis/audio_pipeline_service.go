@@ -41,6 +41,13 @@ const hlsCleanupTimeout = 2 * time.Second
 // policyNone is the sentinel value indicating no retention/provider policy is configured.
 const policyNone = "none"
 
+// Stream-manager display labels for the RTSP monitoring startup log. They name
+// whichever manager the BIRDNET_STREAM_INGEST gate selected.
+const (
+	streamManagerFFmpeg = "FFmpeg manager"
+	streamManagerNative = "native stream manager"
+)
+
 // AudioPipelineService manages the audio capture pipeline, buffer management,
 // and control monitor as an app.Service. It coordinates HLS cleanup, audio source
 // initialization, sound level monitoring, quiet hours scheduling, clip cleanup,
@@ -352,10 +359,17 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 		Properties: map[string]any{},
 	})
 
-	// RTSP health monitoring is built into the FFmpeg manager.
+	// RTSP health monitoring is built into whichever stream manager the
+	// BIRDNET_STREAM_INGEST gate selected: the native stream manager when
+	// native ingest is enabled, otherwise the FFmpeg manager.
 	if len(settings.Realtime.RTSP.Streams) > 0 {
-		audiocore.GetLogger().Info("RTSP streams will be monitored by FFmpeg manager",
+		streamManagerName := streamManagerFFmpeg
+		if conf.NativeStreamIngestEnabled() {
+			streamManagerName = streamManagerNative
+		}
+		audiocore.GetLogger().Info("RTSP streams will be monitored",
 			logger.Int("stream_count", len(settings.Realtime.RTSP.Streams)),
+			logger.String("stream_manager", streamManagerName),
 			logger.String("operation", "rtsp_monitoring_setup"))
 	}
 

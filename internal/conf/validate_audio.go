@@ -38,6 +38,19 @@ const (
 	AudioExportTypeOPUS = "opus" // Lossy compressed audio
 )
 
+// isLossyExportFormat reports whether an export format is a lossy codec that needs
+// a bitrate. AAC, Opus and MP3 are lossy; WAV and FLAC are lossless and ignore the
+// bitrate. Callers gate bitrate defaulting and validation on this instead of
+// repeating the AAC/OPUS/MP3 set.
+func isLossyExportFormat(format string) bool {
+	switch format {
+	case AudioExportTypeAAC, AudioExportTypeOPUS, AudioExportTypeMP3:
+		return true
+	default:
+		return false
+	}
+}
+
 // EBU R128 normalization limits
 const (
 	MinTargetLUFS    = -40.0 // Minimum target loudness in LUFS
@@ -141,7 +154,7 @@ func (s *StreamConfig) Validate() error {
 	}
 
 	// Validate transport (only tcp/udp allowed, empty defaults to tcp)
-	if s.Transport != "" && s.Transport != "tcp" && s.Transport != "udp" {
+	if s.Transport != "" && s.Transport != TransportTCP && s.Transport != TransportUDP {
 		return fmt.Errorf("invalid transport '%s' for '%s': must be tcp or udp", s.Transport, s.Name)
 	}
 
@@ -279,10 +292,10 @@ func (r *RTSPSettings) ResolveTransport(perStreamTransport string) string {
 // directly without specifying per-stream transport; the global RTSPSettings.Transport
 // (defaulting to "tcp") is propagated to each applicable stream.
 func (r *RTSPSettings) ApplyStreamDefaults() {
-	globalTransport := r.Transport
-	if globalTransport == "" {
-		globalTransport = DefaultTransport
-	}
+	// ResolveTransport("") yields the global transport when set, else the default.
+	// Resolve once (it is loop-invariant) and propagate to each per-stream empty,
+	// matching MigrateRTSPConfig and the single owner of the rule.
+	globalTransport := r.ResolveTransport("")
 	for _, stream := range r.AllStreams() {
 		if stream.Transport == "" && (stream.Type == StreamTypeRTSP || stream.Type == StreamTypeRTMP) {
 			stream.Transport = globalTransport
@@ -575,12 +588,9 @@ func validateAudioSettings(settings *AudioSettings) error {
 	settings.applyFfmpegFormatFallback()
 
 	// Bitrate only matters for lossy formats and only when export is enabled.
-	switch settings.Export.Type {
-	case AudioExportTypeAAC, AudioExportTypeOPUS, AudioExportTypeMP3:
-		if settings.Export.Enabled {
-			if err := validateExportBitrate(settings.Export.Type, settings.Export.Bitrate); err != nil {
-				return err
-			}
+	if settings.Export.Enabled && isLossyExportFormat(settings.Export.Type) {
+		if err := validateExportBitrate(settings.Export.Type, settings.Export.Bitrate); err != nil {
+			return err
 		}
 	}
 
