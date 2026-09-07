@@ -1394,6 +1394,7 @@ export type TranslationKey =
   | 'system.inference.primaryFallback'
   | 'system.inference.sourceNotRunning'
   | 'system.inference.sourceNotRunningTooltip'
+  | 'system.inference.modelNotAnalyzingTooltip'
   | 'system.inference.notMeasured'
   | 'system.inference.unitMs'
   | 'system.inference.unitKhz'

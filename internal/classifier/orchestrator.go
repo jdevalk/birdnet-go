@@ -4,6 +4,8 @@ package classifier
 
 import (
 	"context"
+	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -127,6 +129,19 @@ type Orchestrator struct {
 	// ID. Uses sync.Map to avoid holding o.mu for reads (see LoadFailures).
 	// Values are *atomic.Int64.
 	modelLoadFailures sync.Map
+
+	// modelLoadErrors records the last load error string per registry ID
+	// (registryID -> string), set alongside modelLoadFailures by recordLoadFailure
+	// so modelNotLoadedReason can explain why a model is missing. Lock-free.
+	modelLoadErrors sync.Map
+
+	// modelUnloaded is a tombstone set (registryID -> struct{}{}) marking models
+	// removed by UnloadModel and not yet reloaded. The unloaded case is the benign
+	// cause of the transient not-loaded predict during the topology-reconfigure
+	// debounce window (Sentry BIRDNET-GO-2G6 / 1S1): the tombstone lets
+	// modelNotLoadedReason report "unloaded, reconfigure in progress" instead of
+	// conflating it with a model that never loaded. Lock-free.
+	modelUnloaded sync.Map
 
 	// pendingWarmups queues deferred warm-ups recorded by model loaders while
 	// they hold o.mu (write lock). Drained by runPendingWarmups after o.mu is
@@ -695,9 +710,11 @@ func (o *Orchestrator) PredictModel(ctx context.Context, modelID string, sample 
 	o.mu.RUnlock()
 
 	if !ok {
-		log.Error("PredictModel unknown model",
-			logger.String("model_id", modelID))
-		return nil, errors.Newf("unknown model: %s", modelID).
+		reason := o.modelNotLoadedReason(modelID)
+		log.Error("PredictModel model not loaded",
+			logger.String("model_id", modelID),
+			logger.String("reason", reason))
+		return nil, errors.Newf("%w: %s (%s)", ErrModelNotLoaded, modelID, reason).
 			Component("classifier.orchestrator").
 			Category(errors.CategoryValidation).
 			Context("model_id", modelID).
@@ -968,7 +985,7 @@ func (o *Orchestrator) GetAllProbableSpeciesWithSettings(date time.Time, week fl
 	// ReloadRangeFilter cannot desync them. geoLabels is non-nil only on the
 	// universal (v3 geomodel) path, where it covers every scientific name the
 	// geomodel knows regardless of threshold.
-	scores, geoLabels, err := primary.getProbableSpecies(date, week, settings)
+	scores, geoLabels, _, err := primary.getProbableSpecies(date, week, settings)
 	if err != nil {
 		return nil, err
 	}
@@ -1803,6 +1820,15 @@ func (o *Orchestrator) Delete() {
 
 // IsModelLoaded returns true if a model with the given registry ID is
 // currently loaded in the orchestrator.
+//
+// This takes o.mu.RLock, unlike its sibling IsModelActive which is deliberately
+// lock-free: IsModelActive reads only the scheduler atomic.Pointer, while the
+// models map read here is mutable state guarded by o.mu (ReloadModel, Delete, and
+// the loaders all mutate it under the write lock). The asymmetry is intentional.
+// On the monitor tick the RLock is reached only once a full analysis window is
+// present and sits directly before a millisecond-scale inference, so it was
+// measured as negligible; a lock-free models map is not worth the copy-on-write
+// machinery it would require.
 func (o *Orchestrator) IsModelLoaded(registryID string) bool {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -1951,9 +1977,15 @@ func (o *Orchestrator) LoadModel(registryID string) error {
 			logger.Int("threads", dynamicThreads))
 
 		if err := loader(o, dynamicThreads); err != nil {
-			o.incLoadFailure(registryID)
+			o.recordLoadFailure(registryID, err)
 			return err
 		}
+		// The model registered successfully; clear any stale unload tombstone and the
+		// stored load error so a later not-loaded diagnosis reports the model's actual
+		// current state rather than a now-superseded unload or failure. The cumulative
+		// modelLoadFailures count is intentionally kept for the LoadFailures metric.
+		o.modelUnloaded.Delete(registryID)
+		o.modelLoadErrors.Delete(registryID)
 
 		log.Info("Model loaded dynamically",
 			logger.String("registry_id", registryID))
@@ -1978,11 +2010,16 @@ func (o *Orchestrator) LoadModel(registryID string) error {
 	return nil
 }
 
-// incLoadFailure atomically increments the load-failure counter for registryID.
-// Safe to call concurrently; does not require o.mu.
-func (o *Orchestrator) incLoadFailure(registryID string) {
+// recordLoadFailure atomically increments the load-failure counter for registryID
+// and records the last error text, so a later "model not loaded" diagnosis
+// (modelNotLoadedReason) can explain why the model is missing. Safe to call
+// concurrently; does not require o.mu.
+func (o *Orchestrator) recordLoadFailure(registryID string, err error) {
 	v, _ := o.modelLoadFailures.LoadOrStore(registryID, new(atomic.Int64))
 	v.(*atomic.Int64).Add(1)
+	if err != nil {
+		o.modelLoadErrors.Store(registryID, err.Error())
+	}
 }
 
 // LoadFailures returns a snapshot of the per-model load-failure counts accumulated
@@ -1995,6 +2032,80 @@ func (o *Orchestrator) LoadFailures() map[string]int64 {
 		return true
 	})
 	return result
+}
+
+// ErrModelNotLoaded is returned by PredictModel when the requested model is not
+// in the loaded set. It wraps a per-call reason (see modelNotLoadedReason);
+// callers match it with errors.Is. Plain sentinel: no telemetry registered at
+// package init.
+var ErrModelNotLoaded = errors.NewStd("model not loaded")
+
+// Reasons a model can be absent from o.models when PredictModel is called.
+// modelNotLoadedReason returns the most specific, most actionable one so a
+// transient not-loaded predict (Sentry BIRDNET-GO-2G6 / 1S1, the monitor that
+// outlives an unload during the topology-reconfigure debounce) is legible rather
+// than a bare "unknown model".
+const (
+	notLoadedReasonDeleted         = "the orchestrator has been shut down"
+	notLoadedReasonUnknownRegistry = "no model with this ID is registered"
+	notLoadedReasonNotEnabled      = "the model is not enabled in settings"
+	notLoadedReasonUnloaded        = "the model was unloaded (a model reconfigure or reinstall is in progress)"
+	notLoadedReasonNeverLoaded     = "the model has not finished loading"
+	// notLoadedReasonFailedFormat renders the load-failure count and last error.
+	notLoadedReasonFailedFormat = "the model failed to load %d time(s), last error: %s"
+)
+
+// modelNotLoadedReason explains why modelID is absent from o.models, turning the
+// bare "unknown model" into an actionable diagnosis. Safe to call without holding
+// o.mu: it takes its own read lock only for the map-nil check (PredictModel has
+// already released the lock at this point) and otherwise reads lock-free
+// sync.Maps and the published settings snapshot. The most specific, most
+// actionable cause wins.
+func (o *Orchestrator) modelNotLoadedReason(modelID string) string {
+	o.mu.RLock()
+	deleted := o.models == nil
+	o.mu.RUnlock()
+	if deleted {
+		return notLoadedReasonDeleted
+	}
+	if _, registered := ModelRegistry[modelID]; !registered {
+		return notLoadedReasonUnknownRegistry
+	}
+	// A stored error means the model's most recent load attempt failed and has not
+	// since succeeded: a successful load clears the error (see LoadModel /
+	// loadAdditionalModels), so gate on the error's PRESENCE rather than the
+	// modelLoadFailures count, which is a cumulative lifetime counter (kept for the
+	// LoadFailures metric) that survives a later success. Without this gate, a model
+	// that failed once, recovered, then was cleanly unloaded would be misreported as
+	// "failed to load" with a stale error instead of "unloaded".
+	if e, ok := o.modelLoadErrors.Load(modelID); ok {
+		lastErr, _ := e.(string)
+		count := int64(0)
+		if v, ok := o.modelLoadFailures.Load(modelID); ok {
+			count = v.(*atomic.Int64).Load()
+		}
+		return fmt.Sprintf(notLoadedReasonFailedFormat, count, lastErr)
+	}
+	if _, unloaded := o.modelUnloaded.Load(modelID); unloaded {
+		return notLoadedReasonUnloaded
+	}
+	if !o.modelIDEnabled(modelID) {
+		return notLoadedReasonNotEnabled
+	}
+	return notLoadedReasonNeverLoaded
+}
+
+// modelIDEnabled reports whether registryID corresponds to a model the user has
+// enabled: an entry in settings.Models.Enabled once its config alias is resolved
+// to a registry ID. Uses the shared enabledModels walk, so it agrees with
+// computeThreadAllocation and loadAdditionalModels on what "enabled" means.
+func (o *Orchestrator) modelIDEnabled(registryID string) bool {
+	for m := range enabledModels(o.currentSettings()) {
+		if m.known && m.registryID == registryID {
+			return true
+		}
+	}
+	return false
 }
 
 // UnloadModel removes a model from the Orchestrator and releases its resources.
@@ -2038,6 +2149,10 @@ func (o *Orchestrator) UnloadModel(registryID string) error {
 	// Remove from map while holding the write lock so no new PredictModel
 	// calls can obtain this entry.
 	delete(o.models, registryID)
+	// Tombstone the model so a predict that races the asynchronous monitor
+	// teardown (the topology-reconfigure debounce window) is diagnosed as
+	// "unloaded" rather than a bare unknown model. Cleared on the next load.
+	o.modelUnloaded.Store(registryID, struct{}{})
 	if registryID == RegistryIDBat {
 		if s := o.scheduler.Load(); s != nil {
 			s.stop()
@@ -2290,6 +2405,33 @@ func (o *Orchestrator) ModelInfos() []ModelInfo {
 	return infos
 }
 
+// enabledModel is one entry of settings.Models.Enabled resolved against the
+// model registry.
+type enabledModel struct {
+	configID   string // the raw ID as written in models.enabled
+	registryID string // the resolved registry ID (empty when known is false)
+	known      bool   // whether configID resolved to a registry model
+}
+
+// enabledModels yields each settings.Models.Enabled entry in config order,
+// resolved to its registry ID. It centralizes the settings.Models.Enabled ->
+// ResolveConfigModelID walk shared by modelIDEnabled, computeThreadAllocation,
+// and loadAdditionalModels so the three stay in step. Unknown config IDs are
+// yielded with known=false so each caller decides whether to warn or skip;
+// deduplication is left to the callers that need it (computeThreadAllocation
+// tracks a seen-set, loadAdditionalModels relies on the models-map existence
+// check), so the helper preserves each caller's existing behavior.
+func enabledModels(settings *conf.Settings) iter.Seq[enabledModel] {
+	return func(yield func(enabledModel) bool) {
+		for _, configID := range settings.Models.Enabled {
+			registryID, known := ResolveConfigModelID(configID)
+			if !yield(enabledModel{configID: configID, registryID: registryID, known: known}) {
+				return
+			}
+		}
+	}
+}
+
 // computeThreadAllocation pre-computes thread distribution for all models
 // that will be loaded. Inference is serialized by inferenceMu, so each model
 // gets the full thread budget (they never run simultaneously).
@@ -2298,13 +2440,12 @@ func (o *Orchestrator) computeThreadAllocation(settings *conf.Settings, primaryI
 	// case variants like ["perch_v2", "PERCH_V2"] that resolve to the same ID.
 	seen := map[string]bool{primaryID: true}
 	modelIDs := []string{primaryID}
-	for _, configID := range settings.Models.Enabled {
-		registryID, known := ResolveConfigModelID(configID)
-		if !known || seen[registryID] {
+	for m := range enabledModels(settings) {
+		if !m.known || seen[m.registryID] {
 			continue
 		}
-		seen[registryID] = true
-		modelIDs = append(modelIDs, registryID)
+		seen[m.registryID] = true
+		modelIDs = append(modelIDs, m.registryID)
 	}
 
 	total := settings.BirdNET.Threads
@@ -2361,13 +2502,13 @@ func (o *Orchestrator) loadAdditionalModels(threadAlloc map[string]int) error {
 	// o.Settings pointer, consistent with the per-model loaders (loadPerch/loadBat).
 	settings := o.currentSettings()
 
-	for _, configID := range settings.Models.Enabled {
-		registryID, known := ResolveConfigModelID(configID)
-		if !known {
+	for m := range enabledModels(settings) {
+		if !m.known {
 			log.Warn("skipping unknown model ID in models.enabled",
-				logger.String("model_id", configID))
+				logger.String("model_id", m.configID))
 			continue
 		}
+		registryID := m.registryID
 
 		// Closure with defer ensures the mutex is released even if a
 		// loader panics during model initialization.
@@ -2388,9 +2529,19 @@ func (o *Orchestrator) loadAdditionalModels(threadAlloc map[string]int) error {
 
 			// Hold the lock through the loader call because loaders write
 			// directly to o.models (e.g., loadPerch, loadBat).
-			return loader(o, threadAlloc[registryID])
+			if err := loader(o, threadAlloc[registryID]); err != nil {
+				return err
+			}
+			// The model registered; clear any stale unload tombstone and stored load
+			// error (the cumulative failure count is kept for the LoadFailures metric).
+			o.modelUnloaded.Delete(registryID)
+			o.modelLoadErrors.Delete(registryID)
+			return nil
 		}()
 		if loadErr != nil {
+			// Record the failure (not just log it) so a later not-loaded predict on
+			// this model can report why it is missing instead of a bare unknown model.
+			o.recordLoadFailure(registryID, loadErr)
 			log.Warn("optional model failed to load, will retry after gallery scan",
 				logger.String("registry_id", registryID),
 				logger.Error(loadErr))
@@ -2404,6 +2555,19 @@ func (o *Orchestrator) loadAdditionalModels(threadAlloc map[string]int) error {
 	}
 
 	return nil
+}
+
+// RarityContext bundles everything a caller needs to compute a species' rarity from one
+// coherent settings generation: the probable-species scores, the two label vocabularies
+// used to interpret them, whether the range filter was active, and the settings snapshot
+// the scores were produced from. See GetRarityContext for the per-field semantics and the
+// consistency guarantees.
+type RarityContext struct {
+	Scores           []SpeciesScore
+	GeomodelLabels   []string
+	ClassifierLabels []string
+	FilterActive     bool
+	Settings         *conf.Settings
 }
 
 // GetRarityContext returns the primary model's probable-species scores together with
@@ -2433,7 +2597,21 @@ func (o *Orchestrator) loadAdditionalModels(threadAlloc map[string]int) error {
 // TFLite meta model and the plain ONNX range filter, and when no range filter or
 // location is configured; in every one of those cases the scores are labeled with the
 // classifier's own vocabulary, so callers must fall back to classifierLabels.
-func (o *Orchestrator) GetRarityContext(date time.Time) (scores []SpeciesScore, geomodelLabels, classifierLabels []string, err error) {
+//
+// filterActive is true only when the returned scores are genuine location-based
+// predictions; it is false when they are the synthetic all-zero fallback (no range
+// filter loaded, or no location configured), so a caller can avoid reporting a zero as
+// "very rare" (#3935).
+//
+// The returned RarityContext bundles the settings snapshot the scores were produced from
+// together with the scores, the two vocabularies, and filterActive, so a caller
+// assembling rarity metadata (location, threshold, coordinates) derives every field from
+// the SAME settings generation as the score rather than taking a second,
+// independently-resolved CurrentSettings() read that a concurrent reload could
+// desynchronise from the score. Settings is non-nil whenever a primary exists or any
+// settings have been published (i.e. in a running app); it can be nil only for an
+// uninitialised orchestrator, so a caller that may run before startup must nil-check it.
+func (o *Orchestrator) GetRarityContext(date time.Time) (RarityContext, error) {
 	// Snapshot the primary once and drive every read below from it. Delegating to
 	// o.GetProbableSpecies would re-resolve o.primary under a fresh lock and could
 	// score against a different model than the labels describe.
@@ -2441,12 +2619,25 @@ func (o *Orchestrator) GetRarityContext(date time.Time) (scores []SpeciesScore, 
 	primary := o.primary
 	o.mu.RUnlock()
 	if primary == nil {
-		return nil, nil, nil, nil
+		// No primary, so no scores: hand back the orchestrator's current snapshot.
+		return RarityContext{Settings: o.CurrentSettings()}, nil
 	}
 
 	settings := primary.currentSettings()
-	scores, geomodelLabels, err = primary.getProbableSpecies(date, 0.0, settings)
-	classifierLabels = slices.Clone(settings.BirdNET.Labels)
-
-	return scores, geomodelLabels, classifierLabels, err
+	// filterActive is decided inside getProbableSpecies, in the same locked section
+	// that produced the scores: it is false whenever those scores are the synthetic
+	// all-zero fallback (no range-filter backend loaded, OR no location configured).
+	// Deriving it here rather than from a separate rangeFilterRuntimeState() read
+	// closes a TOCTOU where a concurrent unload between the two reads could pair
+	// filterActive=true with synthetic zeros, and it also covers the no-location case
+	// a bare rangeFilter!=nil check missed, so a caller never reports a synthetic zero
+	// as "very rare" (#3935).
+	scores, geomodelLabels, filterActive, err := primary.getProbableSpecies(date, 0.0, settings)
+	return RarityContext{
+		Scores:           scores,
+		GeomodelLabels:   geomodelLabels,
+		ClassifierLabels: slices.Clone(settings.BirdNET.Labels),
+		FilterActive:     filterActive,
+		Settings:         settings,
+	}, err
 }
