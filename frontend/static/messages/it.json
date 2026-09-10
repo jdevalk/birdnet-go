@@ -2392,7 +2392,19 @@
           "description": "Limita il rilevamento alle specie probabili nella tua regione geografica",
           "stationLocation": {
             "label": "Posizione Stazione",
-            "helpText": "Posizione della stazione, usata per dati meteo e per limitare le specie di uccelli a quelle probabili nella regione."
+            "helpText": "Posizione della stazione, usata per dati meteo e per limitare le specie di uccelli a quelle probabili nella regione.",
+            "automaticLocation": "Posizione automatica",
+            "useCurrentLocation": "Usa la posizione del browser",
+            "locationHelp": "Compila le coordinate usando la posizione di questo browser.",
+            "locating": "Localizzazione in corso...",
+            "accuracy": "Precisione stimata: entro {accuracy} m",
+            "locationDetected": "Posizione del browser rilevata.",
+            "geolocationUnsupported": "Questo browser non supporta la posizione del dispositivo. Inserisci le coordinate manualmente o usa la mappa.",
+            "geolocationRequiresHttps": "La posizione del browser richiede HTTPS o localhost. Inserisci le coordinate manualmente o usa la mappa.",
+            "geolocationDenied": "L'autorizzazione alla posizione è stata negata. Inserisci le coordinate manualmente o usa la mappa.",
+            "geolocationUnavailable": "Il dispositivo non ha potuto determinare la propria posizione. Inserisci le coordinate manualmente o usa la mappa.",
+            "geolocationTimedOut": "La richiesta di posizione è scaduta. Riprova, inserisci le coordinate manualmente o usa la mappa.",
+            "geolocationFailed": "Impossibile determinare la posizione del dispositivo. Inserisci le coordinate manualmente o usa la mappa."
           },
           "latitude": {
             "label": "Latitudine",
@@ -4379,7 +4391,7 @@
       "dynamicThreshold": {
         "tabLabel": "Appreso",
         "title": "Soglie Apprese",
-        "description": "Questa pagina mostra dati runtime Soglia Dinamica. Quando abilitata in Impostazioni Principali → Rilevamento, soglie vengono regolate automaticamente da rilevamenti multipli alta confidenza. Specie mostrate qui si assume esistano in questa posizione.",
+        "description": "Questa pagina mostra dati runtime Soglia Dinamica. Quando abilitata, soglie vengono regolate automaticamente da rilevamenti multipli alta confidenza. Specie mostrate qui si assume esistano in questa posizione.",
         "stats": {
           "active": "Attivo",
           "atMinimum": "Al Minimo",

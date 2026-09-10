@@ -2392,7 +2392,19 @@
           "description": "Limitar la detección a especies probables en su región geográfica",
           "stationLocation": {
             "label": "Ubicación de la estación",
-            "helpText": "Ubicación de la estación, utilizada para obtener datos meteorológicos y limitar las especies de aves a las probables en la región."
+            "helpText": "Ubicación de la estación, utilizada para obtener datos meteorológicos y limitar las especies de aves a las probables en la región.",
+            "automaticLocation": "Ubicación automática",
+            "useCurrentLocation": "Usar ubicación del navegador",
+            "locationHelp": "Rellena las coordenadas usando la ubicación de este navegador.",
+            "locating": "Obteniendo ubicación...",
+            "accuracy": "Precisión estimada: dentro de {accuracy} m",
+            "locationDetected": "Se detectó la ubicación del navegador.",
+            "geolocationUnsupported": "Este navegador no admite la ubicación del dispositivo. Introduzca las coordenadas manualmente o use el mapa.",
+            "geolocationRequiresHttps": "La ubicación del navegador requiere HTTPS o localhost. Introduzca las coordenadas manualmente o use el mapa.",
+            "geolocationDenied": "Se denegó el permiso de ubicación. Introduzca las coordenadas manualmente o use el mapa.",
+            "geolocationUnavailable": "El dispositivo no pudo determinar su ubicación. Introduzca las coordenadas manualmente o use el mapa.",
+            "geolocationTimedOut": "La solicitud de ubicación agotó el tiempo de espera. Inténtelo de nuevo, introduzca las coordenadas manualmente o use el mapa.",
+            "geolocationFailed": "No se pudo determinar la ubicación del dispositivo. Introduzca las coordenadas manualmente o use el mapa."
           },
           "latitude": {
             "label": "Latitud",
@@ -4379,7 +4391,7 @@
       "dynamicThreshold": {
         "tabLabel": "Aprendido",
         "title": "Umbrales aprendidos",
-        "description": "Esta página muestra datos de umbrales dinámicos en tiempo de ejecución. Cuando está habilitado en Ajustes principales → Detección, los umbrales se ajustan automáticamente mediante múltiples detecciones de alta confianza. Las especies mostradas aquí se asumen presentes en esta ubicación.",
+        "description": "Esta página muestra datos de umbrales dinámicos en tiempo de ejecución. Cuando está habilitado, los umbrales se ajustan automáticamente mediante múltiples detecciones de alta confianza. Las especies mostradas aquí se asumen presentes en esta ubicación.",
         "stats": {
           "active": "Activos",
           "atMinimum": "En mínimo",

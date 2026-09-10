@@ -2392,7 +2392,19 @@
           "description": "Beperk detectie tot soorten die waarschijnlijk voorkomen in uw geografische regio",
           "stationLocation": {
             "label": "Station Locatie",
-            "helpText": "Station locatie, gebruikt voor weersgegevens en om vogelsoorten te beperken tot diegenen die waarschijnlijk voorkomen in de regio."
+            "helpText": "Station locatie, gebruikt voor weersgegevens en om vogelsoorten te beperken tot diegenen die waarschijnlijk voorkomen in de regio.",
+            "automaticLocation": "Automatische locatie",
+            "useCurrentLocation": "Browserlocatie gebruiken",
+            "locationHelp": "Vult de coördinaten in met de locatie van deze browser.",
+            "locating": "Locatie bepalen...",
+            "accuracy": "Geschatte nauwkeurigheid: binnen {accuracy} m",
+            "locationDetected": "Browserlocatie bepaald.",
+            "geolocationUnsupported": "Deze browser ondersteunt apparaatlocatie niet. Voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationRequiresHttps": "Browserlocatie vereist HTTPS of localhost. Voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationDenied": "Toestemming voor locatie is geweigerd. Voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationUnavailable": "Uw apparaat kon de locatie niet bepalen. Voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationTimedOut": "Het locatieverzoek duurde te lang. Probeer het opnieuw, voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationFailed": "De locatie van uw apparaat kon niet worden bepaald. Voer coördinaten handmatig in of gebruik de kaart."
           },
           "latitude": {
             "label": "Breedtegraad",
@@ -4379,7 +4391,7 @@
       "dynamicThreshold": {
         "tabLabel": "Geleerd",
         "title": "Geleerde drempels",
-        "description": "Deze pagina toont runtime data van dynamische drempels. Wanneer ingeschakeld in Hoofdinstellingen → Detectie, worden drempels automatisch aangepast door meerdere detecties met hoge betrouwbaarheid. Soorten die hier worden getoond, worden verondersteld op deze locatie te bestaan.",
+        "description": "Deze pagina toont runtime data van dynamische drempels. Wanneer ingeschakeld, worden drempels automatisch aangepast door meerdere detecties met hoge betrouwbaarheid. Soorten die hier worden getoond, worden verondersteld op deze locatie te bestaan.",
         "stats": {
           "active": "Actief",
           "atMinimum": "Op minimum",
