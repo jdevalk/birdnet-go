@@ -131,6 +131,13 @@ type Orchestrator struct {
 	inferenceMu sync.Mutex   // serializes inference across all models
 	models      map[string]*modelEntry
 	primary     *BirdNET // direct access to the primary model
+	// rangeFilter is the orchestrator-owned range-filter and occurrence service
+	// (model de-privilege epic, Phase 2b). It replaces the range filter that used to
+	// live on the privileged primary *BirdNET, so occurrence, rarity and the species
+	// inclusion list no longer depend on which classifier is primary. Built in
+	// NewOrchestrator after the primary loads and closed in Delete. Its own leaf lock
+	// keeps range-filter prediction off the classifier's inference lock.
+	rangeFilter *rangeFilterService
 	// ortAvailable and ovLoadable report whether each inference backend can
 	// actually load from the given configured path. Both are nil in production,
 	// where inference.CheckORTAvailability and inference.InitOpenVINO are used.
@@ -342,6 +349,21 @@ func NewOrchestrator(settings *conf.Settings) (*Orchestrator, error) {
 	o.models[bn.ModelInfo.ID] = &modelEntry{instance: bn}
 	o.primary = bn
 	o.settingsAtomic.Store(settings)
+
+	// Build the orchestrator-owned range-filter service and its backend (model
+	// de-privilege epic, Phase 2b). This replaces the initializeMetaModel call that
+	// used to run inside NewBirdNET, so it uses the same inputs: the primary's
+	// registry ID and the models directory as it stands now (empty until the caller
+	// invokes SetModelsDir, exactly as bn.modelsDir was empty during the old
+	// construction-time build). A build failure is non-fatal: the process starts
+	// without species filtering and the user can fix it via Settings > Species.
+	o.rangeFilter = newRangeFilterService(o.rangeFilterDebug)
+	if err := o.rangeFilter.reload(settings, o.primaryClassifierView()); err != nil {
+		GetLogger().Warn("Range filter initialization failed, starting without species filtering (fix via Settings > Species)",
+			logger.Error(err),
+			logger.String("range_filter_model", settings.BirdNET.RangeFilter.Model),
+			logger.String("model_path", settings.BirdNET.RangeFilter.ModelPath))
+	}
 
 	// Log any labels missing from the taxonomy at debug level, reproducing the
 	// diagnostics BirdNET used to emit from loadLabels now that the taxonomy is
@@ -659,14 +681,7 @@ func (o *Orchestrator) resolveInstalledPaths(registryID string) (modelPath, labe
 		// variant's own files and return the one whose model file exists (a
 		// completed switch leaves exactly one), so a non-default install still
 		// resolves here when settings carry no path. Flat entries probe entry.Files.
-		fileSets := [][]CatalogFile{entry.Files}
-		if len(entry.Variants) > 0 {
-			fileSets = make([][]CatalogFile, 0, len(entry.Variants))
-			for j := range entry.Variants {
-				fileSets = append(fileSets, entry.Variants[j].Files)
-			}
-		}
-		for _, files := range fileSets {
+		for _, files := range entryFileSets(entry) {
 			var mp, lp, ep string
 			for _, f := range files {
 				switch f.Role {
@@ -968,15 +983,49 @@ func (o *Orchestrator) LoadedModelPaths() map[string]string {
 	return out
 }
 
+// rangeFilterDebug gates a debug log line on the currently published settings,
+// mirroring BirdNET.Debug so range-filter log lines relocated into the service stay
+// byte-identical. Passed to the service as its debug hook.
+func (o *Orchestrator) rangeFilterDebug(format string, v ...any) {
+	if s := o.CurrentSettings(); s != nil && s.BirdNET.Debug {
+		GetLogger().Debug(fmt.Sprintf(format, v...))
+	}
+}
+
+// primaryClassifierView snapshots the classifier identity the range-filter service
+// needs to build its backend: the primary's registry ID (from the o.mu-guarded
+// o.ModelInfo, not primary.ModelInfo which bn.mu guards) and the primary's models
+// directory. The models directory is read from the PRIMARY (bn.modelsDir), not from
+// o.modelsDir: the old NewBirdNET.initializeMetaModel used bn.modelsDir, which is
+// empty at construction (SetModelsDir runs later) and only set after SetModelsDir,
+// so reading it here keeps the initial build (no geomodel auto-select yet) and the
+// reload build (auto-select once the directory is set) byte-identical to the old
+// behavior, and consistent with RangeFilterStatus, which also reports coverage from
+// the primary's modelsDir. o.mu is released before reading bn.modelsDir so the build
+// still runs with no orchestrator lock held.
+func (o *Orchestrator) primaryClassifierView() classifierView {
+	o.mu.RLock()
+	primary := o.primary
+	id := o.ModelInfo.ID
+	o.mu.RUnlock()
+	cv := classifierView{id: id}
+	if primary != nil {
+		_, cv.modelsDir = primary.primaryClassifierCoverage()
+	}
+	return cv
+}
+
 // GetProbableSpecies returns species scores from the range filter.
 func (o *Orchestrator) GetProbableSpecies(date time.Time, week float32) ([]SpeciesScore, error) {
 	o.mu.RLock()
 	primary := o.primary
+	rfs := o.rangeFilter
 	o.mu.RUnlock()
-	if primary == nil {
+	if primary == nil || rfs == nil {
 		return nil, nil
 	}
-	return primary.GetProbableSpecies(date, week)
+	scores, _, _, err := rfs.probableSpecies(date, week, o.CurrentSettings())
+	return scores, err
 }
 
 // GetProbableSpeciesWithSettings filters species using the supplied settings
@@ -985,11 +1034,13 @@ func (o *Orchestrator) GetProbableSpecies(date time.Time, week float32) ([]Speci
 func (o *Orchestrator) GetProbableSpeciesWithSettings(date time.Time, week float32, settings *conf.Settings) ([]SpeciesScore, error) {
 	o.mu.RLock()
 	primary := o.primary
+	rfs := o.rangeFilter
 	o.mu.RUnlock()
-	if primary == nil {
+	if primary == nil || rfs == nil {
 		return nil, nil
 	}
-	return primary.GetProbableSpeciesWithSettings(date, week, settings)
+	scores, _, _, err := rfs.probableSpecies(date, week, settings)
+	return scores, err
 }
 
 // GetAllProbableSpeciesWithSettings returns species from all active classifiers.
@@ -1049,11 +1100,21 @@ func (o *Orchestrator) GetAllProbableSpeciesWithSettings(date time.Time, week fl
 	// ReloadRangeFilter cannot desync them. geoLabels is non-nil only on the
 	// universal (v3 geomodel) path, where it covers every scientific name the
 	// geomodel knows regardless of threshold.
-	scores, geoLabels, _, err := primary.getProbableSpecies(date, week, settings)
+	rfs := o.rangeFilter
+	if rfs == nil {
+		return nil, nil
+	}
+	scores, geo, _, err := rfs.probableSpecies(date, week, settings)
 	if err != nil {
 		return nil, err
 	}
-	isUniversal := geoLabels != nil
+	isUniversal := geo != nil
+	// geo is non-nil only on the universal path; read its label slice (nil
+	// otherwise) so the geomodel-coverage dedup below is byte-for-byte unchanged.
+	var geoLabels []string
+	if geo != nil {
+		geoLabels = geo.Labels
+	}
 
 	// Dedup by scientific name (lowercased). seenSci holds species already
 	// represented via the primary scores; geoCovered holds every scientific
@@ -1182,24 +1243,19 @@ func (o *Orchestrator) GetAllProbableSpeciesWithSettings(date time.Time, week fl
 
 // GetSpeciesOccurrence returns the occurrence probability for a species at the current time.
 func (o *Orchestrator) GetSpeciesOccurrence(species string) float64 {
-	o.mu.RLock()
-	primary := o.primary
-	o.mu.RUnlock()
-	if primary == nil {
-		return 0
-	}
-	return primary.GetSpeciesOccurrence(species)
+	return o.GetSpeciesOccurrenceAtTime(species, time.Now())
 }
 
 // GetSpeciesOccurrenceAtTime returns the occurrence probability for a species at a specific time.
 func (o *Orchestrator) GetSpeciesOccurrenceAtTime(species string, detectionTime time.Time) float64 {
 	o.mu.RLock()
 	primary := o.primary
+	rfs := o.rangeFilter
 	o.mu.RUnlock()
-	if primary == nil {
+	if primary == nil || rfs == nil {
 		return 0
 	}
-	return primary.GetSpeciesOccurrenceAtTime(species, detectionTime)
+	return rfs.occurrenceAtTime(species, detectionTime, o.CurrentSettings())
 }
 
 // NumSpecies returns the number of species labels of the primary model.
@@ -1390,8 +1446,43 @@ func (o *Orchestrator) RangeFilterStatus() RangeFilterStatusResponse {
 	settings := primary.currentSettings()
 	rf := settings.BirdNET.RangeFilter
 
-	geomodel, primaryCoverage, geoLabels, _ := primary.PrimaryRangeFilterCoverage()
-	active, fellBack := primary.rangeFilterRuntimeState()
+	// The classifier identity/label count come from the primary; the geomodel
+	// coverage, runtime state and auto-select come from the orchestrator-owned range
+	// filter service (Phase 2b). This reproduces the former
+	// BirdNET.PrimaryRangeFilterCoverage + rangeFilterRuntimeState in one place.
+	primaryCoverage, modelsDir := primary.primaryClassifierCoverage()
+	var (
+		geomodel  *GeomodelStatus
+		geoLabels []string
+		active    bool
+		fellBack  bool
+	)
+	if rfs := o.rangeFilter; rfs != nil {
+		active, fellBack = rfs.runtimeState()
+		if mrf, ok := rfs.mappedView(); ok {
+			primaryCoverage.WithRangeData = mrf.mappedCount
+			primaryCoverage.WithoutRangeData = mrf.numClassifier - mrf.mappedCount
+			geoLabels = mrf.geomodelLabels
+
+			version := rf.Model
+			if version == "v3" {
+				version = "v3.0"
+			}
+			geomodel = &GeomodelStatus{
+				Version:      version,
+				TotalSpecies: mrf.inner.NumSpecies(),
+			}
+		}
+	}
+
+	// Report whether an active v3 geomodel was auto-selected from the shared models
+	// directory (ported from PrimaryRangeFilterCoverage).
+	if geomodel != nil && rf.Model == "v3" && modelsDir != "" {
+		sharedDir := filepath.Join(modelsDir, sharedDirName)
+		expectedONNX := filepath.Join(sharedDir, conf.GeomodelONNXLocalName)
+		expectedLabels := filepath.Join(sharedDir, conf.GeomodelLabelsLocalName)
+		geomodel.AutoSelected = rf.ModelPath == expectedONNX && rf.LabelsPath == expectedLabels
+	}
 
 	resp := RangeFilterStatusResponse{
 		Geomodel:            geomodel,
@@ -1480,13 +1571,16 @@ func (o *Orchestrator) RangeFilterStatus() RangeFilterStatusResponse {
 func (o *Orchestrator) ReloadRangeFilter() error {
 	o.mu.RLock()
 	primary := o.primary
+	rfs := o.rangeFilter
 	o.mu.RUnlock()
-	if primary == nil {
+	if primary == nil || rfs == nil {
 		return nil
 	}
-	if err := primary.ReloadRangeFilter(); err != nil {
+	GetLogger().Info("Reloading range filter from updated settings")
+	if err := rfs.reload(o.CurrentSettings(), o.primaryClassifierView()); err != nil {
 		return err
 	}
+	GetLogger().Info("Range filter reloaded successfully")
 	return BuildRangeFilter(o)
 }
 
@@ -1514,7 +1608,9 @@ func (o *Orchestrator) notifyRangeFilterReload() {
 	}
 }
 
-// RunFilterProcess executes the filter process on demand and prints results.
+// RunFilterProcess executes the filter process on demand and prints results. Ported
+// from the former BirdNET.RunFilterProcess onto the orchestrator so the rangefilter
+// CLI keeps working after the range filter moved to the service (Phase 2b).
 func (o *Orchestrator) RunFilterProcess(dateStr string, week float32) {
 	o.mu.RLock()
 	primary := o.primary
@@ -1522,7 +1618,25 @@ func (o *Orchestrator) RunFilterProcess(dateStr string, week float32) {
 	if primary == nil {
 		return
 	}
-	primary.RunFilterProcess(dateStr, week)
+
+	// If dateStr is not empty, parse the date.
+	var parsedDate time.Time
+	var err error
+	if dateStr != "" {
+		parsedDate, err = time.Parse(time.DateOnly, dateStr)
+		if err != nil {
+			fmt.Printf("Error parsing date: %s\n", err)
+			return
+		}
+	}
+
+	speciesScores, err := o.GetProbableSpecies(parsedDate, week)
+	if err != nil {
+		fmt.Printf("Error during species prediction: %s\n", err)
+		return
+	}
+
+	PrintSpeciesScores(parsedDate, speciesScores)
 }
 
 // ReloadModel reloads the primary model and re-syncs shared state.
@@ -1532,10 +1646,33 @@ func (o *Orchestrator) ReloadModel() error {
 	if err := o.reloadPrimaryModel(func(primary *BirdNET) error { return primary.ReloadModel() }); err != nil {
 		return err
 	}
-	// Rebuild after reloadPrimaryModel returns: it holds o.mu.Lock via defer through
-	// step 2, and rebuildSpeciesIndex must run with no orchestrator lock held.
+	// Rebuild the range-filter backend against the reloaded classifier's labels, then
+	// rebuild the species index. Order matters: rebuildSpeciesIndex must see the new
+	// range filter's synthetic inclusions. Both run with no orchestrator lock held
+	// (reloadPrimaryModel released o.mu on return). A range-filter reload failure is
+	// non-fatal: the classifier reload already committed, and the previous backend
+	// keeps serving (Phase 2b; see reloadPrimaryRangeFilter).
+	o.reloadPrimaryRangeFilter()
 	o.rebuildSpeciesIndex()
 	return nil
+}
+
+// reloadPrimaryRangeFilter rebuilds the range-filter backend from the current
+// settings after a full classifier reload. It is deliberately non-fatal: unlike the
+// former joint reloadModelInternal transaction, the classifier reload has already
+// committed by the time this runs, so a range-filter build failure must not roll the
+// classifier back. The service keeps its previous backend on failure, which stays
+// correct because a locale change or a v2.4 variant swap preserves the species set
+// and scientific names the mapping is keyed on (#1682).
+func (o *Orchestrator) reloadPrimaryRangeFilter() {
+	rfs := o.rangeFilter
+	if rfs == nil {
+		return
+	}
+	if err := rfs.reload(o.CurrentSettings(), o.primaryClassifierView()); err != nil {
+		GetLogger().Warn("Range filter reload after model reload failed; keeping the previous range filter",
+			logger.Error(err))
+	}
 }
 
 // ReloadPrimaryForVariantSwap reloads the primary classifier in place for a
@@ -1550,7 +1687,9 @@ func (o *Orchestrator) ReloadPrimaryForVariantSwap() error {
 	if err := o.reloadPrimaryModel(func(primary *BirdNET) error { return primary.reloadForVariantSwap() }); err != nil {
 		return err
 	}
-	// See ReloadModel: rebuild only after reloadPrimaryModel released o.mu.
+	// See ReloadModel: rebuild the range-filter backend then the species index, both
+	// after reloadPrimaryModel released o.mu, with the range-filter reload non-fatal.
+	o.reloadPrimaryRangeFilter()
 	o.rebuildSpeciesIndex()
 	return nil
 }
@@ -1888,6 +2027,7 @@ func (o *Orchestrator) Delete() {
 	// teardown. UnloadModel uses the same drop-lock-before-close shape.
 	o.mu.Lock()
 	models := o.models
+	rfs := o.rangeFilter
 	// Swap(nil) both retrieves the scheduler to stop and clears the pointer, so a
 	// re-used orchestrator does not see a stale stopped scheduler (SetSunCalc skips
 	// creating a new one when o.scheduler is already non-nil).
@@ -1897,6 +2037,17 @@ func (o *Orchestrator) Delete() {
 	o.primary = nil
 	o.models = nil
 	o.mu.Unlock()
+
+	// Close the range-filter backend outside o.mu. close() empties the published
+	// state under rfs.mu, so any accessor that runs after teardown reads a nil
+	// backend and returns its zero value: the o.primary-guarded accessors fail fast
+	// on the nil primary set above, and the few that read the service directly
+	// (GeomodelSpeciesInfo via mappedView) get ok=false from the empty state. The
+	// service pointer is intentionally left set: GeomodelSpeciesInfo reads it without
+	// o.mu, so nilling it here would be a data race for no benefit.
+	if rfs != nil {
+		rfs.close()
+	}
 
 	o.rssMu.Lock()
 	o.modelRSS = make(map[string]int64)
@@ -2311,43 +2462,25 @@ func (o *Orchestrator) UnloadModel(registryID string) error {
 	return nil
 }
 
-// lockedMappedRangeFilter snapshots primary under o.mu.RLock, then acquires
-// primary.mu and unwraps the range filter to *mappedRangeFilter.
-// The caller MUST defer primary.mu.Unlock() after using the returned filter.
-// Returns (primary, mappedRangeFilter, error). On error, no locks are held.
-func (o *Orchestrator) lockedMappedRangeFilter() (*BirdNET, *mappedRangeFilter, error) {
+// lockedBatchRangeFilter returns the geomodel-backed mapped range filter for batch
+// inference together with a release func that MUST be called after use; the range
+// filter service lock is held across the returned filter's native call because its
+// ONNX session is not goroutine-safe (Phase 2b; formerly lockedMappedRangeFilter
+// held primary.mu). On error no lock is held and the release func is a no-op.
+func (o *Orchestrator) lockedBatchRangeFilter() (*mappedRangeFilter, func(), error) {
 	o.mu.RLock()
 	primary := o.primary
+	rfs := o.rangeFilter
 	o.mu.RUnlock()
 
-	if primary == nil {
-		return nil, nil, errors.Newf("primary model not available").
+	if primary == nil || rfs == nil {
+		return nil, func() {}, errors.Newf("primary model not available").
 			Component("classifier.orchestrator").
 			Category(errors.CategoryValidation).
 			Build()
 	}
 
-	primary.mu.Lock()
-
-	rf := primary.rangeFilter
-	if rf == nil {
-		primary.mu.Unlock()
-		return nil, nil, errors.Newf("range filter not loaded").
-			Component("classifier.orchestrator").
-			Category(errors.CategoryValidation).
-			Build()
-	}
-
-	mrf, ok := rf.(*mappedRangeFilter)
-	if !ok {
-		primary.mu.Unlock()
-		return nil, nil, errors.Newf("range filter does not support batch inference").
-			Component("classifier.orchestrator").
-			Category(errors.CategoryValidation).
-			Build()
-	}
-
-	return primary, mrf, nil
+	return rfs.lockedBatchFilter()
 }
 
 // BatchRangeFilterInference runs batch geomodel inference on multiple location/week
@@ -2380,11 +2513,11 @@ func (o *Orchestrator) BatchRangeFilterInference(inputs []float32, batchSize int
 			Build()
 	}
 
-	primary, mrf, err := o.lockedMappedRangeFilter()
+	mrf, release, err := o.lockedBatchRangeFilter()
 	if err != nil {
 		return nil, err
 	}
-	defer primary.mu.Unlock()
+	defer release()
 
 	brf, ok := mrf.inner.(inference.BatchRangeFilter)
 	if !ok {
@@ -2403,12 +2536,17 @@ func (o *Orchestrator) BatchRangeFilterInference(inputs []float32, batchSize int
 // Returns (speciesIndex, numGeoSpecies, true) on success, or (0, 0, false)
 // if the species is not found or no range filter is loaded.
 func (o *Orchestrator) GeomodelSpeciesInfo(label string) (speciesIdx, numGeoSpecies int, found bool) {
-	primary, mrf, err := o.lockedMappedRangeFilter()
-	if err != nil {
+	rfs := o.rangeFilter
+	if rfs == nil {
 		return 0, 0, false
 	}
-	defer primary.mu.Unlock()
-
+	// The mapped filter is published immutably behind an atomic pointer, so a single
+	// lock-free load gives a consistent snapshot; geomodelIndex and geomodelLabels are
+	// read-only after construction, so no lock is needed (formerly held primary.mu).
+	mrf, ok := rfs.mappedView()
+	if !ok {
+		return 0, 0, false
+	}
 	idx, ok := mrf.geomodelIndex[label]
 	if !ok {
 		return 0, 0, false
@@ -2684,8 +2822,12 @@ func (o *Orchestrator) loadAdditionalModels(threadAlloc map[string]int) error {
 // the scores were produced from. See GetRarityContext for the per-field semantics and the
 // consistency guarantees.
 type RarityContext struct {
-	Scores           []SpeciesScore
-	GeomodelLabels   []string
+	Scores []SpeciesScore
+	// Geomodel is the universal geomodel's label vocabulary paired with Scores. It
+	// is nil unless the universal geomodel path ran; when non-nil it is built from
+	// the same range-filter instance that produced Scores. Coverage reads its
+	// canonical-key memo, and a nil value means fall back to ClassifierLabels.
+	Geomodel         *LabelVocabulary
 	ClassifierLabels []string
 	FilterActive     bool
 	Settings         *conf.Settings
@@ -2700,9 +2842,9 @@ type RarityContext struct {
 // synthetic always-active scores to secondary-model species that have no real
 // occurrence probability.
 //
-// Consistency, stated precisely because the guarantee is partial: scores and
-// geomodelLabels always describe the same range-filter instance, because
-// getProbableSpecies captures the geomodel vocabulary under the same bn.mu hold that
+// Consistency, stated precisely because the guarantee is partial: scores and the
+// geomodel vocabulary (Geomodel) always describe the same range-filter instance,
+// because getProbableSpecies captures the geomodel vocabulary under the same bn.mu hold that
 // produces the scores. classifierLabels comes from the settings snapshot read here,
 // which is the same snapshot getProbableSpecies indexes for zeroScoresForAllLabels and
 // the unmapped-species mapping, so it agrees with the scores; but the range-filter
@@ -2714,7 +2856,7 @@ type RarityContext struct {
 // the globally published snapshot; an in-place model reload republishes only to the
 // instance, so classifierLabels can lag a label-set change until the next restart.
 //
-// geomodelLabels is nil unless the universal geomodel path ran. It is nil for the
+// Geomodel is nil unless the universal geomodel path ran. It is nil for the
 // TFLite meta model and the plain ONNX range filter, and when no range filter or
 // location is configured; in every one of those cases the scores are labeled with the
 // classifier's own vocabulary, so callers must fall back to classifierLabels.
@@ -2745,18 +2887,21 @@ func (o *Orchestrator) GetRarityContext(date time.Time) (RarityContext, error) {
 	}
 
 	settings := primary.currentSettings()
-	// filterActive is decided inside getProbableSpecies, in the same locked section
+	rfs := o.rangeFilter
+	if rfs == nil {
+		return RarityContext{Settings: settings}, nil
+	}
+	// filterActive is decided inside probableSpecies, in the same locked section
 	// that produced the scores: it is false whenever those scores are the synthetic
 	// all-zero fallback (no range-filter backend loaded, OR no location configured).
-	// Deriving it here rather than from a separate rangeFilterRuntimeState() read
-	// closes a TOCTOU where a concurrent unload between the two reads could pair
-	// filterActive=true with synthetic zeros, and it also covers the no-location case
-	// a bare rangeFilter!=nil check missed, so a caller never reports a synthetic zero
-	// as "very rare" (#3935).
-	scores, geomodelLabels, filterActive, err := primary.getProbableSpecies(date, 0.0, settings)
+	// Deriving it here rather than from a separate runtimeState() read closes a TOCTOU
+	// where a concurrent unload between the two reads could pair filterActive=true with
+	// synthetic zeros, and it also covers the no-location case a bare backend!=nil
+	// check missed, so a caller never reports a synthetic zero as "very rare" (#3935).
+	scores, geomodel, filterActive, err := rfs.probableSpecies(date, 0.0, settings)
 	return RarityContext{
 		Scores:           scores,
-		GeomodelLabels:   geomodelLabels,
+		Geomodel:         geomodel,
 		ClassifierLabels: slices.Clone(settings.BirdNET.Labels),
 		FilterActive:     filterActive,
 		Settings:         settings,
