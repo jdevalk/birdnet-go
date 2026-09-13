@@ -304,21 +304,24 @@ func TestModelManager_InstallOrReplace_RollsBackOnLoadFailure(t *testing.T) {
 }
 
 // TestModelManager_InstallOrReplace_UnloadFailureKeepsOldAndCleansNew verifies
-// that when the old model cannot be unloaded (it is the primary), the switch
-// aborts with the old variant intact and the freshly downloaded new files removed.
+// that when the old model cannot be unloaded, the switch aborts with the old
+// variant intact and the freshly downloaded new files removed. The unload failure
+// is injected via the unloadFn seam (production reaches it only via a concurrent
+// unload/delete race).
 func TestModelManager_InstallOrReplace_UnloadFailureKeepsOldAndCleansNew(t *testing.T) {
 	entry, modelsDir, srvURL := twoVariantServerEntry(t)
 	entry.RegistryID = RegistryIDBSG
 
-	// Primary models are refused by UnloadModel, forcing the unload-failure path.
-	primary := &BirdNET{ModelInfo: ModelInfo{ID: entry.RegistryID}}
+	// The model is loaded (present in the orchestrator map) so the variant switch
+	// reaches its unload step; the injected seam then fails that unload, forcing the
+	// "keep old, clean new" abort path. The first InstallOrReplace below is a fresh
+	// install (no unload), so the seam does not affect it.
 	orch := &Orchestrator{
-		ModelInfo: primary.ModelInfo,
-		models:    map[string]*modelEntry{entry.RegistryID: {instance: primary}},
-		primary:   primary,
+		models: map[string]*modelEntry{entry.RegistryID: {}},
 	}
 	orch.SetModelsDir(modelsDir)
 	mm := NewModelManager(modelsDir, orch, nil)
+	mm.unloadFn = func(_ string) error { return errInjectedUnloadFailure }
 
 	require.NoError(t, mm.InstallOrReplace(t.Context(), &entry, "", srvURL, nil))
 	fp32Path := filepath.Join(modelsDir, entry.ID, "model.onnx")

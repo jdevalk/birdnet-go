@@ -23,6 +23,11 @@ const (
 func TestSourceNeedsReconfigure(t *testing.T) {
 	t.Parallel()
 
+	// estimateTestRate is the high (bat) source rate shared by the estimated-marker
+	// cases below; a named constant keeps the running and desired fixtures from
+	// diverging.
+	const estimateTestRate = 250000
+
 	tests := []struct {
 		name     string
 		running  *audiocore.AudioSource
@@ -40,6 +45,47 @@ func TestSourceNeedsReconfigure(t *testing.T) {
 				SampleRate: 48000,
 				BitDepth:   16,
 				Channels:   1,
+			},
+			expected: false,
+		},
+		{
+			// A fresh probe confirming the rate clears the estimate marker, so the
+			// same-rate estimated->fresh transition must reconfigure to stop the
+			// forced resampling (#4350).
+			name: "estimate confirmed by fresh same-rate probe reconfigures",
+			running: &audiocore.AudioSource{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: true,
+				BitDepth: 16, Channels: 1,
+			},
+			desired: &audiocore.SourceConfig{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: false,
+				BitDepth: 16, Channels: 1,
+			},
+			expected: true,
+		},
+		{
+			// A probe blipping during an unrelated hot-reload must NOT restart a
+			// healthy stream just to enter estimated mode (avoids reconfigure churn).
+			name: "same-rate probe blip re-estimating does not reconfigure",
+			running: &audiocore.AudioSource{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: false,
+				BitDepth: 16, Channels: 1,
+			},
+			desired: &audiocore.SourceConfig{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: true,
+				BitDepth: 16, Channels: 1,
+			},
+			expected: false,
+		},
+		{
+			name: "same-rate both estimated is a no-op",
+			running: &audiocore.AudioSource{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: true,
+				BitDepth: 16, Channels: 1,
+			},
+			desired: &audiocore.SourceConfig{
+				SampleRate: estimateTestRate, SourceSampleRate: estimateTestRate, SourceSampleRateEstimated: true,
+				BitDepth: 16, Channels: 1,
 			},
 			expected: false,
 		},
