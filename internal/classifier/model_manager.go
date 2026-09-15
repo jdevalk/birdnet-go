@@ -1482,7 +1482,7 @@ func (mm *ModelManager) replaceVariant(ctx context.Context, entry *CatalogEntry,
 		// the old variant serving (nothing swapped, nothing unloaded), so rollback only
 		// restores the record and config.
 		if reloadErr := mm.orchestrator.ReloadForVariantSwap(entry.RegistryID); reloadErr != nil {
-			return mm.rollbackVariantSwap(log, entry, old, newVariantID, reloadErr, progress)
+			return mm.rollbackVariant(log, entry, old, newVariantID, reloadErr, false, progress)
 		}
 		// A geomodel-carrying family (Perch, BirdNET v3.0) re-points and reloads the range
 		// filter, exactly as hotLoadAfterInstall does after an install. The v2.4 anchor
@@ -1498,12 +1498,12 @@ func (mm *ModelManager) replaceVariant(ctx context.Context, entry *CatalogEntry,
 		mm.notifyTopologyChanged()
 	} else {
 		// Not loaded (installed but disabled, or no orchestrator in tests): load the new
-		// variant fresh, exactly as an install does. hotLoadAfterInstall is a no-op without
-		// an orchestrator; the rollback check below fires only when one is present and the
-		// new variant did not load, extending download-before-delete to a LOAD failure.
-		mm.hotLoadAfterInstall(log, entry)
-		if mm.orchestrator != nil && entry.RegistryID != "" && !mm.orchestrator.IsModelLoaded(entry.RegistryID) {
-			return mm.rollbackVariantSwitch(log, entry, old, newVariantID, progress)
+		// variant fresh, exactly as an install does. hotLoadAfterInstall returns nil without
+		// an orchestrator or RegistryID, so the rollback fires only when the new variant was
+		// actually attempted and did not load, extending download-before-delete to a LOAD
+		// failure. The load error becomes the rollback's activation cause.
+		if loadErr := mm.hotLoadAfterInstall(log, entry); loadErr != nil {
+			return mm.rollbackVariant(log, entry, old, newVariantID, loadErr, true, progress)
 		}
 	}
 
@@ -1526,40 +1526,94 @@ func (mm *ModelManager) replaceVariant(ctx context.Context, entry *CatalogEntry,
 	return nil
 }
 
-// rollbackVariantSwap restores the previously-active variant after a GAPLESS build
-// failure (ReloadForVariantSwap). reloadEntry only swaps entry.instance on a successful
-// build, so a failure means the old model never stopped serving: this restores the
-// install record, re-persists the old variant's config (step 3 wrote the new one),
-// removes the new variant's downloaded files, and reports the failure. It never reloads,
-// because nothing was swapped. It serves every family; the "failed to load" phrasing is
-// kept stable for the API/SSE surface and the tests that match on it.
-func (mm *ModelManager) rollbackVariantSwap(log logger.Logger, entry *CatalogEntry, old *InstalledModel, newVariantID string, cause error, progress chan<- DownloadState) error {
-	log.Warn("New variant failed to build; rolled back to the previous variant",
+// rollbackVariant restores the previously-active variant after a failed swap to
+// newVariantID, re-persists its config and (optionally) reloads it, removes the new
+// variant's now-unused files, and reports the failure. It is the shared rollback for both
+// replaceVariant failure modes:
+//
+//   - reload=false: a GAPLESS build failure (ReloadForVariantSwap). reloadEntry only swaps
+//     entry.instance on a successful build, so the old model never stopped serving and
+//     nothing is reloaded. cause is the build error.
+//   - reload=true: the not-loaded path activated the new variant fresh but it failed to
+//     load, so the old variant is reloaded via hotLoadAfterInstall. cause is that fresh-load
+//     failure. If reloading the old variant ALSO fails, the model is left unloaded until
+//     restart and the returned error says so instead of claiming a successful restore.
+//
+// cause (the activating failure: build error or fresh-load failure) is recorded as
+// activation_error; a failed old-variant reload is recorded as restore_error. It serves
+// every family; the "failed to load" phrasing is kept stable for the API/SSE surface and
+// the tests that match on it.
+func (mm *ModelManager) rollbackVariant(log logger.Logger, entry *CatalogEntry, old *InstalledModel, newVariantID string, cause error, reload bool, progress chan<- DownloadState) error {
+	warnFields := make([]logger.Field, 0, 4)
+	warnFields = append(warnFields,
 		logger.String("catalog_id", entry.ID),
 		logger.String("failed_variant", newVariantID),
-		logger.String("restored_variant", old.VariantID),
-		logger.Error(cause))
+		logger.String("restored_variant", old.VariantID))
+	if cause != nil {
+		// Scrub the underlying failure text: a model-load error can carry filesystem paths.
+		warnFields = append(warnFields, logger.SanitizedError(cause))
+	}
+	log.Warn("New variant failed to activate; rolling back to the previous variant", warnFields...)
 
-	// Restore the install record. The running model is already the old one.
+	// Restore the install record to the old variant. On the gapless path the running model
+	// is already the old one; on the not-loaded path it is reloaded below.
 	mm.mu.Lock()
 	mm.installed[entry.ID] = *old
 	mm.mu.Unlock()
 
-	// Re-persist the old variant's config, per family (mirrors replaceVariant step 3).
+	// Re-persist the old variant's config, per family (step 3 wrote the new one; the
+	// permanent v2.4 entry writes only its model field and clears it for the embedded
+	// baseline). Companion files are identical across a family's variants.
 	mm.persistVariantConfig(entry, old.ModelPath, old.LabelsPath, mm.variantEmbeddingsPath(entry, old.VariantID))
 
-	// The new variant is unusable on this host: remove its downloaded files (none for a
-	// BuiltIn target) so disk state matches the restored record.
+	// The not-loaded path activated the new variant fresh, so the old one must be reloaded;
+	// the gapless path never stopped serving and must not reload. A failed reload here means
+	// the previous variant did not come back: log it at the always-on manager logger (the
+	// returned error alone may only reach a disabled API logger) and report it honestly below.
+	var restoreErr error
+	if reload {
+		if restoreErr = mm.hotLoadAfterInstall(log, entry); restoreErr != nil {
+			log.Warn("Previous variant failed to reload after a failed swap; model is unloaded until restart",
+				logger.String("catalog_id", entry.ID),
+				logger.String("failed_variant", newVariantID),
+				logger.String("restored_variant", old.VariantID),
+				logger.SanitizedString("restore_error", restoreErr.Error()))
+		}
+	}
+
+	// The new variant is unusable on this host: remove its files (none for a BuiltIn
+	// target), keeping shared companions, so disk state matches the restored record.
 	mm.removeSupersededVariantFiles(log, entry, newVariantID, old.VariantID)
 
-	switchErr := errors.Newf("switched %s to variant %q but it failed to load; restored previous variant %q", entry.ID, newVariantID, old.VariantID).
+	// Wrap the underlying failure(s) with %w so callers can still inspect them with
+	// errors.Is / errors.As after rollback, while the activation_error / restore_error
+	// context fields keep them readable in logs and telemetry.
+	var eb *errors.ErrorBuilder
+	switch {
+	case restoreErr != nil:
+		// Reloading the previous variant failed too: it is not actually restored at runtime.
+		eb = errors.Newf("switched %s to variant %q but it failed to load; the previous variant %q also failed to reload (model unloaded until restart): %w",
+			entry.ID, newVariantID, old.VariantID, errors.Join(cause, restoreErr))
+	case cause != nil:
+		eb = errors.Newf("switched %s to variant %q but it failed to load; restored previous variant %q: %w",
+			entry.ID, newVariantID, old.VariantID, cause)
+	default:
+		eb = errors.Newf("switched %s to variant %q but it failed to load; restored previous variant %q",
+			entry.ID, newVariantID, old.VariantID)
+	}
+	eb = eb.
 		Component("classifier.model_manager").
 		Category(errors.CategoryModelInit).
 		Context("catalog_id", entry.ID).
 		Context("failed_variant", newVariantID).
-		Context("restored_variant", old.VariantID).
-		Context("reload_error", cause.Error()).
-		Build()
+		Context("restored_variant", old.VariantID)
+	if cause != nil {
+		eb = eb.Context("activation_error", cause.Error())
+	}
+	if restoreErr != nil {
+		eb = eb.Context("restore_error", restoreErr.Error())
+	}
+	switchErr := eb.Build()
 	mm.markFailed(entry.ID, switchErr, progress)
 	time.AfterFunc(failedStateRetention, func() {
 		mm.removeDownloading(entry.ID)
@@ -1596,48 +1650,6 @@ func (mm *ModelManager) variantEmbeddingsPath(entry *CatalogEntry, variantID str
 		}
 	}
 	return ""
-}
-
-// rollbackVariantSwitch restores the previously-installed variant after the new
-// variant was written and activated but failed to load. It re-records the old
-// variant, re-persists its paths, reloads it, and removes the new variant's
-// now-unused files, so a load failure during a switch leaves the family running
-// its previous working variant rather than nothing. It reports the switch as
-// failed over the progress stream. The caller must have registered entry.ID in
-// mm.downloading; rollbackVariantSwitch schedules its cleanup.
-func (mm *ModelManager) rollbackVariantSwitch(log logger.Logger, entry *CatalogEntry, old *InstalledModel, newVariantID string, progress chan<- DownloadState) error {
-	log.Warn("New variant failed to load; rolling back to the previous variant",
-		logger.String("catalog_id", entry.ID),
-		logger.String("failed_variant", newVariantID),
-		logger.String("restored_variant", old.VariantID))
-
-	// Restore the install record to the old variant.
-	mm.mu.Lock()
-	mm.installed[entry.ID] = *old
-	mm.mu.Unlock()
-
-	// Re-persist the old variant's config (step 3 wrote the new one) and reload it, per
-	// family (a v2.4 restore writes only the model field and clears it for the embedded
-	// baseline). Companion files are identical across a family's variants.
-	mm.persistVariantConfig(entry, old.ModelPath, old.LabelsPath, mm.variantEmbeddingsPath(entry, old.VariantID))
-	mm.hotLoadAfterInstall(log, entry)
-
-	// The new variant is unusable on this host: remove its files (keeping shared
-	// companions) so disk state matches the restored record.
-	mm.removeSupersededVariantFiles(log, entry, newVariantID, old.VariantID)
-
-	switchErr := errors.Newf("switched %s to variant %q but it failed to load; restored previous variant %q", entry.ID, newVariantID, old.VariantID).
-		Component("classifier.model_manager").
-		Category(errors.CategoryModelInit).
-		Context("catalog_id", entry.ID).
-		Context("failed_variant", newVariantID).
-		Context("restored_variant", old.VariantID).
-		Build()
-	mm.markFailed(entry.ID, switchErr, progress)
-	time.AfterFunc(failedStateRetention, func() {
-		mm.removeDownloading(entry.ID)
-	})
-	return switchErr
 }
 
 // applyConfigForVariantSwap persists the selected model file for a within-family
@@ -1984,7 +1996,14 @@ func (mm *ModelManager) downloadModelFiles(ctx context.Context, entry *CatalogEn
 
 	mm.applyConfigForInstall(entry, modelPath, labelsPath, embeddingsPath)
 
-	mm.hotLoadAfterInstall(log, entry)
+	// A failed hot-load is not an install failure: the files are on disk and load on the next
+	// restart, so report the install complete and only warn about the deferred load.
+	if loadErr := mm.hotLoadAfterInstall(log, entry); loadErr != nil {
+		log.Warn("Model installed but hot-load failed; a restart will retry loading it",
+			logger.String("catalog_id", entry.ID),
+			logger.String("registry_id", entry.RegistryID),
+			logger.Error(loadErr))
+	}
 	sendProgress(progress, entry.ID, StatusComplete)
 
 	log.Info("Model installed",
@@ -1994,17 +2013,23 @@ func (mm *ModelManager) downloadModelFiles(ctx context.Context, entry *CatalogEn
 	return nil
 }
 
-// hotLoadAfterInstall hot-loads the classifier model and, if the entry
-// includes geomodel companion files, reloads the range filter.
-func (mm *ModelManager) hotLoadAfterInstall(log logger.Logger, entry *CatalogEntry) {
+// hotLoadAfterInstall hot-loads the classifier model and, if the entry includes geomodel
+// companion files, reloads the range filter. It returns the LoadModel error (nil on success,
+// or when there is no orchestrator or RegistryID) so callers decide how to react: an install
+// treats a failed hot-load as non-fatal (the files are on disk and load after a restart),
+// while a variant swap rolls back. The range-filter reload failure stays a non-fatal warning
+// and never affects the returned error.
+func (mm *ModelManager) hotLoadAfterInstall(log logger.Logger, entry *CatalogEntry) error {
 	if mm.orchestrator == nil {
-		return
+		return nil
 	}
+	var loadErr error
 	if entry.RegistryID != "" {
 		if err := mm.orchestrator.LoadModel(entry.RegistryID); err != nil {
-			log.Warn("Failed to hot-load model (will be available after restart)",
-				logger.String("catalog_id", entry.ID),
-				logger.Error(err))
+			// Let the caller decide whether this is fatal, and log accordingly, rather than
+			// emit a fixed "available after restart" line that is untrue on the rollback path
+			// (where the failed variant is removed and does not persist).
+			loadErr = err
 		} else {
 			// Model hot-loaded: topology changed (no lock held here).
 			mm.notifyTopologyChanged()
@@ -2017,6 +2042,7 @@ func (mm *ModelManager) hotLoadAfterInstall(log logger.Logger, entry *CatalogEnt
 				logger.Error(err))
 		}
 	}
+	return loadErr
 }
 
 // resolveSharedPaths fills in modelPath and labelsPath for shared-only entries
