@@ -177,7 +177,7 @@ func TestBirdNET_ConcurrentInferenceAndBackendReload_NoRace(t *testing.T) {
 			// step, so this guarantees each path is exercised at least once even if
 			// the teardown writer below keeps the backends nil for much of the run.
 			_, _ = bn.Predict(ctx, sample)
-			_, _, _, _ = rfs.probableSpecies(now, 0, settings)
+			_, _, _, _, _ = rfs.probableSpecies(now, 0, settings)
 
 			var wg sync.WaitGroup
 			start := make(chan struct{})
@@ -196,7 +196,7 @@ func TestBirdNET_ConcurrentInferenceAndBackendReload_NoRace(t *testing.T) {
 			wg.Go(func() {
 				<-start
 				for range iterations {
-					_, _, _, _ = rfs.probableSpecies(now, 0, settings)
+					_, _, _, _, _ = rfs.probableSpecies(now, 0, settings)
 				}
 			})
 
@@ -261,6 +261,8 @@ func TestRangeFilterService_ReloadAfterCloseDoesNotPublish(t *testing.T) {
 	settings := conftest.GetTestSettings()
 	settings.BirdNET.LocationConfigured = true
 
-	require.NoError(t, rfs.reload(settings, classifierView{id: RegistryIDBirdNETV24}))
+	require.NoError(t, rfs.reload(settings, func() rangeFilterView {
+		return rangeFilterView{v24Labels: []string{}}
+	}))
 	require.Nil(t, rfs.loadState().backend, "no backend may be published by a reload after close()")
 }

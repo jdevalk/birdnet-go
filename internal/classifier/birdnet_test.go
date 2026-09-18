@@ -318,7 +318,7 @@ func TestPrimaryRangeFilterCoverage_WithMappedFilter(t *testing.T) {
 	}
 	bn.settingsAtomic.Store(settings)
 	o := &Orchestrator{Settings: settings, modelsDir: modelsDir,
-		models: map[string]*modelEntry{RegistryIDBirdNETV24: {instance: bn}}}
+		models: map[string]*modelEntry{RegistryIDBirdNETV3: {instance: bn}}}
 	o.settingsAtomic.Store(settings)
 	o.rangeFilter = newTestRangeFilterService(mapped)
 
@@ -405,9 +405,24 @@ func TestRangeFilterStatus_PerClassifierCoverage(t *testing.T) {
 		},
 		modelsDir: modelsDir,
 	}
-	orch.rangeFilter = newTestRangeFilterService(mapped)
+	// Publish the state a real geomodel reload would: kind geomodel_v3, coveredLabels the
+	// v2.4 label set (v2.4 is loaded), and the participant snapshot the reload builds from
+	// the loaded models. Per-participant coverage is decided by the built-over participant
+	// set and the backend kind (state.hasParticipant + kind), not by the live model map.
+	orch.rangeFilter = newRangeFilterService(nil)
+	orch.rangeFilter.state.Store(&rangeFilterState{
+		backend:       mapped,
+		kind:          rfKindGeomodelV3,
+		coveredLabels: primaryLabels,
+		participants:  []participantLabels{{id: "BirdNET_V2.4", labels: primaryLabels}, {id: RegistryIDPerchV2, labels: perchLabels}},
+		anchoredOnV24: true,
+		generation:    1,
+	})
 
 	resp := orch.RangeFilterStatus()
+
+	// Backend must report a valid kind, never the empty string (JSON contract).
+	assert.Equal(t, string(rfKindGeomodelV3), resp.Backend)
 
 	require.NotNil(t, resp.Geomodel)
 	assert.Equal(t, "v3.0", resp.Geomodel.Version)
@@ -430,12 +445,20 @@ func TestRangeFilterStatus_PerClassifierCoverage(t *testing.T) {
 	assert.Equal(t, 4, birdnet.TotalSpecies)
 	assert.Equal(t, 3, birdnet.WithRangeData)
 	assert.Equal(t, 1, birdnet.WithoutRangeData)
+	// v2.4 is loaded, so coveredLabels is the v2.4 label space and the geomodel scores it:
+	// v2.4 is honestly covered.
+	assert.True(t, birdnet.CoveredByBackend, "v2.4's label space is what the geomodel maps onto when v2.4 is loaded")
 
 	perch := classifierByID[RegistryIDPerchV2]
 	assert.Equal(t, ModelNamePerchV2, perch.Name)
 	assert.Equal(t, 3, perch.TotalSpecies)
 	assert.Equal(t, 2, perch.WithRangeData)
 	assert.Equal(t, 1, perch.WithoutRangeData)
+	// Perch is covered: the universal geomodel scores every loaded participant by canonical
+	// scientific name, and Perch's geomodel-unknown species are reconciled into both the gate
+	// list and the Settings preview (governed by the "allow species without range data"
+	// toggle), so the status honestly reports coverage for every participant under a geomodel.
+	assert.True(t, perch.CoveredByBackend, "the geomodel maps every loaded participant by canonical name")
 }
 
 func TestRangeFilterStatus_BatExcluded(t *testing.T) {

@@ -1156,6 +1156,16 @@ type ClassifierCoverage struct {
 	TotalSpecies     int    `json:"totalSpecies"`
 	WithRangeData    int    `json:"withRangeData"`
 	WithoutRangeData int    `json:"withoutRangeData"`
+	// CoveredByBackend reports whether the loaded range-filter backend actually scores
+	// this classifier's species, so the status surface is honest about which classifiers
+	// are really range-filtered. Under the universal geomodel it is true for every
+	// built-over participant (v2.4 loaded or not): the geomodel scores every participant
+	// by canonical scientific name, and the residual for geomodel-unknown species is
+	// governed by the "allow species without range data" toggle, not by coverage. Under
+	// the legacy v2.4-only MData backend (which maps only the 6522 v2.4 labels) it is true
+	// for v2.4 alone, and under no backend it is false for all. A participant absent from
+	// the backend's built-over set is never covered.
+	CoveredByBackend bool `json:"coveredByBackend"`
 }
 
 // RangeFilterStatusResponse holds the complete range filter status including
@@ -1174,10 +1184,17 @@ type RangeFilterStatusResponse struct {
 	// FellBack reports that the configured ONNX geomodel could not be loaded and the
 	// classifier fell back to its embedded TFLite range filter.
 	FellBack bool `json:"fellBack"`
-	// MappedSpecies is the number of primary-classifier species matched to the geomodel
+	// MappedSpecies is the number of covered-classifier species matched to the geomodel
 	// (only meaningful when Geomodel is non-nil). Zero means the geomodel filters out all
-	// detections for the primary classifier.
+	// detections for the covered label space.
 	MappedSpecies int `json:"mappedSpecies"`
+	// Backend names the loaded range-filter backend kind (geomodel_v3, mdata_v2,
+	// mdata_v1, or none), so a mixed classifier set is honest about what is filtering.
+	Backend string `json:"backend"`
+	// ParticipantsLoaded reports whether any loaded acoustic model participates in range
+	// filtering (v2.4, v3.0, Perch). False at N=0 (nothing to filter). Distinct from
+	// Active (whether a range-filter BACKEND is loaded).
+	ParticipantsLoaded bool `json:"participantsLoaded"`
 }
 
 // shouldAutoSelectV3Geomodel reports whether the v3 geomodel should be
@@ -1185,22 +1202,29 @@ type RangeFilterStatusResponse struct {
 // is PerchV2 or BirdNET V3.0 and both geomodel files exist under
 // {modelsDir}/shared/.
 func shouldAutoSelectV3Geomodel(modelID, modelsDir string) bool {
-	if modelsDir == "" {
-		return false
-	}
 	// Only classifiers whose label space fits the mapped geomodel v3 backend qualify.
 	// Looking up by ID (not a copied ModelInfo) keeps this identical to the previous
 	// explicit {Perch_V2, BirdNET_V3.0} switch, including for Custom and unknown IDs.
 	if rangeFilterCompatFor(modelID) != rangeFilterCompatGeomodel {
 		return false
 	}
-	sharedDir := filepath.Join(modelsDir, sharedDirName)
-	onnxPath := filepath.Join(sharedDir, conf.GeomodelONNXLocalName)
-	labelsPath := filepath.Join(sharedDir, conf.GeomodelLabelsLocalName)
-	if _, err := os.Stat(onnxPath); err != nil {
+	return geomodelFilesPresent(modelsDir)
+}
+
+// geomodelFilesPresent reports whether the stock v3 geomodel ONNX model and its
+// companion labels file both exist under {modelsDir}/shared/. Split out of
+// shouldAutoSelectV3Geomodel so buildMetaModel can gate auto-selection on the loaded
+// participant set (view.wantsGeomodel) plus file presence, without re-checking a
+// single classifier's compat.
+func geomodelFilesPresent(modelsDir string) bool {
+	if modelsDir == "" {
 		return false
 	}
-	if _, err := os.Stat(labelsPath); err != nil {
+	sharedDir := filepath.Join(modelsDir, sharedDirName)
+	if _, err := os.Stat(filepath.Join(sharedDir, conf.GeomodelONNXLocalName)); err != nil {
+		return false
+	}
+	if _, err := os.Stat(filepath.Join(sharedDir, conf.GeomodelLabelsLocalName)); err != nil {
 		return false
 	}
 	return true
