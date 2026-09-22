@@ -1739,6 +1739,7 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 	// count_in_period is a correlated subquery evaluated once per reported species (a handful per
 	// window, each an index lookup by label and time), joined on scientific_name so it counts the
 	// species across every model's label, not just the label of the first detection.
+	const noBeginTimeMillis int64 = 0
 	fpFilter := string(entities.VerificationFalsePositive)
 
 	// Optional per-source scoping. All three clauses are AND-style because the false-positive filter
@@ -1756,6 +1757,7 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 			species_first.scientific_name,
 			species_first.lifetime_first as first_detected,
 			species_first.lifetime_last as last_detected,
+			species_first.first_begin_time,
 			MIN(d.id) as detection_id,
 			MAX(d.confidence) as confidence,
 			(
@@ -1771,7 +1773,8 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 			SELECT
 				l2.scientific_name,
 				MIN(d2.detected_at) as lifetime_first,
-				MAX(d2.detected_at) as lifetime_last
+				MAX(d2.detected_at) as lifetime_last,
+				MIN(NULLIF(d2.begin_time, ?)) as first_begin_time
 			FROM %s d2
 			JOIN %s l2 ON l2.id = d2.label_id
 			LEFT JOIN %s dr2 ON dr2.detection_id = d2.id
@@ -1783,7 +1786,7 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 		JOIN %s d ON d.label_id = l.id AND d.detected_at = species_first.lifetime_first
 		LEFT JOIN %s dr ON dr.detection_id = d.id
 		WHERE (dr.verified IS NULL OR dr.verified != ?)%s
-		GROUP BY species_first.scientific_name, species_first.lifetime_first, species_first.lifetime_last
+		GROUP BY species_first.scientific_name, species_first.lifetime_first, species_first.lifetime_last, species_first.first_begin_time
 		ORDER BY first_detected DESC
 		LIMIT ? OFFSET ?
 	`,
@@ -1795,16 +1798,17 @@ func (r *detectionRepository) GetNewSpecies(ctx context.Context, start, end int6
 	// Placeholders in text order: the count_in_period subquery in the SELECT list, then the
 	// species_first derived table, then the outer WHERE, then LIMIT/OFFSET. Each level's optional
 	// source args follow that level's false-positive filter.
-	args := make([]any, 0, len(sourceArgs)*3+9)
-	args = append(args, start, end)    // count_in_period window
-	args = append(args, fpFilter)      // count_in_period false-positive filter
-	args = append(args, sourceArgs...) // count_in_period AND source_id IN ?
-	args = append(args, fpFilter)      // inner WHERE false-positive filter
-	args = append(args, sourceArgs...) // inner AND source_id IN ?
-	args = append(args, start, end)    // HAVING bounds
-	args = append(args, fpFilter)      // outer WHERE false-positive filter
-	args = append(args, sourceArgs...) // outer AND source_id IN ?
-	args = append(args, limit, offset) // pagination
+	args := make([]any, 0, len(sourceArgs)*3+10)
+	args = append(args, start, end)        // count_in_period window
+	args = append(args, fpFilter)          // count_in_period false-positive filter
+	args = append(args, sourceArgs...)     // count_in_period AND source_id IN ?
+	args = append(args, noBeginTimeMillis) // inner SELECT MIN(NULLIF(begin_time, ?))
+	args = append(args, fpFilter)          // inner WHERE false-positive filter
+	args = append(args, sourceArgs...)     // inner AND source_id IN ?
+	args = append(args, start, end)        // HAVING bounds
+	args = append(args, fpFilter)          // outer WHERE false-positive filter
+	args = append(args, sourceArgs...)     // outer AND source_id IN ?
+	args = append(args, limit, offset)     // pagination
 
 	err := r.db.WithContext(ctx).Raw(rawSQL, args...).Scan(&results).Error
 	return results, err
