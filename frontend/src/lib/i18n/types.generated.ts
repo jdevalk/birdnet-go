@@ -2732,6 +2732,7 @@ export type TranslationKey =
   | 'settings.audio.soundLevelMonitoring.dataOutputTitle'
   | 'settings.audio.soundLevelMonitoring.dataOutputDescription'
   | 'settings.audio.soundLevelMonitoring.mqttTopic'
+  | 'settings.audio.soundLevelMonitoring.mqttSourceTopic'
   | 'settings.audio.soundLevelMonitoring.sseEndpoint'
   | 'settings.audio.soundLevelMonitoring.prometheusMetrics'
   | 'settings.audio.clipSettings.title'
