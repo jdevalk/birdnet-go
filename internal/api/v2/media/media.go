@@ -333,7 +333,7 @@ const modelTypeBat = "bat"
 // The /media/* routes register on the passed v2 group g (== c.Group). The
 // ID-based routes register directly on c.Echo (the embedded core's Echo
 // instance), preserving the greedy GET /api/v2/audio/:id route documented in
-// internal/api/v2/CLAUDE.md: it is registered on the Echo instance (not the
+// internal/api/v2/AGENTS.md: it is registered on the Echo instance (not the
 // group) and catches all /api/v2/audio/* paths. Registering it here, at the
 // media slot, keeps it on c.Echo at the exact same point in initialization.
 func (c *Handler) RegisterRoutes(g *echo.Group) {
@@ -2080,7 +2080,7 @@ func (c *Handler) handleAutoPreRenderMode(ctx echo.Context, noteID, clipPath str
 // between image serving and metadata/status queries.
 //
 // The raw parameter defaults to true to maintain compatibility with existing cached
-// spectrograms from the old HTMX API which generated raw spectrograms by default.
+// spectrograms from the legacy UI, which generated raw spectrograms by default.
 func (c *Handler) ServeSpectrogramByID(ctx echo.Context) error {
 	// Validate note ID and get clip path
 	noteID, clipPath, err := c.validateNoteIDAndGetClipPath(ctx)
@@ -2151,7 +2151,7 @@ func (c *Handler) ServeAudioByQueryID(ctx echo.Context) error {
 //     Accepts: "true", "false", "1", "0", "t", "f", "yes", "no", "on", "off"
 //
 // The raw parameter defaults to true to maintain compatibility with existing cached
-// spectrograms from the old HTMX API which generated raw spectrograms by default.
+// spectrograms from the legacy UI, which generated raw spectrograms by default.
 func (c *Handler) ServeSpectrogram(ctx echo.Context) error {
 	filename := ctx.Param("filename")
 
