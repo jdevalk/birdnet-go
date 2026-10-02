@@ -1215,10 +1215,11 @@ func (c *Handler) writeActivityHeatmapCSV(ctx echo.Context, data *datastore.Acti
 
 // speciesHourlyDistributionItem is one species' row in the ridgeline wire payload: the stable
 // scientific-name key, its 24 normalized hour-of-day buckets (index = station-local hour 0..23,
-// summing to 1.0), and the raw detection count. The localized common name is resolved client-side
-// (the v2 label schema stores no common name), matching the sibling species charts.
+// summing to 1.0), and the raw detection count. The server-locale common name rides along so the
+// payload is self-describing and the UI never has to look it up separately.
 type speciesHourlyDistributionItem struct {
 	ScientificName string      `json:"scientificName"`
+	CommonName     string      `json:"commonName"`
 	Buckets        [24]float64 `json:"buckets"`
 	Total          int         `json:"total"`
 }
@@ -1230,6 +1231,7 @@ func newSpeciesHourlyDistributionResponse(data []datastore.SpeciesHourlyDistribu
 	for i := range data {
 		items = append(items, speciesHourlyDistributionItem{
 			ScientificName: data[i].ScientificName,
+			CommonName:     data[i].CommonName,
 			Buckets:        data[i].Buckets,
 			Total:          data[i].Total,
 		})
@@ -1661,10 +1663,11 @@ func (c *Handler) GetSpeciesHourlyDistribution(ctx echo.Context) error {
 
 // acousticSuccessionItem is one species' row in the acoustic-succession wire payload: the stable
 // scientific-name key, its 24 raw hour-of-day detection counts (index = station-local hour 0..23),
-// and the total detection count. The localized common name is resolved client-side (the v2 label
-// schema stores no common name), matching the sibling species charts.
+// and the total detection count. The server-locale common name rides along so the payload
+// is self-describing and the UI never has to look it up separately.
 type acousticSuccessionItem struct {
 	ScientificName string  `json:"scientificName"`
+	CommonName     string  `json:"commonName"`
 	Counts         [24]int `json:"counts"`
 	Total          int     `json:"total"`
 }
@@ -1676,6 +1679,7 @@ func newAcousticSuccessionResponse(data []datastore.SpeciesHourlyCounts) []acous
 	for i := range data {
 		items = append(items, acousticSuccessionItem{
 			ScientificName: data[i].ScientificName,
+			CommonName:     data[i].CommonName,
 			Counts:         data[i].Counts,
 			Total:          data[i].Total,
 		})
@@ -1699,10 +1703,11 @@ func (c *Handler) GetAcousticSuccession(ctx echo.Context) error {
 
 // confidenceDistributionItem is one species' row in the confidence-distribution wire payload: its
 // scientific-name key, its normalized confidence bins (each the fraction of the species' detections
-// in that bin, summing to ~1.0), and the raw detection count. The localized common name is resolved
-// client-side (the v2 label schema stores no common name), matching the sibling species charts.
+// in that bin, summing to ~1.0), and the raw detection count. The server-locale common name rides
+// along so the payload is self-describing and the UI never has to look it up separately.
 type confidenceDistributionItem struct {
 	ScientificName string    `json:"scientificName"`
+	CommonName     string    `json:"commonName"`
 	Bins           []float64 `json:"bins"`
 	Total          int       `json:"total"`
 }
@@ -1719,6 +1724,7 @@ func newConfidenceDistributionResponse(data []datastore.SpeciesConfidenceHistogr
 		}
 		items = append(items, confidenceDistributionItem{
 			ScientificName: data[i].ScientificName,
+			CommonName:     data[i].CommonName,
 			Bins:           bins,
 			Total:          data[i].Total,
 		})
@@ -2132,10 +2138,11 @@ func (c *Handler) GetYearOverYear(ctx echo.Context) error {
 
 // speciesPhenologyItem is one species' residency row in the phenology wire payload: its
 // scientific-name key, its first and last station-local detection dates (YYYY-MM-DD), and the
-// in-range detection count. The localized common name is resolved client-side (the v2 label schema
-// stores no common name), matching the sibling species charts.
+// in-range detection count. The server-locale common name rides along so the payload is
+// self-describing and the UI never has to look it up separately.
 type speciesPhenologyItem struct {
 	ScientificName string `json:"scientificName"`
+	CommonName     string `json:"commonName"`
 	FirstSeen      string `json:"firstSeen"`
 	LastSeen       string `json:"lastSeen"`
 	Count          int    `json:"count"`
@@ -2148,6 +2155,7 @@ func newSpeciesPhenologyResponse(data []datastore.SpeciesPhenologyPoint) []speci
 	for i := range data {
 		items = append(items, speciesPhenologyItem{
 			ScientificName: data[i].ScientificName,
+			CommonName:     data[i].CommonName,
 			FirstSeen:      data[i].FirstSeen,
 			LastSeen:       data[i].LastSeen,
 			Count:          data[i].Count,
