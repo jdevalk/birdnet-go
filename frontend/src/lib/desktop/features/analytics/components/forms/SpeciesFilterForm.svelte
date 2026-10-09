@@ -149,6 +149,7 @@
         {#if showSourcePicker}
           <FormField label={t('analytics.filters.audioSource')} id="audioSource">
             <SelectDropdown
+              id="audioSource"
               bind:value={filters.sourceGroups}
               options={sourceOptions}
               multiple={true}
