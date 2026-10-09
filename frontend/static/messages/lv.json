@@ -515,6 +515,12 @@
         "title": "{modelName}: katra analīze neizdodas",
         "message": "{modelName} ir ielādēts, bet tā pēdējās {failures} analīzes pēc kārtas neizdevās uz {runtime}: secināšana atgrieza kļūdu. Audio tiek ierakstīts, bet šis modelis neko nenosaka. Pārbaudiet modeli lapā Sistēma > MI Modeļi.",
         "nonFiniteMessage": "{modelName} ir ielādēts, bet tā pēdējās {failures} analīzes pēc kārtas neizdevās uz {runtime}: modelis atgrieza nederīgus rezultātus (NaN vai bezgalīgus). Audio tiek ierakstīts, bet šis modelis neko nenosaka. Pārbaudiet modeli lapā Sistēma > MI Modeļi."
+      },
+      "analysis": {
+        "cadenceCappedTitle": "Analīzes pārklāšanās ierobežota šai ierīcei",
+        "cadenceCappedMessage": "Kad darbojas {models, plural, zero {# modeļu} one {# modelis} other {# modeļi}} ar {sources, plural, zero {# audio avotiem} one {# audio avotu} other {# audio avotiem}} pie iestatītās {configured} s pārklāšanās, slodze pārsniedz šīs ierīces izmērīto jaudu, tāpēc audio tiek analizēts ar {effective} s pārklāšanos. Tāpēc viltus pozitīvo filtrs var prasīt mazāk apstiprinājumu. Jūsu saglabātie iestatījumi nemainās; skatiet Iestatījumi > Analīze.",
+        "cadenceOverloadedTitle": "Šī ierīce netiek līdzi audio analīzei",
+        "cadenceOverloadedMessage": "Kad darbojas {models, plural, zero {# modeļu} one {# modelis} other {# modeļi}} ar {sources, plural, zero {# audio avotiem} one {# audio avotu} other {# audio avotiem}}, slodze pārsniedz šīs ierīces izmērīto jaudu pat bez pārklāšanās, tāpēc analīze var atpalikt un noteikšanas var tikt izlaistas. Iespējojiet mazāk modeļu vai audio avotu vai izvēlieties ātrāku modeļa variantu."
       }
     },
     "loading": "Ielādē paziņojumus..."
@@ -1044,7 +1050,8 @@
       "error": "Kļūda, ielādējot atklāšanu: {error}",
       "loadingResults": "Ielādē {count} rezultātus...",
       "thumbnailLoading": "Ielādē {species} sīktēlu...",
-      "thumbnailLoaded": "Sīktēls {species} ielādēts"
+      "thumbnailLoaded": "Sīktēls {species} ielādēts",
+      "resultsPerPage": "Rezultāti lapā"
     },
     "errors": {
       "notFound": "Atklāšana nav atrasta. Tā, iespējams, ir dzēsta vai ID ir nepareizs.",
@@ -2409,10 +2416,9 @@
             "lenient": "Zemas kvalitātes audio (RTSP kameras, tīmekļa kameru mikrofoni)",
             "moderate": "Sabalansēts tipiskām hobija ierīcēm",
             "balanced": "Oriģinālā uzvedība pirms 2025. gada septembra",
-            "strict": "Nepieciešams RPi 4+. Augstas kvalitātes mikrofoniem",
-            "maximum": "Nepieciešams RPi 4+. Profesionāla līmeņa mikrofoniem"
+            "strict": "Augstas kvalitātes mikrofoniem",
+            "maximum": "Profesionāla līmeņa mikrofoniem"
           },
-          "hardwareNote": "Stingrie un Maksimālie līmeņi prasa augstākus pārklāšanās iestatījumus un vairāk CPU resursu. Šiem līmeņiem nepieciešams RPi 4 vai labāka aparatūra.",
           "overlapAdjusted": "Pārklāšanās iestatījums automātiski pielāgots uz {overlap}s, lai izpildītu filtra prasības",
           "overlapReduced": "Pārklāšanās iestatījums samazināts uz {overlap}s, lai atbilstu filtra līmenim",
           "levelNames": {
@@ -2424,7 +2430,19 @@
             "maximum": "Maksimums",
             "unknown": "Nezināms"
           },
-          "warningOff": "Bez filtrēšanas jebkura noteikšana virs ticamības sliekšņa tiek pieņemta nekavējoties. Tas parasti rada vairākus viltus pozitīvos dienā. Pat zema filtrēšana ievērojami uzlabo rezultātu kvalitāti."
+          "warningOff": "Bez filtrēšanas jebkura noteikšana virs ticamības sliekšņa tiek pieņemta nekavējoties. Tas parasti rada vairākus viltus pozitīvos dienā. Pat zema filtrēšana ievērojami uzlabo rezultātu kvalitāti.",
+          "readoutTitle": "Pašlaik nepieciešamie apstiprinājumi",
+          "readoutPreviewTitle": "Nepieciešamie apstiprinājumi pēc saglabāšanas (aplēse)",
+          "readoutIntro": "Noteikšana tiek pieņemta, ja pietiekami daudz analīzes logu {seconds} sekunžu laikā sakrīt.",
+          "readoutLine": "{model}: {count} no {windows} logiem, jauns logs ik pēc {step} s",
+          "readoutPreview": "Aplēse pēc nesaglabātajām izmaiņām. Ierīces ierobežojums pēc saglabāšanas tiek pārbaudīts vēlreiz.",
+          "readoutPending": "Saglabātie iestatījumi tiek piemēroti. Līdz atjaunināto vērtību ielādei šīs vērtības ir aplēses.",
+          "capNoticeTitle": "Pārklāšanās ierobežota līdz šīs ierīces jaudai",
+          "capNotice": "Kad darbojas {models, plural, zero {# modeļu} one {# modelis} other {# modeļi}} ar {sources, plural, zero {# audio avotiem} one {# audio avotu} other {# audio avotiem}} pie iestatītās {configured} s pārklāšanās, slodze pārsniedz šīs ierīces izmērīto jaudu, tāpēc audio tiek analizēts ar {effective} s pārklāšanos. Tāpēc filtrs var prasīt mazāk apstiprinājumu. Jūsu saglabātie iestatījumi nemainās.",
+          "overloadedNoticeTitle": "Šī ierīce netiek līdzi analīzei",
+          "overloadedNotice": "Kad darbojas {models, plural, zero {# modeļu} one {# modelis} other {# modeļi}} ar {sources, plural, zero {# audio avotiem} one {# audio avotu} other {# audio avotiem}}, slodze pārsniedz šīs ierīces izmērīto jaudu pat bez pārklāšanās. Analīze var atpalikt, un noteikšanas var tikt izlaistas. Iespējojiet mazāk modeļu vai audio avotu vai izvēlieties ātrāku modeļa variantu.",
+          "unknownLatency": "Apstrādes laiku neizdevās izmērīt šiem modeļiem: {models}, tāpēc tas netiek ņemts vērā, ierobežojot pārklāšanos. Analīze joprojām var atpalikt.",
+          "cpuNote": "Lielāks stiprums biežāk analizē pārklājošos audio, kas patērē CPU laiku katram iespējotajam modelim un audio avotam. BirdNET-Go automātiski ierobežo pārklāšanos līdz tam, ko šī ierīce spēj apstrādāt."
         },
         "rangeFilter": {
           "title": "Areāla filtrs",
@@ -2439,7 +2457,7 @@
             "accuracy": "Aptuvenā precizitāte: {accuracy} m robežās",
             "locationDetected": "Pārlūkprogrammas atrašanās vieta noteikta.",
             "geolocationUnsupported": "Šī pārlūkprogramma neatbalsta ierīces atrašanās vietas noteikšanu. Ievadiet koordinātas manuāli vai izmantojiet karti.",
-            "geolocationRequiresHttps": "Pārlūkprogrammas atrašanās vietas noteikšanai nepieciešams HTTPS vai localhost. Ievadiet koordinātas manuāli vai izmantojiet karti.",
+            "geolocationInsecureHelp": "Nepieciešams HTTPS vai localhost. Tā vietā meklējiet vietu vai izmantojiet karti.",
             "geolocationDenied": "Atrašanās vietas atļauja tika liegta. Ievadiet koordinātas manuāli vai izmantojiet karti.",
             "geolocationUnavailable": "Ierīce nevarēja noteikt savu atrašanās vietu. Ievadiet koordinātas manuāli vai izmantojiet karti.",
             "geolocationTimedOut": "Atrašanās vietas pieprasījumam beidzās laiks. Mēģiniet vēlreiz, ievadiet koordinātas manuāli vai izmantojiet karti.",
@@ -3232,7 +3250,11 @@
         "enable": "Iespējot BirdWeather augšupielādes",
         "token": {
           "label": "BirdWeather tokens",
-          "helpText": "Jūsu unikālais BirdWeather tokens."
+          "helpText": "Jūsu unikālais BirdWeather tokens.",
+          "errors": {
+            "required": "Ievadiet savu BirdWeather tokenu vai izslēdziet BirdWeather.",
+            "format": "BirdWeather tokens sastāv no 24 burtiem un cipariem."
+          }
         },
         "threshold": {
           "label": "Augšupielādes slieksnis",
@@ -5103,6 +5125,33 @@
       "viewDetections": "Apskatīt {name} novērojumus",
       "largeView": "{name} lielais skats",
       "clickToView": "Noklikšķiniet, lai skatītu novērojumus"
+    },
+    "locationMap": {
+      "mapLabel": "Karte stacijas atrašanās vietas izvēlei",
+      "expandedMapLabel": "Pilnekrāna karte stacijas atrašanās vietas izvēlei",
+      "zoomIn": "Tuvināt",
+      "zoomOut": "Tālināt",
+      "expand": "Izvērst karti pilnekrāna skatā",
+      "search": {
+        "label": "Meklēt vietu",
+        "placeholder": "Pilsēta vai adrese",
+        "submit": "Meklēt",
+        "disclosure": "Meklēšanas pieprasījumi tiek nosūtīti pakalpojumam Photon (photon.komoot.io), kas izmanto OpenStreetMap datus.",
+        "openPhoton": "Atvērt Photon jaunā cilnē",
+        "searching": "Meklē...",
+        "results": "{count, plural, zero {Atrastas # vietas} one {Atrasta # vieta} other {Atrastas # vietas}}",
+        "noResults": "Vietas netika atrastas. Izmēģiniet citu nosaukumu vai noklikšķiniet uz kartes.",
+        "errorNetwork": "Vietu meklēšana nav pieejama. Pārbaudiet interneta savienojumu. Joprojām varat noklikšķināt uz kartes vai ievadīt koordinātas.",
+        "errorRateLimited": "Pārāk daudz meklēšanas pieprasījumu. Uzgaidiet brīdi un mēģiniet vēlreiz.",
+        "errorUnavailable": "Meklēšanas pakalpojums neatbildēja. Joprojām varat noklikšķināt uz kartes vai ievadīt koordinātas.",
+        "kind": {
+          "city": "Pilsēta",
+          "town": "Miests",
+          "village": "Ciems",
+          "station": "Stacija",
+          "airport": "Lidosta"
+        }
+      }
     }
   },
   "connectivity": {
@@ -5254,12 +5303,37 @@
     }
   },
   "wizard": {
+    "actions": {
+      "reloadPage": "Pārlādēt lapu"
+    },
     "skip": "Izlaist",
     "back": "Atpakaļ",
     "next": "Tālāk",
     "done": "Gatavs",
     "progress": "Solis {current} no {total}",
     "progressLabel": "Vedņa progress",
+    "status": {
+      "saving": "Saglabā...",
+      "loadingStep": "Ielādē soli..."
+    },
+    "errors": {
+      "saveFailed": "Šo soli neizdevās saglabāt. Pārbaudiet savienojumu un mēģiniet vēlreiz vai izlaidiet iestatīšanu un mainiet to vēlāk Iestatījumos.",
+      "saveRejected": "Šī soļa iestatījumi netika pieņemti. Pārbaudiet vērtības un mēģiniet vēlreiz vai izlaidiet iestatīšanu un mainiet to vēlāk Iestatījumos.",
+      "stepLoadFailed": "Šo soli neizdevās ielādēt. Nospiediet Mēģināt vēlreiz vai pārlādējiet lapu.",
+      "stepLoadFailedReload": "Šo soli joprojām neizdevās ielādēt. Pārlādējiet lapu, lai mēģinātu vēlreiz; iepriekšējos soļos saglabātās izvēles tiek paturētas.",
+      "audioSourceSaveUnfinished": "Audio avota maiņa netika pabeigta. Pārbaudiet audio avotus sadaļā Iestatījumi > Audio.",
+      "saveUnfinished": "Dažas iestatīšanas laikā veiktās izmaiņas netika saglabātas. Pārbaudiet tās sadaļā Iestatījumi."
+    },
+    "reasons": {
+      "completeStep": "Lai turpinātu, pabeidziet šo soli."
+    },
+    "leaveConfirm": {
+      "title": "Pamest iestatīšanu?",
+      "message": "Iestatīšana vairs netiks atvērta. Iepriekšējos soļos saglabātās izvēles tiek paturētas; šī soļa izmaiņas netiek saglabātas. Visu varat mainīt vēlāk Iestatījumos.",
+      "messageSaving": "Iestatīšana vairs netiks atvērta. Iepriekšējos soļos saglabātās izvēles tiek paturētas. Šis solis vēl tiek saglabāts, un dažas vai visas tā izmaiņas var netikt paturētas. Visu varat mainīt vēlāk Iestatījumos.",
+      "stay": "Turpināt iestatīšanu",
+      "leave": "Pamest iestatīšanu"
+    },
     "whatsNew": {
       "title": "Jaunumi versijā {version}"
     },
@@ -5282,13 +5356,6 @@
         "locationHelp": "Jūsu atrašanās vieta palīdz filtrēt sugas, kas, visticamāk, ir jūsu apkārtnē",
         "latitudeLabel": "Platums",
         "longitudeLabel": "Garums",
-        "useMyLocation": "Izmantot manu atrašanās vietu",
-        "locationDetected": "Atrašanās vieta noteikta",
-        "locationError": "Neizdevās noteikt atrašanās vietu. Lūdzu, ievadiet koordinātas manuāli.",
-        "locationDenied": "Piekļuve atrašanās vietai liegta. Lūdzu, ievadiet koordinātas manuāli.",
-        "geolocationRequiresHttps": "Pārlūkprogrammas atrašanās vietas noteikšanai nepieciešams HTTPS. Ievadiet koordinātas manuāli vai izmantojiet karti.",
-        "geolocationDenied": "Atrašanās vietas atļauja tika liegta. Ievadiet koordinātas manuāli vai izmantojiet karti.",
-        "geolocationFailed": "Nevarēja noteikt jūsu atrašanās vietu. Ievadiet koordinātas manuāli vai izmantojiet karti.",
         "localesLoading": "Ielādē valodas...",
         "localesLoadFailed": "Neizdevās ielādēt valodu opcijas. Angļu valoda ir izvēlēta kā noklusējuma."
       },
@@ -5304,7 +5371,19 @@
         "rtspUrlPlaceholder": "rtsp://user:password@host:port/stream",
         "rtspUrlHelp": "Ievadiet RTSP audio straumes URL",
         "additionalSourcesHint": "Papildu audio avotus varēsiet pievienot vēlāk iestatījumos.",
-        "configureLater": "Izlaist - konfigurēt vēlāk"
+        "devicesLoadFailed": "Neizdevās uzskaitīt šīs sistēmas audio ierīces.",
+        "useStreamInstead": "Tā vietā izmantot RTSP straumi",
+        "setUpLater": "Konfigurēt audio vēlāk",
+        "setUpLaterChosen": "Audio tagad netiks konfigurēts. Skaņas karti vai straumi varat pievienot vēlāk iestatījumos.",
+        "streamReplacesSoundCards": "Skaņas kartes pārstāj ierakstīt, kad izmantojat straumi. Tās varat pievienot atkal iestatījumos.",
+        "soundCardReplacesStream": "Straume, kas redzama straumes opcijā, tiek izslēgta, kad izmantojat skaņas karti. To varat ieslēgt atkal iestatījumos.",
+        "reasons": {
+          "chooseDevice": "Izvēlieties audio ierīci vai konfigurējiet audio vēlāk.",
+          "devicesFailed": "Audio ierīces neizdevās uzskaitīt. Mēģiniet vēlreiz, izmantojiet straumi vai konfigurējiet audio vēlāk.",
+          "noDevices": "Nav atrasta neviena audio ierīce. Izmantojiet straumi vai konfigurējiet audio vēlāk.",
+          "enterUrl": "Ievadiet straumes URL vai konfigurējiet audio vēlāk.",
+          "urlScheme": "Ievadiet pilnu straumes URL, kas sākas ar rtsp:// vai rtsps:// un nesatur atstarpes."
+        }
       },
       "detection": {
         "title": "Noteikšanas slieksnis",
@@ -5316,6 +5395,7 @@
         "highAccuracyDesc": "Mazāk kļūdaini pozitīvu, var palaist garām dažus putnus",
         "highSensitivity": "Augsts jutīgums",
         "highSensitivityDesc": "Vairāk noteikšanu, vairāk kļūdaini pozitīvu",
+        "descriptionStored": "Izvēlieties, cik stingrai jābūt putnu identificēšanai. Pašlaik: {threshold}, nav sakritības.",
         "threshold": "Ticamības slieksnis",
         "fpFilterNote": "Kad sistēma darbojas un ir pierādījusi sevi, varat ieslēgt kļūdaini pozitīvo filtru iestatījumos, lai vēl vairāk samazinātu nepareizas noteikšanas."
       },
@@ -5325,10 +5405,12 @@
         "privacyFilterHelp": "Filtrē noteikšanas, kad pie mikrofona tiek noteiktas cilvēku balsis",
         "birdweatherLabel": "Dalīties ar noteikšanām BirdWeather",
         "birdweatherHelp": "Sniedziet savu putnu noteikšanu ieguldījumu BirdWeather kopienas tīklā",
-        "birdweatherIdLabel": "BirdWeather stacijas ID",
-        "birdweatherIdPlaceholder": "Ievadiet savu BirdWeather stacijas ID",
         "errorReportingLabel": "Sūtīt anonīmus kļūdu ziņojumus",
-        "errorReportingHelp": "Palīdziet uzlabot BirdNET-Go, sūtot anonīmus kļūdu ziņojumus, kad kaut kas noiet greizi"
+        "errorReportingHelp": "Palīdziet uzlabot BirdNET-Go, sūtot anonīmus kļūdu ziņojumus, kad kaut kas noiet greizi",
+        "reasons": {
+          "enterToken": "Ievadiet savu BirdWeather tokenu vai izslēdziet kopīgošanu ar BirdWeather.",
+          "tokenFormat": "BirdWeather tokens sastāv no 24 burtiem un cipariem."
+        }
       },
       "responsibleUse": {
         "title": "BirdNET-Go atbildīga lietošana",
@@ -5567,6 +5649,8 @@
         "catalogLoadFailed": "Neizdevās ielādēt modeļu katalogu",
         "installFailed": "Neizdevās sākt modeļa instalēšanu",
         "removeFailed": "Neizdevās noņemt modeli",
+        "removeHasDependents": "{name} ir nepieciešams modeļiem {models}. Vispirms noņemiet šos modeļus.",
+        "operationInProgress": "Jau notiek modeļa instalēšana, pārinstalēšana vai noņemšana ({name}). Mēģiniet vēlreiz, kad tā būs pabeigta.",
         "actionFailed": "Radās problēma ar {name}",
         "downloadSourceHint": "Ja jūsu tīklā huggingface.co ir bloķēts vai lēns, iestatiet spoguļvietni zemāk esošajā sadaļā Lejupielādes avots.",
         "goToDownloadSource": "Doties uz Lejupielādes avots",

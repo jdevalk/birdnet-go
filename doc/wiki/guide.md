@@ -78,7 +78,7 @@ The installation script includes several features:
 
 For users who prefer Docker Compose for container management, BirdNET-Go can also be set up using this approach. Docker Compose offers more flexibility and makes it easier to manage container configurations.
 
-A [premade docker-compose.yml](https://github.com/tphakala/birdnet-go/blob/main/Docker/docker-compose.yml) file is available in the repository. This file includes:
+Two premade files are available in the repository: [docker-compose.host.yml](https://github.com/tphakala/birdnet-go/blob/main/Docker/docker-compose.host.yml) (host networking, recommended for new installs) and [docker-compose.yml](https://github.com/tphakala/birdnet-go/blob/main/Docker/docker-compose.yml) (bridge networking, remains supported). See [Choosing a Network Mode](docker_compose_guide.md#choosing-a-network-mode). Both files include:
 
 - The BirdNET-Go container configuration with the latest nightly image
 - Environment variables for customization (timezone, user permissions, etc.)
@@ -276,10 +276,13 @@ realtime:
     remember: 60 # How long to remember barks for filtering (in seconds)
     species: ["Eurasian Eagle-Owl", "Hooded Crow"] # Species prone to dog bark confusion
 
-  # RTSP streaming settings
+  # RTSP and other network audio streams
   rtsp:
-    transport: "tcp" # RTSP Transport Protocol: tcp or udp
-    urls: [] # RTSP stream URLs
+    # Each entry needs a name, a url and a type (rtsp, http, hls, rtmp or udp). Optional
+    # fields: enabled, transport (tcp or udp), mediaMode, channelMode and gain.
+    # A legacy `urls` list in an older config is converted to streams on startup.
+    streams: []
+    transport: "tcp" # Default transport (tcp or udp) for RTSP and RTMP streams that do not set their own
 
   # MQTT integration
   mqtt:
@@ -556,6 +559,7 @@ sudo journalctl -fu birdnet-go
    - Verify the service is running: `sudo systemctl status birdnet-go`
    - Check that port 8080 (or your configured port) is not blocked by a firewall
    - Confirm the port binding in the Docker container: `docker ps | grep birdnet-go`
+   - With host networking (Compose, Portainer or `docker run --network host`), `docker ps` shows no port mapping: the app listens on `WEB_PORT` (`BIRDNET_WEBSERVER_PORT`) directly, and the host firewall applies to it. See [Host Networking Notes](docker_compose_guide.md#host-networking-notes)
 
 3. **Container exits immediately after starting**:
    - Check logs for errors: `sudo journalctl -u birdnet-go -n 100`
@@ -2232,7 +2236,7 @@ This produces Discord messages with:
 - Green color bar (color code `3066993` = green; use `15158332` for red, `3447003` for blue)
 - Species name, confidence, and location as inline fields
 
-> **Note**: The `bg_*` metadata fields (bird image URL, confidence, location, etc.) are populated for detection notifications. See [template variables](#available-template-fields) below for the full list.
+> **Note**: The `bg_*` metadata fields (bird image URL, confidence, location, etc.) are populated for detection notifications. See the detection metadata fields in the [Webhook section](#2-webhook-custom-http) below for the full list.
 
 **Troubleshooting Discord**
 

@@ -515,6 +515,12 @@
         "title": "{modelName} faalt bij elke analyse",
         "message": "{modelName} is geladen, maar de laatste {failures} analyses op rij zijn mislukt op {runtime}: de inferentie gaf een fout. Audio wordt opgenomen, maar dit model detecteert niets. Controleer het model op de pagina Systeem > AI-modellen.",
         "nonFiniteMessage": "{modelName} is geladen, maar de laatste {failures} analyses op rij zijn mislukt op {runtime}: het model gaf ongeldige scores (NaN of oneindig). Audio wordt opgenomen, maar dit model detecteert niets. Controleer het model op de pagina Systeem > AI-modellen."
+      },
+      "analysis": {
+        "cadenceCappedTitle": "Analyse-overlap beperkt voor dit apparaat",
+        "cadenceCappedMessage": "Het uitvoeren van {models, plural, one {# model} other {# modellen}} op {sources, plural, one {# audiobron} other {# audiobronnen}} met de ingestelde overlap van {configured} s overschrijdt de gemeten capaciteit van dit apparaat, dus audio wordt geanalyseerd met {effective} s overlap. Het Vals Positief Filter kan daardoor minder bevestigingen vereisen. Uw opgeslagen instellingen blijven ongewijzigd; zie Instellingen > Analyse.",
+        "cadenceOverloadedTitle": "Dit apparaat kan de audioanalyse niet bijhouden",
+        "cadenceOverloadedMessage": "Het uitvoeren van {models, plural, one {# model} other {# modellen}} op {sources, plural, one {# audiobron} other {# audiobronnen}} overschrijdt de gemeten capaciteit van dit apparaat, zelfs zonder overlap, dus de analyse kan achterlopen en detecties kunnen worden gemist. Schakel minder modellen of audiobronnen in, of kies een snellere modelvariant."
       }
     },
     "loading": "Meldingen laden..."
@@ -1044,7 +1050,8 @@
       "error": "Fout bij het laden van herkenning: {error}",
       "loadingResults": "{count} resultaten laden...",
       "thumbnailLoading": "{species} miniatuur laden...",
-      "thumbnailLoaded": "Miniatuur van {species} geladen"
+      "thumbnailLoaded": "Miniatuur van {species} geladen",
+      "resultsPerPage": "Resultaten per pagina"
     },
     "errors": {
       "notFound": "Detectie niet gevonden. Deze is mogelijk verwijderd of de ID is onjuist.",
@@ -2409,10 +2416,9 @@
             "lenient": "Voor audio van lage kwaliteit (RTSP-camera's, webcammicrofoons)",
             "moderate": "Gebalanceerd voor typische hobbyopstellingen",
             "balanced": "Origineel gedrag van voor september 2025",
-            "strict": "RPi 4+ vereist. Voor hoogwaardige microfoons",
-            "maximum": "RPi 4+ vereist. Voor professionele microfoons"
+            "strict": "Voor hoogwaardige microfoons",
+            "maximum": "Voor professionele microfoons"
           },
-          "hardwareNote": "De niveaus \"Strikt\" en \"Maximum\" vereisen hogere overlap-instellingen en meer CPU-bronnen. RPi 4 of betere hardware is vereist voor deze niveaus.",
           "overlapAdjusted": "Overlap-instelling automatisch aangepast naar {overlap}s om aan de filtervereisten te voldoen",
           "overlapReduced": "Overlap-instelling verlaagd naar {overlap}s om overeen te komen met het filterniveau",
           "levelNames": {
@@ -2424,8 +2430,19 @@
             "maximum": "Maximum",
             "unknown": "Unknown"
           },
-          "warningOff": "With filtering disabled, any detection above the confidence threshold is accepted immediately. This typically produces several false positives per day. Even lenient filtering significantly improves result quality."
-        },
+          "warningOff": "Zonder filtering wordt elke detectie boven de betrouwbaarheidsdrempel onmiddellijk geaccepteerd. Dit levert doorgaans meerdere vals-positieven per dag op. Zelfs lage filtering verbetert de resultaatkwaliteit aanzienlijk.",
+          "readoutTitle": "Nu vereiste bevestigingen",
+          "readoutPreviewTitle": "Vereiste bevestigingen na opslaan (schatting)",
+          "readoutIntro": "Een detectie wordt geaccepteerd wanneer genoeg analysevensters binnen {seconds} seconden overeenkomen.",
+          "readoutLine": "{model}: {count} van {windows} vensters, elke {step} s een nieuw venster",
+          "readoutPreview": "Geschat op basis van uw niet-opgeslagen wijzigingen. De limiet van het apparaat wordt na het opslaan opnieuw gecontroleerd.",
+          "readoutPending": "De opgeslagen instellingen worden toegepast. Tot de bijgewerkte aantallen zijn geladen, zijn deze waarden schattingen.",
+          "capNoticeTitle": "Overlap beperkt tot wat dit apparaat aankan",
+          "capNotice": "Het uitvoeren van {models, plural, one {# model} other {# modellen}} op {sources, plural, one {# audiobron} other {# audiobronnen}} met de ingestelde overlap van {configured} s overschrijdt de gemeten capaciteit van dit apparaat, dus audio wordt geanalyseerd met {effective} s overlap. Het filter kan daardoor minder bevestigingen vereisen. Uw opgeslagen instellingen blijven ongewijzigd.",
+          "overloadedNoticeTitle": "Dit apparaat kan de analyse niet bijhouden",
+          "overloadedNotice": "Het uitvoeren van {models, plural, one {# model} other {# modellen}} op {sources, plural, one {# audiobron} other {# audiobronnen}} overschrijdt de gemeten capaciteit van dit apparaat, zelfs zonder overlap. De analyse kan achterlopen en detecties kunnen worden gemist. Schakel minder modellen of audiobronnen in, of kies een snellere modelvariant.",
+          "unknownLatency": "De verwerkingstijd kon niet worden gemeten voor {models}, dus die telt niet mee bij het beperken van de overlap. De analyse kan nog steeds achterlopen.",
+          "cpuNote": "Een hogere sterkte analyseert overlappende audio vaker, wat CPU-tijd kost voor elk ingeschakeld model en elke audiobron. BirdNET-Go beperkt de overlap automatisch tot wat dit apparaat kan verwerken."        },
         "rangeFilter": {
           "title": "Bereik Filter",
           "description": "Beperk detectie tot soorten die waarschijnlijk voorkomen in uw geografische regio",
@@ -2439,7 +2456,7 @@
             "accuracy": "Geschatte nauwkeurigheid: binnen {accuracy} m",
             "locationDetected": "Browserlocatie bepaald.",
             "geolocationUnsupported": "Deze browser ondersteunt apparaatlocatie niet. Voer coördinaten handmatig in of gebruik de kaart.",
-            "geolocationRequiresHttps": "Browserlocatie vereist HTTPS of localhost. Voer coördinaten handmatig in of gebruik de kaart.",
+            "geolocationInsecureHelp": "Vereist HTTPS of localhost. Zoek in plaats daarvan een plaats of gebruik de kaart.",
             "geolocationDenied": "Toestemming voor locatie is geweigerd. Voer coördinaten handmatig in of gebruik de kaart.",
             "geolocationUnavailable": "Uw apparaat kon de locatie niet bepalen. Voer coördinaten handmatig in of gebruik de kaart.",
             "geolocationTimedOut": "Het locatieverzoek duurde te lang. Probeer het opnieuw, voer coördinaten handmatig in of gebruik de kaart.",
@@ -3232,7 +3249,11 @@
         "enable": "Schakel BirdWeather Uploads in",
         "token": {
           "label": "BirdWeather-token",
-          "helpText": "Jouw unieke BirdWeather token."
+          "helpText": "Jouw unieke BirdWeather token.",
+          "errors": {
+            "required": "Voer je BirdWeather-token in of zet BirdWeather uit.",
+            "format": "Een BirdWeather-token bestaat uit 24 letters en cijfers."
+          }
         },
         "threshold": {
           "label": "Upload Drempelwaarde",
@@ -5103,6 +5124,33 @@
       "viewDetections": "Bekijk {name} detecties",
       "largeView": "Grote weergave van {name}",
       "clickToView": "Klik om detecties te bekijken"
+    },
+    "locationMap": {
+      "mapLabel": "Kaart voor het kiezen van de stationslocatie",
+      "expandedMapLabel": "Kaart op volledig scherm voor het kiezen van de stationslocatie",
+      "zoomIn": "Inzoomen",
+      "zoomOut": "Uitzoomen",
+      "expand": "Kaart op volledig scherm weergeven",
+      "search": {
+        "label": "Een plaats zoeken",
+        "placeholder": "Plaats of adres",
+        "submit": "Zoeken",
+        "disclosure": "Zoekopdrachten worden naar Photon (photon.komoot.io) gestuurd, dat OpenStreetMap-gegevens gebruikt.",
+        "openPhoton": "Photon openen in een nieuw tabblad",
+        "searching": "Bezig met zoeken...",
+        "results": "{count, plural, one {# plaats gevonden} other {# plaatsen gevonden}}",
+        "noResults": "Geen plaatsen gevonden. Probeer een andere naam of klik op de kaart.",
+        "errorNetwork": "Plaatsen zoeken is niet beschikbaar. Controleer de internetverbinding. U kunt nog steeds op de kaart klikken of coördinaten invoeren.",
+        "errorRateLimited": "Te veel zoekopdrachten. Wacht even en probeer het opnieuw.",
+        "errorUnavailable": "De zoekdienst reageerde niet. U kunt nog steeds op de kaart klikken of coördinaten invoeren.",
+        "kind": {
+          "city": "Stad",
+          "town": "Plaats",
+          "village": "Dorp",
+          "station": "Treinstation",
+          "airport": "Luchthaven"
+        }
+      }
     }
   },
   "connectivity": {
@@ -5254,12 +5302,37 @@
     }
   },
   "wizard": {
+    "actions": {
+      "reloadPage": "Pagina opnieuw laden"
+    },
     "skip": "Overslaan",
     "back": "Terug",
     "next": "Volgende",
     "done": "Gereed",
     "progress": "Stap {current} van {total}",
     "progressLabel": "Wizard-voortgang",
+    "status": {
+      "saving": "Opslaan...",
+      "loadingStep": "Stap laden..."
+    },
+    "errors": {
+      "saveFailed": "Deze stap kon niet worden opgeslagen. Controleer de verbinding en probeer het opnieuw, of sla de installatie over en wijzig dit later in Instellingen.",
+      "saveRejected": "De instellingen in deze stap zijn niet geaccepteerd. Controleer de waarden en probeer het opnieuw, of sla de installatie over en wijzig dit later in Instellingen.",
+      "stepLoadFailed": "Deze stap kon niet worden geladen. Druk op Opnieuw proberen of laad de pagina opnieuw.",
+      "stepLoadFailedReload": "Deze stap kon nog steeds niet worden geladen. Laad de pagina opnieuw om het nogmaals te proberen; keuzes die in eerdere stappen zijn opgeslagen blijven behouden.",
+      "audioSourceSaveUnfinished": "De wijziging van de audiobron is niet voltooid. Controleer de audiobronnen via Instellingen > Audio.",
+      "saveUnfinished": "Sommige wijzigingen uit de installatie zijn niet opgeslagen. Controleer ze in Instellingen."
+    },
+    "reasons": {
+      "completeStep": "Voltooi deze stap om verder te gaan."
+    },
+    "leaveConfirm": {
+      "title": "Installatie verlaten?",
+      "message": "De installatie wordt niet opnieuw geopend. Keuzes die in eerdere stappen zijn opgeslagen blijven behouden; wijzigingen in deze stap worden niet opgeslagen. Je kunt later alles wijzigen in Instellingen.",
+      "messageSaving": "De installatie wordt niet opnieuw geopend. Keuzes die in eerdere stappen zijn opgeslagen blijven behouden. Deze stap wordt nog opgeslagen en een deel van de wijzigingen of alle wijzigingen blijft mogelijk niet behouden. Je kunt later alles wijzigen in Instellingen.",
+      "stay": "Doorgaan met installatie",
+      "leave": "Installatie verlaten"
+    },
     "whatsNew": {
       "title": "Nieuw in {version}"
     },
@@ -5282,13 +5355,6 @@
         "locationHelp": "Je locatie helpt om soorten te filteren naar die waarschijnlijk in je omgeving voorkomen",
         "latitudeLabel": "Breedtegraad",
         "longitudeLabel": "Lengtegraad",
-        "useMyLocation": "Gebruik mijn locatie",
-        "locationDetected": "Locatie gedetecteerd",
-        "locationError": "Locatie kon niet worden gedetecteerd. Voer de coördinaten handmatig in.",
-        "locationDenied": "Locatietoegang geweigerd. Voer de coördinaten handmatig in.",
-        "geolocationRequiresHttps": "Browserlocatie vereist HTTPS. Voer de coördinaten handmatig in of gebruik de kaart.",
-        "geolocationDenied": "Locatietoestemming is geweigerd. Voer de coördinaten handmatig in of gebruik de kaart.",
-        "geolocationFailed": "Uw locatie kon niet worden bepaald. Voer de coördinaten handmatig in of gebruik de kaart.",
         "localesLoading": "Talen laden...",
         "localesLoadFailed": "Kon de taalopties niet laden. Engels wordt standaard gebruikt."
       },
@@ -5304,7 +5370,19 @@
         "rtspUrlPlaceholder": "rtsp://user:password@host:port/stream",
         "rtspUrlHelp": "Voer de URL van je RTSP-audiostream in",
         "additionalSourcesHint": "Je kunt later meer audiobronnen toevoegen in Instellingen.",
-        "configureLater": "Overslaan - later configureren"
+        "devicesLoadFailed": "De audioapparaten van dit systeem konden niet worden opgesomd.",
+        "useStreamInstead": "Gebruik in plaats daarvan een RTSP-stream",
+        "setUpLater": "Audio later instellen",
+        "setUpLaterChosen": "Audio wordt nu niet ingesteld. Voeg later in Instellingen een geluidskaart of stream toe.",
+        "streamReplacesSoundCards": "Geluidskaarten nemen niet meer op wanneer je een stream gebruikt. Je kunt ze opnieuw toevoegen in Instellingen.",
+        "soundCardReplacesStream": "De stream die bij de streamoptie wordt getoond, wordt uitgeschakeld wanneer je een geluidskaart gebruikt. Je kunt hem opnieuw inschakelen in Instellingen.",
+        "reasons": {
+          "chooseDevice": "Kies een audioapparaat, of stel audio later in.",
+          "devicesFailed": "De audioapparaten konden niet worden opgesomd. Probeer opnieuw, gebruik een stream, of stel audio later in.",
+          "noDevices": "Geen audioapparaat gevonden. Gebruik een stream, of stel audio later in.",
+          "enterUrl": "Voer de stream-URL in, of stel audio later in.",
+          "urlScheme": "Voer een volledige stream-URL in die begint met rtsp:// of rtsps:// en geen spaties bevat."
+        }
       },
       "detection": {
         "title": "Detectiedrempel",
@@ -5316,6 +5394,7 @@
         "highAccuracyDesc": "Minder fout-positieven, kan sommige vogels missen",
         "highSensitivity": "Hoge gevoeligheid",
         "highSensitivityDesc": "Meer detecties, meer fout-positieven",
+        "descriptionStored": "Kies hoe streng de vogelidentificatie moet zijn. Huidig: {threshold}, geen preset.",
         "threshold": "Betrouwbaarheidsdrempel",
         "fpFilterNote": "Zodra je systeem draait en bewezen is, kun je het fout-positievenfilter inschakelen in Instellingen om onjuiste detecties verder te verminderen."
       },
@@ -5325,10 +5404,12 @@
         "privacyFilterHelp": "Filtert detecties uit wanneer menselijke stemmen worden gedetecteerd bij de microfoon",
         "birdweatherLabel": "Detecties delen met BirdWeather",
         "birdweatherHelp": "Draag je vogeldetecties bij aan het BirdWeather-gemeenschapsnetwerk",
-        "birdweatherIdLabel": "BirdWeather Station-ID",
-        "birdweatherIdPlaceholder": "Voer je BirdWeather station-ID in",
         "errorReportingLabel": "Anonieme foutrapporten verzenden",
-        "errorReportingHelp": "Help BirdNET-Go te verbeteren door anonieme foutrapporten te verzenden wanneer er iets misgaat"
+        "errorReportingHelp": "Help BirdNET-Go te verbeteren door anonieme foutrapporten te verzenden wanneer er iets misgaat",
+        "reasons": {
+          "enterToken": "Voer het BirdWeather-token in of schakel het delen met BirdWeather uit.",
+          "tokenFormat": "Een BirdWeather-token bestaat uit 24 letters en cijfers."
+        }
       },
       "responsibleUse": {
         "title": "Verantwoord gebruik van BirdNET-Go",
@@ -5567,6 +5648,8 @@
         "catalogLoadFailed": "Kan modelcatalogus niet laden",
         "installFailed": "Kan modelinstallatie niet starten",
         "removeFailed": "Kan model niet verwijderen",
+        "removeHasDependents": "{name} is nodig voor {models}. Verwijder eerst die modellen.",
+        "operationInProgress": "Er wordt al een model geïnstalleerd, opnieuw geïnstalleerd of verwijderd ({name}). Probeer het opnieuw wanneer dit klaar is.",
         "actionFailed": "Er is een probleem opgetreden met {name}",
         "downloadSourceHint": "Als huggingface.co geblokkeerd of traag is op uw netwerk, stel dan een spiegelserver in bij de sectie Downloadbron hieronder.",
         "goToDownloadSource": "Ga naar Downloadbron",

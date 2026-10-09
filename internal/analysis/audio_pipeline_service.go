@@ -94,6 +94,10 @@ type AudioPipelineService struct {
 	// by removeAllSoundLevelConsumers.
 	soundLevelConsumers map[string]string
 
+	// cadenceNotice is the bell notice for a first cadence plan that is capped
+	// or overloaded (see publishCadencePlan).
+	cadenceNotice cadenceNotice
+
 	// routeFailedLastPass records source IDs whose buffer route failed to come up on
 	// the previous reconfigure pass. It implements the "survives a reconfigure"
 	// suppression for #4208 (see routeReportDecision): a transient AddRoute failure
@@ -318,10 +322,7 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 	watchdogCallbacks := audiocore.LivenessCallbacks{
 		RestartSource: p.RestartSource,
 		Escalate: func(_ string) {
-			select {
-			case p.restartChan <- struct{}{}:
-			default:
-			}
+			trySignalCaptureRestart(p.restartChan)
 		},
 		Notify: func(sourceID string, state audiocore.LivenessState, msg string) {
 			livenessNotif.notify(sourceID, state, msg)
@@ -418,6 +419,7 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 	reconfigureMonitoringFn := p.apiService.ReconfigureMonitoring
 	apiController := p.apiService.APIController()
 	p.ctrlMonitor = NewControlMonitor(&p.wg, p.apiService.ControlChan(), p.done, p.restartChan, p.bufferMgr, proc, apiAudioLevelChan, p.soundLevelChan, apiController, metrics, p.quietHoursScheduler, p.engine, reconfigureFn, reconfigureSoundLevelFn, reconfigureMonitoringFn)
+	p.ctrlMonitor.replanCadenceFn = p.replanCadence
 	p.ctrlMonitor.Start()
 
 	// Start restart loop goroutine.
@@ -427,6 +429,10 @@ func (p *AudioPipelineService) Start(_ context.Context) error {
 			case <-p.done:
 				return
 			case <-p.restartChan:
+				// Several queued restarts (overlap change, cadence re-plan, quiet
+				// hours) rebuild the same state, so run them as one. A token that
+				// arrives during the restart still triggers one more.
+				drainRestartSignals(p.restartChan)
 				p.restartAudioCapture()
 			}
 		}
@@ -458,6 +464,9 @@ func (p *AudioPipelineService) Stop(ctx context.Context) error {
 		p.ctrlMonitor.Stop()
 		p.ctrlMonitor = nil
 	}
+
+	// Stop the cadence bell notice so its retry timer cannot fire after shutdown.
+	p.cadenceNotice.stop()
 
 	// Stop analysis buffer monitors.
 	if p.bufferMgr != nil {
@@ -549,6 +558,8 @@ func (p *AudioPipelineService) restartAudioCapture() {
 // RestartSource tears down and reinitializes a single audio source.
 // Follows the same cleanup pattern as reconfigureChangedSources: remove routes,
 // clean up overrun trackers, untrack sound level, stop capture, then re-add.
+// When the rebuilt config changes the analysis cadence, it also queues a full
+// capture restart, which rebuilds every buffer at the new step.
 func (p *AudioPipelineService) RestartSource(sourceID string) error {
 	p.sourcesMu.Lock()
 	defer p.sourcesMu.Unlock()
@@ -632,6 +643,14 @@ func (p *AudioPipelineService) RestartSource(sourceID string) error {
 		return fmt.Errorf("restart source: config for %s no longer exists in settings", sourceID)
 	}
 
+	// The rebuilt config may carry a model assignment the published cadence plan
+	// has not seen. If the plan would change, a full restart is queued; the source
+	// is still re-added below under the published plan, so that restart finds it
+	// in the registry and keeps its probed parameters as a fallback.
+	if bn := p.birdNET(); bn != nil {
+		p.applyCadenceDecision(bn, sourceConfigs, loadedModelMap(bn), bn.DefaultTargets(), operationRestartSource)
+	}
+
 	// 6. Re-add source via engine, using the registry-assigned ID it returns (the
 	// source may get a new ID).
 	newSourceID, err := p.engine.AddSource(targetConfig.config)
@@ -709,6 +728,12 @@ func (p *AudioPipelineService) setupAudioSources(audioLevelChan chan audiocore.A
 	// pre-removal snapshot on a full restart so a probe failure does not collapse
 	// a high-rate source (#4350).
 	sourceConfigs := p.buildSourceConfigsWithModels(fallbackSources)
+
+	// Plan the analysis cadence from every desired source (not only the ones that
+	// AddSource succeeds for) and publish it before any buffer is allocated: this
+	// is a full rebuild, so every buffer is created with the published step.
+	p.planAndPublishCadence(sourceConfigs, operation)
+
 	sourceModelMap := make(map[string][]string, len(sourceConfigs))
 	var sourceIDs []string
 	for _, scm := range sourceConfigs {
@@ -1051,6 +1076,7 @@ const (
 	operationGainChange        = "gain_change"
 	operationModelChange       = "model_change"
 	operationRouteRetry        = "route_retry"
+	operationReplanCadence     = "replan_cadence"
 )
 
 // isReconfigureOperation reports whether a registerConsumersForSources pass was
@@ -1449,7 +1475,9 @@ func (p *AudioPipelineService) forgetDeletedSourceHAEntities(src *audiocore.Audi
 // reconfigureChangedSources diffs the currently running sources against the
 // desired config from settings. Only sources that were added, removed, or
 // changed are touched - unchanged streams keep their capture buffers and
-// source IDs intact.
+// source IDs intact. When the desired sources change the analysis cadence, a
+// full capture restart is queued as well, which rebuilds every buffer at the
+// new step.
 func (p *AudioPipelineService) reconfigureChangedSources(audioLevelChan chan audiocore.AudioLevelData) {
 	p.sourcesMu.Lock()
 	defer p.sourcesMu.Unlock()
@@ -1472,12 +1500,16 @@ func (p *AudioPipelineService) reconfigureChangedSources(audioLevelChan chan aud
 	var loadedModels map[string]classifier.ModelInfo
 	var defaultIDs []string
 	if p.bnAnalyzer != nil {
-		modelInfoSlice := p.bnAnalyzer.BirdNET().ModelInfos()
-		loadedModels = make(map[string]classifier.ModelInfo, len(modelInfoSlice))
-		for i := range modelInfoSlice {
-			loadedModels[modelInfoSlice[i].ID] = modelInfoSlice[i]
-		}
-		defaultIDs = defaultTargetIDs(p.bnAnalyzer.BirdNET())
+		bn := p.bnAnalyzer.BirdNET()
+		loadedModels = loadedModelMap(bn)
+		defaults := bn.DefaultTargets()
+		defaultIDs = defaultTargetIDs(defaults)
+
+		// Re-plan the cadence for the desired sources. A different effective step
+		// cannot be applied to kept buffers, so a full restart is queued; the diff
+		// below still runs under the published plan so deleted and renamed streams
+		// get their Home Assistant cleanup, which the restart does not repeat.
+		p.applyCadenceDecision(bn, desiredConfigs, loadedModels, defaults, operationReconfigureDiff)
 	}
 	bufMgr := p.engine.BufferManager()
 
@@ -1835,6 +1867,14 @@ func (p *AudioPipelineService) captureAllStreamFallbacks() map[string]streamFall
 // fallback; RestartSource removes the source before building, so it captures the
 // parameters first and passes them here.
 func (p *AudioPipelineService) buildSourceConfigsWithModels(fallbackSources map[string]streamFallback) []sourceConfigWithModels {
+	return p.buildSourceConfigs(fallbackSources, true)
+}
+
+// buildSourceConfigs builds the desired source configs. With probeStreams false it
+// skips the stream probes and the probe-failure logging: the configs then carry
+// the same sources and model assignments with fallback stream parameters, which
+// is all cadence planning reads, and no stream is contacted.
+func (p *AudioPipelineService) buildSourceConfigs(fallbackSources map[string]streamFallback, probeStreams bool) []sourceConfigWithModels {
 	settings := conf.Setting()
 	var result []sourceConfigWithModels
 
@@ -1850,7 +1890,10 @@ func (p *AudioPipelineService) buildSourceConfigsWithModels(fallbackSources map[
 	// channel counts. This lets us skip FFmpeg resampling when the source
 	// already matches the target, detect sub-48 kHz sources that need
 	// upsampling, and pass channel info for the channel selection filter.
-	probeResults := p.probeAllStreams(enabledStreams)
+	var probeResults map[string]streamProbeResult
+	if probeStreams {
+		probeResults = p.probeAllStreams(enabledStreams)
+	}
 
 	// RTSP streams.
 	for _, stream := range enabledStreams {
@@ -1887,6 +1930,8 @@ func (p *AudioPipelineService) buildSourceConfigsWithModels(fallbackSources map[
 		// retention warning. escalate requires no rate fallback, so it never
 		// coincides with a retained rate.
 		switch {
+		case !probeStreams:
+			// No probe ran, so a fallback is expected and nothing failed.
 		case escalate:
 			// Carry the channel-retention state even on the escalation path: the
 			// rate is lost, but a channel count may still have been recovered, and
@@ -1907,7 +1952,7 @@ func (p *AudioPipelineService) buildSourceConfigsWithModels(fallbackSources map[
 				logger.Bool("channels_retained", channelsRetained),
 				logger.String("operation", "probe_stream"))
 		}
-		if isBat && sourceSampleRate > 0 && sourceSampleRate < ffmpeg.MinBatSampleRate {
+		if probeStreams && isBat && sourceSampleRate > 0 && sourceSampleRate < ffmpeg.MinBatSampleRate {
 			GetLogger().Warn("stream sample rate below bat model minimum",
 				logger.String("stream", stream.Name),
 				logger.Int("sample_rate", sourceSampleRate),
@@ -2150,13 +2195,7 @@ func (p *AudioPipelineService) probeStreamSampleRate(url, name string) streamPro
 // UpdateMonitors. It resolves per-source model IDs to full ModelInfo so that
 // monitorConfig gets the correct spec (sample rate + clip length).
 func (p *AudioPipelineService) buildMonitorConfigs(sourceModelMap map[string][]string, sourceIDs []string) map[string][]monitorConfig {
-	// Build lookup of loaded models by registry ID.
-	modelInfoSlice := p.bnAnalyzer.BirdNET().ModelInfos()
-	loadedModels := make(map[string]classifier.ModelInfo, len(modelInfoSlice))
-	for i := range modelInfoSlice {
-		loadedModels[modelInfoSlice[i].ID] = modelInfoSlice[i]
-	}
-
+	loadedModels := loadedModelMap(p.bnAnalyzer.BirdNET())
 	defaultTargets := p.bnAnalyzer.BirdNET().DefaultTargets()
 	result := make(map[string][]monitorConfig, len(sourceIDs))
 
@@ -2203,6 +2242,23 @@ func deallocateStaleAnalysisBuffers(bufMgr *buffer.Manager, sourceID string, des
 // warning log, and reported to the caller through skipped so the omission can be
 // surfaced to the user instead of only reaching a log file.
 func resolveModelTargets(configModelIDs []string, loadedModels map[string]classifier.ModelInfo) (targets []classifier.ModelInfo, skipped []string) {
+	return matchModelTargets(configModelIDs, loadedModels, func(configID, registryID string, known bool) {
+		if !known {
+			GetLogger().Warn("unknown model ID in source config, skipping",
+				logger.String("config_id", configID))
+			return
+		}
+		GetLogger().Warn("model configured for source but not loaded",
+			logger.String("config_id", configID),
+			logger.String("registry_id", registryID))
+	})
+}
+
+// matchModelTargets is the pure matching behind resolveModelTargets. onSkip, when
+// non-nil, is called for each skipped config ID with its resolved registry ID and
+// whether the ID is a known model; the planner passes nil so planning does not
+// repeat the warnings.
+func matchModelTargets(configModelIDs []string, loadedModels map[string]classifier.ModelInfo, onSkip func(configID, registryID string, known bool)) (targets []classifier.ModelInfo, skipped []string) {
 	if len(configModelIDs) == 0 {
 		return nil, nil
 	}
@@ -2210,16 +2266,17 @@ func resolveModelTargets(configModelIDs []string, loadedModels map[string]classi
 	for _, configID := range configModelIDs {
 		registryID, known := classifier.ResolveConfigModelID(configID)
 		if !known {
-			GetLogger().Warn("unknown model ID in source config, skipping",
-				logger.String("config_id", configID))
+			if onSkip != nil {
+				onSkip(configID, registryID, false)
+			}
 			skipped = append(skipped, configID)
 			continue
 		}
 		info, loaded := loadedModels[registryID]
 		if !loaded {
-			GetLogger().Warn("model configured for source but not loaded",
-				logger.String("config_id", configID),
-				logger.String("registry_id", registryID))
+			if onSkip != nil {
+				onSkip(configID, registryID, true)
+			}
 			skipped = append(skipped, configID)
 			continue
 		}
@@ -2398,7 +2455,43 @@ func classifyExportDir(path string) (exportDirState, error) {
 	}
 }
 
+// clipCleanupStartupDelay is the wait before the first cleanup run after
+// startup (capped at the check interval). It differs from clipReconcileStartupDelay
+// so the two boot-time scans of the export tree do not coincide.
+const clipCleanupStartupDelay = 5 * time.Minute
+
+// clipCleanupFollowUpDelay is the wait before the next run when a run stopped
+// on its time budget with work left, or on a settings change (capped at the check interval).
+const clipCleanupFollowUpDelay = 1 * time.Minute
+
+// cleanupInterval returns the configured cleanup check interval, read from the
+// live settings so a change takes effect before the next wait.
+func cleanupInterval() time.Duration {
+	interval := conf.Setting().Realtime.Audio.Export.Retention.CheckInterval
+	if interval <= 0 {
+		interval = conf.DefaultCleanupCheckInterval
+	}
+	return time.Duration(interval) * time.Minute
+}
+
+// nextCleanupDelay returns the wait before the next cleanup run: a short startup
+// delay for the first run, a short follow-up delay after a run that left work,
+// otherwise the full interval. Neither short delay exceeds the interval.
+func nextCleanupDelay(first, moreWork bool, interval time.Duration) time.Duration {
+	switch {
+	case first:
+		return min(clipCleanupStartupDelay, interval)
+	case moreWork:
+		return min(clipCleanupFollowUpDelay, interval)
+	default:
+		return interval
+	}
+}
+
 // clipCleanupMonitor monitors the database and deletes clips that meet the retention policy.
+// The first run starts after clipCleanupStartupDelay (or the check interval when
+// that is shorter). After a run that asked for a follow-up (CleanupResult.MoreWork), the next starts after
+// clipCleanupFollowUpDelay; otherwise after the check interval.
 func clipCleanupMonitor(quitChan chan struct{}, dataStore datastore.Interface) {
 	log := GetLogger()
 
@@ -2413,123 +2506,158 @@ func clipCleanupMonitor(quitChan chan struct{}, dataStore datastore.Interface) {
 		logger.Int("check_interval_minutes", checkInterval),
 		logger.String("operation", "clip_cleanup_init"))
 
-	for {
-		// Re-read interval each iteration so hot-reload takes effect.
-		interval := conf.Setting().Realtime.Audio.Export.Retention.CheckInterval
-		if interval <= 0 {
-			interval = conf.DefaultCleanupCheckInterval
-		}
-		timer := time.NewTimer(time.Duration(interval) * time.Minute)
+	deps := defaultClipCleanupDeps()
+	runClipCleanupLoop(quitChan, reconcileMonitorWait,
+		func() bool { return runClipCleanupPass(quitChan, dataStore, &deps) },
+		cleanupInterval)
+}
 
-		select {
-		case <-quitChan:
-			timer.Stop()
-			log.Debug("clip cleanup monitor stopped",
+// runClipCleanupLoop is the scheduling loop of clipCleanupMonitor. It waits with
+// wait, runs pass, and picks the next delay with nextCleanupDelay from pass's
+// result and a fresh interval() read, so a hot-reloaded interval applies to the
+// next wait. It returns when wait reports that quit closed.
+func runClipCleanupLoop(quitChan <-chan struct{}, wait func(<-chan struct{}, time.Duration) bool,
+	pass func() (moreWork bool), interval func() time.Duration) {
+	delay := nextCleanupDelay(true, false, interval())
+	for {
+		if !wait(quitChan, delay) {
+			GetLogger().Debug("clip cleanup monitor stopped",
 				logger.String("operation", "clip_cleanup_stop"))
 			return
-
-		case t := <-timer.C:
-			currentSettings := conf.Setting()
-			exportCfg := currentSettings.Realtime.Audio.Export
-			currentPolicy := exportCfg.Retention.Policy
-
-			// Re-checked every iteration (not just at Start()) so toggling
-			// retention off/on via the web UI takes effect without a restart.
-			if currentPolicy == policyNone {
-				log.Debug("skipping clip cleanup: retention policy is none",
-					logger.String("operation", "clip_cleanup_skip"))
-				continue
-			}
-
-			if strings.TrimSpace(exportCfg.Path) == "" {
-				log.Debug("skipping clip cleanup: export path not configured",
-					logger.String("operation", "clip_cleanup_skip"))
-				continue
-			}
-
-			// Skip the pass when the export directory is not a usable directory.
-			// When audio export is disabled the directory is never created (it is
-			// made lazily on the first clip save), and in Docker the clips volume
-			// may be unmounted. Without this guard the usage-based path below calls
-			// GetDiskUsage against a missing directory and warns on every interval.
-			// The check runs each iteration so re-enabling export (which recreates
-			// the directory) resumes cleanup without a restart. The DB reconcile
-			// crawler is a separate task that must run regardless of export state.
-			switch state, statErr := classifyExportDir(exportCfg.Path); state {
-			case exportDirMissing:
-				// Benign default state when export is off: log at Debug and skip.
-				log.Debug("skipping clip cleanup: export directory does not exist",
-					logger.String("path", exportCfg.Path),
-					logger.Error(statErr),
-					logger.String("operation", "clip_cleanup_skip"))
-				continue
-			case exportDirBad:
-				// Genuine access failure or a non-directory path: log at Warn so a
-				// real misconfiguration still surfaces. statErr is nil when the path
-				// exists but is not a directory.
-				fields := []logger.Field{
-					logger.String("path", exportCfg.Path),
-					logger.String("operation", "clip_cleanup_skip"),
-				}
-				if statErr != nil {
-					fields = append(fields, logger.Error(statErr))
-				}
-				log.Warn("skipping clip cleanup: export path is not a usable directory", fields...)
-				continue
-			case exportDirUsable:
-				// Fall through to run the cleanup pass.
-			}
-
-			log.Info("starting clip cleanup task",
-				logger.String("timestamp", t.Format(time.RFC3339)),
-				logger.String("policy", currentPolicy),
-				logger.String("operation", "clip_cleanup_task"))
-
-			if currentPolicy == "age" {
-				result := diskmanager.AgeBasedCleanup(quitChan, dataStore)
-				if result.Err != nil {
-					log.Error("age-based cleanup failed",
-						logger.Error(result.Err),
-						logger.String("operation", "age_based_cleanup"))
-				} else {
-					log.Info("age-based cleanup completed",
-						logger.Int("clips_removed", result.ClipsRemoved),
-						logger.Int("disk_utilization_percent", result.DiskUtilization),
-						logger.String("operation", "age_based_cleanup"))
-				}
-			}
-
-			if currentPolicy == "usage" {
-				currentRetention := exportCfg.Retention
-				baseDir := exportCfg.Path
-
-				skip, utilization, err := diskmanager.ShouldSkipUsageBasedCleanup(&currentRetention, baseDir)
-				if err != nil {
-					log.Warn("failed to check disk usage",
-						logger.Error(err),
-						logger.Bool("continuing_with_cleanup", true),
-						logger.String("operation", "usage_based_cleanup"))
-				} else if skip {
-					log.Debug("disk usage below threshold, skipping cleanup",
-						logger.Int("disk_utilization_percent", utilization),
-						logger.String("operation", "usage_based_cleanup"))
-					continue
-				}
-
-				result := diskmanager.UsageBasedCleanup(quitChan, dataStore)
-				if result.Err != nil {
-					log.Error("usage-based cleanup failed",
-						logger.Error(result.Err),
-						logger.String("operation", "usage_based_cleanup"))
-				} else {
-					log.Info("usage-based cleanup completed",
-						logger.Int("clips_removed", result.ClipsRemoved),
-						logger.Int("disk_utilization_percent", result.DiskUtilization),
-						logger.String("operation", "usage_based_cleanup"))
-				}
-			}
 		}
+		moreWork := pass()
+		delay = nextCleanupDelay(false, moreWork, interval())
 	}
+}
+
+// clipCleanupDeps holds the diskmanager calls a cleanup pass makes, so tests can
+// replace them.
+type clipCleanupDeps struct {
+	ageCleanup      func(quit <-chan struct{}, db diskmanager.Interface) diskmanager.CleanupResult
+	usageCleanup    func(quit <-chan struct{}, db diskmanager.Interface) diskmanager.CleanupResult
+	shouldSkipUsage func(retention *conf.RetentionSettings, baseDir string) (skip bool, utilization int, err error)
+}
+
+// defaultClipCleanupDeps returns the production diskmanager calls.
+func defaultClipCleanupDeps() clipCleanupDeps {
+	return clipCleanupDeps{
+		ageCleanup:      diskmanager.AgeBasedCleanup,
+		usageCleanup:    diskmanager.UsageBasedCleanup,
+		shouldSkipUsage: diskmanager.ShouldSkipUsageBasedCleanup,
+	}
+}
+
+// runClipCleanupPass runs one retention cleanup pass for the current policy. It
+// returns true when the run asked for a follow-up (CleanupResult.MoreWork), so the
+// monitor schedules the next run soon.
+func runClipCleanupPass(quitChan <-chan struct{}, dataStore datastore.Interface, deps *clipCleanupDeps) (moreWork bool) {
+	log := GetLogger()
+
+	currentSettings := conf.Setting()
+	exportCfg := currentSettings.Realtime.Audio.Export
+	currentPolicy := exportCfg.Retention.Policy
+
+	// Re-checked every pass (not just at Start()) so toggling
+	// retention off/on via the web UI takes effect without a restart.
+	if currentPolicy == policyNone {
+		log.Debug("skipping clip cleanup: retention policy is none",
+			logger.String("operation", "clip_cleanup_skip"))
+		return false
+	}
+
+	if strings.TrimSpace(exportCfg.Path) == "" {
+		log.Debug("skipping clip cleanup: export path not configured",
+			logger.String("operation", "clip_cleanup_skip"))
+		return false
+	}
+
+	// Skip the pass when the export directory is not a usable directory.
+	// When audio export is disabled the directory is never created (it is
+	// made lazily on the first clip save), and in Docker the clips volume
+	// may be unmounted. Without this guard the usage-based path below calls
+	// GetDiskUsage against a missing directory and warns on every interval.
+	// The check runs each pass so re-enabling export (which recreates
+	// the directory) resumes cleanup without a restart. The DB reconcile
+	// crawler is a separate task that must run regardless of export state.
+	switch state, statErr := classifyExportDir(exportCfg.Path); state {
+	case exportDirMissing:
+		// Benign default state when export is off: log at Debug and skip.
+		log.Debug("skipping clip cleanup: export directory does not exist",
+			logger.String("path", exportCfg.Path),
+			logger.Error(statErr),
+			logger.String("operation", "clip_cleanup_skip"))
+		return false
+	case exportDirBad:
+		// Genuine access failure or a non-directory path: log at Warn so a
+		// real misconfiguration still surfaces. statErr is nil when the path
+		// exists but is not a directory.
+		fields := []logger.Field{
+			logger.String("path", exportCfg.Path),
+			logger.String("operation", "clip_cleanup_skip"),
+		}
+		if statErr != nil {
+			fields = append(fields, logger.Error(statErr))
+		}
+		log.Warn("skipping clip cleanup: export path is not a usable directory", fields...)
+		return false
+	case exportDirUsable:
+		// Fall through to run the cleanup pass.
+	}
+
+	log.Info("starting clip cleanup task",
+		logger.String("timestamp", time.Now().Format(time.RFC3339)),
+		logger.String("policy", currentPolicy),
+		logger.String("operation", "clip_cleanup_task"))
+
+	if currentPolicy == "age" {
+		result := deps.ageCleanup(quitChan, dataStore)
+		if result.Err != nil {
+			log.Error("age-based cleanup failed",
+				logger.Error(result.Err),
+				logger.String("operation", "age_based_cleanup"))
+		} else {
+			log.Info("age-based cleanup completed",
+				logger.Int("clips_removed", result.ClipsRemoved),
+				logger.Int("disk_utilization_percent", result.DiskUtilization),
+				logger.Bool("more_work", result.MoreWork),
+				logger.String("operation", "age_based_cleanup"))
+		}
+		return result.MoreWork
+	}
+
+	if currentPolicy == "usage" {
+		currentRetention := exportCfg.Retention
+		baseDir := exportCfg.Path
+
+		skip, utilization, err := deps.shouldSkipUsage(&currentRetention, baseDir)
+		if err != nil {
+			log.Warn("failed to check disk usage",
+				logger.Error(err),
+				logger.Bool("continuing_with_cleanup", true),
+				logger.String("operation", "usage_based_cleanup"))
+		} else if skip {
+			log.Debug("disk usage below threshold, skipping cleanup",
+				logger.Int("disk_utilization_percent", utilization),
+				logger.String("operation", "usage_based_cleanup"))
+			return false
+		}
+
+		result := deps.usageCleanup(quitChan, dataStore)
+		if result.Err != nil {
+			log.Error("usage-based cleanup failed",
+				logger.Error(result.Err),
+				logger.String("operation", "usage_based_cleanup"))
+		} else {
+			log.Info("usage-based cleanup completed",
+				logger.Int("clips_removed", result.ClipsRemoved),
+				logger.Int("disk_utilization_percent", result.DiskUtilization),
+				logger.Bool("more_work", result.MoreWork),
+				logger.String("operation", "usage_based_cleanup"))
+		}
+		return result.MoreWork
+	}
+
+	return false
 }
 
 // cleanupHLSWithTimeout runs HLS cleanup asynchronously with a timeout to prevent blocking shutdown

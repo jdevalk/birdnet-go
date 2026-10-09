@@ -515,6 +515,12 @@
         "title": "{modelName} échoue à chaque analyse",
         "message": "{modelName} est chargé, mais ses {failures} dernières analyses consécutives ont échoué sur {runtime} : l'inférence a renvoyé une erreur. L'audio est capturé, mais ce modèle ne détecte rien. Vérifiez le modèle sur la page Système > Modèles IA.",
         "nonFiniteMessage": "{modelName} est chargé, mais ses {failures} dernières analyses consécutives ont échoué sur {runtime} : le modèle a renvoyé des scores invalides (NaN ou infinis). L'audio est capturé, mais ce modèle ne détecte rien. Vérifiez le modèle sur la page Système > Modèles IA."
+      },
+      "analysis": {
+        "cadenceCappedTitle": "Chevauchement d'analyse limité pour cet appareil",
+        "cadenceCappedMessage": "L'exécution de {models, plural, one {# modèle} other {# modèles}} sur {sources, plural, one {# source audio} other {# sources audio}} avec le chevauchement configuré de {configured} s dépasse la capacité mesurée de cet appareil, l'audio est donc analysé avec un chevauchement de {effective} s. Le filtre de faux positifs peut donc exiger moins de confirmations. Vos paramètres enregistrés restent inchangés ; voir Paramètres > Analyse.",
+        "cadenceOverloadedTitle": "Cet appareil ne peut pas suivre l'analyse audio",
+        "cadenceOverloadedMessage": "L'exécution de {models, plural, one {# modèle} other {# modèles}} sur {sources, plural, one {# source audio} other {# sources audio}} dépasse la capacité mesurée de cet appareil même sans chevauchement, l'analyse peut donc prendre du retard et des détections peuvent être manquées. Activez moins de modèles ou de sources audio, ou choisissez une variante de modèle plus rapide."
       }
     },
     "loading": "Chargement des notifications..."
@@ -1044,7 +1050,8 @@
       "error": "Erreur lors du chargement de la détection : {error}",
       "loadingResults": "Chargement de {count} résultats...",
       "thumbnailLoading": "Chargement de la miniature de {species}...",
-      "thumbnailLoaded": "Miniature de {species} chargée"
+      "thumbnailLoaded": "Miniature de {species} chargée",
+      "resultsPerPage": "Résultats par page"
     },
     "errors": {
       "notFound": "Détection introuvable. Elle a peut-être été supprimée ou l'identifiant est incorrect.",
@@ -2409,10 +2416,9 @@
             "lenient": "Pour audio de basse qualité (caméras RTSP, micros webcam)",
             "moderate": "Équilibré pour les configurations hobby typiques",
             "balanced": "Comportement original d'avant septembre 2025",
-            "strict": "RPi 4+ requis. Pour microphones de haute qualité",
-            "maximum": "RPi 4+ requis. Pour microphones de qualité professionnelle"
+            "strict": "Pour microphones de haute qualité",
+            "maximum": "Pour microphones de qualité professionnelle"
           },
-          "hardwareNote": "Les niveaux Strict et Maximum nécessitent des paramètres de chevauchement plus élevés et plus de ressources CPU. Un RPi 4 ou un matériel supérieur est requis pour ces niveaux.",
           "overlapAdjusted": "Le paramètre de chevauchement a été automatiquement ajusté à {overlap}s pour répondre aux exigences du filtre",
           "overlapReduced": "Le paramètre de chevauchement a été réduit à {overlap}s pour correspondre au niveau du filtre",
           "levelNames": {
@@ -2424,8 +2430,19 @@
             "maximum": "Maximum",
             "unknown": "Unknown"
           },
-          "warningOff": "With filtering disabled, any detection above the confidence threshold is accepted immediately. This typically produces several false positives per day. Even lenient filtering significantly improves result quality."
-        },
+          "warningOff": "Sans filtrage, toute détection au-dessus du seuil de confiance est acceptée immédiatement. Cela produit typiquement plusieurs faux positifs par jour. Même un filtrage faible améliore considérablement la qualité des résultats.",
+          "readoutTitle": "Confirmations requises actuellement",
+          "readoutPreviewTitle": "Confirmations requises après l'enregistrement (estimation)",
+          "readoutIntro": "Une détection est acceptée lorsque suffisamment de fenêtres d'analyse sur {seconds} secondes concordent.",
+          "readoutLine": "{model} : {count} sur {windows} fenêtres, une nouvelle fenêtre toutes les {step} s",
+          "readoutPreview": "Estimation d'après vos modifications non enregistrées. La limite de l'appareil est vérifiée à nouveau après l'enregistrement.",
+          "readoutPending": "Les paramètres enregistrés sont en cours d'application. Ces valeurs sont des estimations jusqu'au chargement des valeurs mises à jour.",
+          "capNoticeTitle": "Chevauchement limité à ce que cet appareil peut traiter",
+          "capNotice": "L'exécution de {models, plural, one {# modèle} other {# modèles}} sur {sources, plural, one {# source audio} other {# sources audio}} avec le chevauchement configuré de {configured} s dépasse la capacité mesurée de cet appareil, l'audio est donc analysé avec un chevauchement de {effective} s. Le filtre peut donc exiger moins de confirmations. Vos paramètres enregistrés restent inchangés.",
+          "overloadedNoticeTitle": "Cet appareil ne peut pas suivre l'analyse",
+          "overloadedNotice": "L'exécution de {models, plural, one {# modèle} other {# modèles}} sur {sources, plural, one {# source audio} other {# sources audio}} dépasse la capacité mesurée de cet appareil même sans chevauchement. L'analyse peut prendre du retard et des détections peuvent être manquées. Activez moins de modèles ou de sources audio, ou choisissez une variante de modèle plus rapide.",
+          "unknownLatency": "Le temps de traitement n'a pas pu être mesuré pour {models}, il n'est donc pas pris en compte lors de la limitation du chevauchement. L'analyse peut tout de même prendre du retard.",
+          "cpuNote": "Une intensité plus élevée analyse plus souvent l'audio qui se chevauche, ce qui coûte du temps CPU pour chaque modèle et chaque source audio activés. BirdNET-Go limite automatiquement le chevauchement à ce que cet appareil peut traiter."        },
         "rangeFilter": {
           "title": "Filtre de portée",
           "description": "Limiter la détection aux espèces probables dans votre région géographique",
@@ -2439,7 +2456,7 @@
             "accuracy": "Précision estimée : dans un rayon de {accuracy} m",
             "locationDetected": "Position du navigateur détectée.",
             "geolocationUnsupported": "Ce navigateur ne prend pas en charge la localisation de l'appareil. Saisissez les coordonnées manuellement ou utilisez la carte.",
-            "geolocationRequiresHttps": "La localisation du navigateur nécessite HTTPS ou localhost. Saisissez les coordonnées manuellement ou utilisez la carte.",
+            "geolocationInsecureHelp": "Nécessite HTTPS ou localhost. Recherchez plutôt un lieu ou utilisez la carte.",
             "geolocationDenied": "L'autorisation d'accès à la position a été refusée. Saisissez les coordonnées manuellement ou utilisez la carte.",
             "geolocationUnavailable": "Votre appareil n'a pas pu déterminer sa position. Saisissez les coordonnées manuellement ou utilisez la carte.",
             "geolocationTimedOut": "La demande de localisation a expiré. Réessayez, saisissez les coordonnées manuellement ou utilisez la carte.",
@@ -3232,7 +3249,11 @@
         "enable": "Activer les téléchargements BirdWeather",
         "token": {
           "label": "Jeton BirdWeather",
-          "helpText": "Votre jeton BirdWeather unique."
+          "helpText": "Votre jeton BirdWeather unique.",
+          "errors": {
+            "required": "Saisissez votre jeton BirdWeather ou désactivez BirdWeather.",
+            "format": "Un jeton BirdWeather comprend 24 lettres et chiffres."
+          }
         },
         "threshold": {
           "label": "Seuil de téléchargement",
@@ -5103,6 +5124,33 @@
       "viewDetections": "Voir les détections pour {name}",
       "largeView": "Vue agrandie de {name}",
       "clickToView": "Cliquez pour voir les détections"
+    },
+    "locationMap": {
+      "mapLabel": "Carte pour sélectionner l'emplacement de la station",
+      "expandedMapLabel": "Carte plein écran pour sélectionner l'emplacement de la station",
+      "zoomIn": "Zoom avant",
+      "zoomOut": "Zoom arrière",
+      "expand": "Agrandir la carte en plein écran",
+      "search": {
+        "label": "Rechercher un lieu",
+        "placeholder": "Ville ou adresse",
+        "submit": "Rechercher",
+        "disclosure": "Les recherches sont envoyées à Photon (photon.komoot.io), qui utilise les données d'OpenStreetMap.",
+        "openPhoton": "Ouvrir Photon dans un nouvel onglet",
+        "searching": "Recherche en cours...",
+        "results": "{count, plural, one {# lieu trouvé} other {# lieux trouvés}}",
+        "noResults": "Aucun lieu trouvé. Essayez un autre nom ou cliquez sur la carte.",
+        "errorNetwork": "La recherche de lieux n'est pas disponible. Vérifiez la connexion internet. Vous pouvez toujours cliquer sur la carte ou saisir les coordonnées.",
+        "errorRateLimited": "Trop de recherches. Patientez un instant et réessayez.",
+        "errorUnavailable": "Le service de recherche n'a pas répondu. Vous pouvez toujours cliquer sur la carte ou saisir les coordonnées.",
+        "kind": {
+          "city": "Ville",
+          "town": "Petite ville",
+          "village": "Village",
+          "station": "Gare",
+          "airport": "Aéroport"
+        }
+      }
     }
   },
   "connectivity": {
@@ -5254,12 +5302,37 @@
     }
   },
   "wizard": {
+    "actions": {
+      "reloadPage": "Recharger la page"
+    },
     "skip": "Passer",
     "back": "Retour",
     "next": "Suivant",
     "done": "Terminé",
     "progress": "Étape {current} sur {total}",
     "progressLabel": "Progression de l'assistant",
+    "status": {
+      "saving": "Enregistrement...",
+      "loadingStep": "Chargement de l'étape..."
+    },
+    "errors": {
+      "saveFailed": "Impossible d'enregistrer cette étape. Vérifiez la connexion et réessayez, ou passez la configuration et modifiez cela plus tard dans les Paramètres.",
+      "saveRejected": "Les paramètres de cette étape n'ont pas été acceptés. Vérifiez les valeurs et réessayez, ou passez la configuration et modifiez cela plus tard dans les Paramètres.",
+      "stepLoadFailed": "Impossible de charger cette étape. Appuyez sur Réessayer ou rechargez la page.",
+      "stepLoadFailedReload": "Cette étape ne peut toujours pas être chargée. Rechargez la page pour réessayer ; les choix enregistrés aux étapes précédentes sont conservés.",
+      "audioSourceSaveUnfinished": "Le changement de source audio n'a pas abouti. Vérifiez les sources audio dans Paramètres > Audio.",
+      "saveUnfinished": "Certaines modifications de la configuration n'ont pas été enregistrées. Vérifiez-les dans les Paramètres."
+    },
+    "reasons": {
+      "completeStep": "Terminez cette étape pour continuer."
+    },
+    "leaveConfirm": {
+      "title": "Quitter la configuration ?",
+      "message": "La configuration ne s'ouvrira plus. Les choix enregistrés aux étapes précédentes sont conservés ; les modifications de cette étape ne sont pas enregistrées. Vous pourrez tout modifier plus tard dans les Paramètres.",
+      "messageSaving": "La configuration ne s'ouvrira plus. Les choix enregistrés aux étapes précédentes sont conservés. Cette étape est encore en cours d'enregistrement, et certaines de ses modifications, voire toutes, risquent de ne pas être conservées. Vous pourrez tout modifier plus tard dans les Paramètres.",
+      "stay": "Continuer la configuration",
+      "leave": "Quitter la configuration"
+    },
     "whatsNew": {
       "title": "Nouveautés de la {version}"
     },
@@ -5282,13 +5355,6 @@
         "locationHelp": "Votre emplacement aide à filtrer les espèces probables dans votre zone",
         "latitudeLabel": "Latitude",
         "longitudeLabel": "Longitude",
-        "useMyLocation": "Utiliser ma position",
-        "locationDetected": "Position détectée",
-        "locationError": "Impossible de détecter la position. Veuillez saisir les coordonnées manuellement.",
-        "locationDenied": "Accès à la position refusé. Veuillez saisir les coordonnées manuellement.",
-        "geolocationRequiresHttps": "La localisation du navigateur nécessite HTTPS. Veuillez entrer les coordonnées manuellement ou utiliser la carte.",
-        "geolocationDenied": "L'autorisation de localisation a été refusée. Veuillez entrer les coordonnées manuellement ou utiliser la carte.",
-        "geolocationFailed": "Impossible de déterminer votre position. Veuillez entrer les coordonnées manuellement ou utiliser la carte.",
         "localesLoading": "Chargement des langues...",
         "localesLoadFailed": "Impossible de charger les options de langue. L'anglais a été sélectionné par défaut."
       },
@@ -5304,7 +5370,19 @@
         "rtspUrlPlaceholder": "rtsp://user:password@host:port/stream",
         "rtspUrlHelp": "Entrez l'URL de votre flux audio RTSP",
         "additionalSourcesHint": "Vous pourrez ajouter d'autres sources audio plus tard dans les Paramètres.",
-        "configureLater": "Passer - configurer plus tard"
+        "devicesLoadFailed": "Impossible de lister les périphériques audio de ce système.",
+        "useStreamInstead": "Utiliser plutôt un flux RTSP",
+        "setUpLater": "Configurer l'audio plus tard",
+        "setUpLaterChosen": "L'audio ne sera pas configuré maintenant. Ajoutez une carte son ou un flux plus tard dans les Paramètres.",
+        "streamReplacesSoundCards": "Les cartes son cessent de capturer lorsque vous utilisez un flux. Vous pouvez les ajouter à nouveau dans les Paramètres.",
+        "soundCardReplacesStream": "Le flux affiché dans l'option de flux est désactivé lorsque vous utilisez une carte son. Vous pouvez le réactiver dans les Paramètres.",
+        "reasons": {
+          "chooseDevice": "Choisissez un périphérique audio ou configurez l'audio plus tard.",
+          "devicesFailed": "Les périphériques audio n'ont pas pu être listés. Réessayez, utilisez un flux ou configurez l'audio plus tard.",
+          "noDevices": "Aucun périphérique audio trouvé. Utilisez un flux ou configurez l'audio plus tard.",
+          "enterUrl": "Saisissez l'URL du flux ou configurez l'audio plus tard.",
+          "urlScheme": "Saisissez une URL de flux complète qui commence par rtsp:// ou rtsps:// et ne contient pas d'espaces."
+        }
       },
       "detection": {
         "title": "Seuil de détection",
@@ -5316,6 +5394,7 @@
         "highAccuracyDesc": "Moins de faux positifs, peut manquer certains oiseaux",
         "highSensitivity": "Haute sensibilité",
         "highSensitivityDesc": "Plus de détections, plus de faux positifs",
+        "descriptionStored": "Choisissez le niveau de rigueur de l'identification des oiseaux. Actuel : {threshold}, aucun préréglage.",
         "threshold": "Seuil de confiance",
         "fpFilterNote": "Une fois votre système en marche et éprouvé, vous pouvez activer le filtre de faux positifs dans les Paramètres pour réduire davantage les détections incorrectes."
       },
@@ -5325,10 +5404,12 @@
         "privacyFilterHelp": "Filtre les détections lorsque des voix humaines sont détectées à proximité du microphone",
         "birdweatherLabel": "Partager les détections avec BirdWeather",
         "birdweatherHelp": "Contribuez vos détections d'oiseaux au réseau communautaire BirdWeather",
-        "birdweatherIdLabel": "ID de station BirdWeather",
-        "birdweatherIdPlaceholder": "Entrez votre ID de station BirdWeather",
         "errorReportingLabel": "Envoyer des rapports d'erreurs anonymes",
-        "errorReportingHelp": "Aidez à améliorer BirdNET-Go en envoyant des rapports d'erreurs anonymes lorsque quelque chose ne fonctionne pas"
+        "errorReportingHelp": "Aidez à améliorer BirdNET-Go en envoyant des rapports d'erreurs anonymes lorsque quelque chose ne fonctionne pas",
+        "reasons": {
+          "enterToken": "Saisissez votre jeton BirdWeather ou désactivez le partage avec BirdWeather.",
+          "tokenFormat": "Un jeton BirdWeather comprend 24 lettres et chiffres."
+        }
       },
       "responsibleUse": {
         "title": "Utilisation responsable de BirdNET-Go",
@@ -5567,6 +5648,8 @@
         "catalogLoadFailed": "Impossible de charger le catalogue de modèles",
         "installFailed": "Impossible de démarrer l'installation du modèle",
         "removeFailed": "Impossible de supprimer le modèle",
+        "removeHasDependents": "{name} est requis par {models}. Supprimez d'abord ces modèles.",
+        "operationInProgress": "Une installation, réinstallation ou suppression de modèle est déjà en cours ({name}). Réessayez lorsqu'elle sera terminée.",
         "actionFailed": "Un problème est survenu avec {name}",
         "downloadSourceHint": "Si huggingface.co est bloqué ou lent sur votre réseau, définissez un miroir dans la section Source de téléchargement ci-dessous.",
         "goToDownloadSource": "Aller à la source de téléchargement",

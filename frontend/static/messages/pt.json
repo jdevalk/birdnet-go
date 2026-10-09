@@ -515,6 +515,12 @@
         "title": "{modelName} falha em todas as análises",
         "message": "{modelName} está carregado, mas as suas últimas {failures} análises seguidas falharam em {runtime}: a inferência devolveu um erro. O áudio é capturado, mas este modelo não deteta nada. Verifique o modelo na página Sistema > Modelos de IA.",
         "nonFiniteMessage": "{modelName} está carregado, mas as suas últimas {failures} análises seguidas falharam em {runtime}: o modelo devolveu pontuações inválidas (NaN ou infinitas). O áudio é capturado, mas este modelo não deteta nada. Verifique o modelo na página Sistema > Modelos de IA."
+      },
+      "analysis": {
+        "cadenceCappedTitle": "Sobreposição da análise limitada neste dispositivo",
+        "cadenceCappedMessage": "Executar {models, plural, one {# modelo} other {# modelos}} em {sources, plural, one {# fonte de áudio} other {# fontes de áudio}} com a sobreposição configurada de {configured} s excede a capacidade medida deste dispositivo, pelo que o áudio é analisado com {effective} s de sobreposição. Por isso, o filtro de falsos positivos pode exigir menos confirmações. As suas definições guardadas não mudam; consulte Configurações > Análise.",
+        "cadenceOverloadedTitle": "Este dispositivo não consegue acompanhar a análise de áudio",
+        "cadenceOverloadedMessage": "Executar {models, plural, one {# modelo} other {# modelos}} em {sources, plural, one {# fonte de áudio} other {# fontes de áudio}} excede a capacidade medida deste dispositivo mesmo sem sobreposição, pelo que a análise pode atrasar-se e podem perder-se deteções. Ative menos modelos ou fontes de áudio, ou escolha uma variante de modelo mais rápida."
       }
     },
     "loading": "Carregando notificações..."
@@ -1044,7 +1050,8 @@
       "error": "Erro ao carregar detecção: {error}",
       "loadingResults": "Carregando {count} resultados...",
       "thumbnailLoading": "Carregando miniatura de {species}...",
-      "thumbnailLoaded": "Miniatura de {species} carregada"
+      "thumbnailLoaded": "Miniatura de {species} carregada",
+      "resultsPerPage": "Resultados por página"
     },
     "errors": {
       "notFound": "Detecção não encontrada. Pode ter sido excluída ou o ID está incorreto.",
@@ -2409,10 +2416,9 @@
             "lenient": "Para áudio de baixa qualidade (câmeras RTSP, microfones de webcam)",
             "moderate": "Equilibrado para configurações típicas de hobby",
             "balanced": "Comportamento original anterior a setembro de 2025",
-            "strict": "RPi 4+ necessário. Para microfones de alta qualidade",
-            "maximum": "RPi 4+ necessário. Para microfones de grau profissional"
+            "strict": "Para microfones de alta qualidade",
+            "maximum": "Para microfones de grau profissional"
           },
-          "hardwareNote": "Os níveis Rigoroso e Máximo requerem configurações de sobreposição mais altas e mais recursos de CPU. RPi 4 ou hardware superior é necessário para esses níveis.",
           "overlapAdjusted": "Configuração de sobreposição ajustada automaticamente para {overlap}s para atender aos requisitos do filtro",
           "overlapReduced": "A configuração de sobreposição foi reduzida para {overlap}s para corresponder ao nível do filtro",
           "levelNames": {
@@ -2424,8 +2430,19 @@
             "maximum": "Maximum",
             "unknown": "Unknown"
           },
-          "warningOff": "With filtering disabled, any detection above the confidence threshold is accepted immediately. This typically produces several false positives per day. Even lenient filtering significantly improves result quality."
-        },
+          "warningOff": "Sem filtragem, qualquer deteção acima do limiar de confiança é aceite imediatamente. Isto produz tipicamente vários falsos positivos por dia. Mesmo uma filtragem baixa melhora significativamente a qualidade dos resultados.",
+          "readoutTitle": "Confirmações exigidas agora",
+          "readoutPreviewTitle": "Confirmações exigidas após guardar (estimativa)",
+          "readoutIntro": "Uma deteção é aceite quando janelas de análise suficientes em {seconds} segundos concordam.",
+          "readoutLine": "{model}: {count} de {windows} janelas, uma nova janela a cada {step} s",
+          "readoutPreview": "Estimativa com base nas alterações não guardadas. O limite do dispositivo é verificado novamente após guardar.",
+          "readoutPending": "As definições guardadas estão a ser aplicadas. Estes valores são estimativas até serem carregados os valores atualizados.",
+          "capNoticeTitle": "Sobreposição limitada ao que este dispositivo consegue processar",
+          "capNotice": "Executar {models, plural, one {# modelo} other {# modelos}} em {sources, plural, one {# fonte de áudio} other {# fontes de áudio}} com a sobreposição configurada de {configured} s excede a capacidade medida deste dispositivo, pelo que o áudio é analisado com {effective} s de sobreposição. Por isso, o filtro pode exigir menos confirmações. As suas definições guardadas não mudam.",
+          "overloadedNoticeTitle": "Este dispositivo não consegue acompanhar a análise",
+          "overloadedNotice": "Executar {models, plural, one {# modelo} other {# modelos}} em {sources, plural, one {# fonte de áudio} other {# fontes de áudio}} excede a capacidade medida deste dispositivo mesmo sem sobreposição. A análise pode atrasar-se e podem perder-se deteções. Ative menos modelos ou fontes de áudio, ou escolha uma variante de modelo mais rápida.",
+          "unknownLatency": "Não foi possível medir o tempo de processamento de {models}, pelo que não é contabilizado ao limitar a sobreposição. A análise ainda pode atrasar-se.",
+          "cpuNote": "Uma intensidade maior analisa o áudio sobreposto com mais frequência, o que custa tempo de CPU por cada modelo e fonte de áudio ativos. O BirdNET-Go limita automaticamente a sobreposição ao que este dispositivo consegue processar."        },
         "rangeFilter": {
           "title": "Filtro de alcance",
           "description": "Limita a detecção a espécies prováveis em sua região geográfica",
@@ -2439,7 +2456,7 @@
             "accuracy": "Precisão estimada: num raio de {accuracy} m",
             "locationDetected": "Localização do navegador detetada.",
             "geolocationUnsupported": "Este navegador não suporta a localização do dispositivo. Introduza as coordenadas manualmente ou use o mapa.",
-            "geolocationRequiresHttps": "A localização do navegador requer HTTPS ou localhost. Introduza as coordenadas manualmente ou use o mapa.",
+            "geolocationInsecureHelp": "Requer HTTPS ou localhost. Em alternativa, pesquise um local ou use o mapa.",
             "geolocationDenied": "A permissão de localização foi negada. Introduza as coordenadas manualmente ou use o mapa.",
             "geolocationUnavailable": "O dispositivo não conseguiu determinar a localização. Introduza as coordenadas manualmente ou use o mapa.",
             "geolocationTimedOut": "O pedido de localização excedeu o tempo limite. Tente novamente, introduza as coordenadas manualmente ou use o mapa.",
@@ -3232,7 +3249,11 @@
         "enable": "Ativar uploads para BirdWeather",
         "token": {
           "label": "Token do BirdWeather",
-          "helpText": "Seu token exclusivo do BirdWeather."
+          "helpText": "Seu token exclusivo do BirdWeather.",
+          "errors": {
+            "required": "Introduza o token do BirdWeather ou desative o BirdWeather.",
+            "format": "Um token do BirdWeather tem 24 letras e dígitos."
+          }
         },
         "threshold": {
           "label": "Limiar de upload",
@@ -5103,6 +5124,33 @@
       "viewDetections": "Ver detecções de {name}",
       "largeView": "Visualização ampliada de {name}",
       "clickToView": "Clique para ver as detecções"
+    },
+    "locationMap": {
+      "mapLabel": "Mapa para selecionar a localização da estação",
+      "expandedMapLabel": "Mapa em tela cheia para selecionar a localização da estação",
+      "zoomIn": "Ampliar",
+      "zoomOut": "Reduzir",
+      "expand": "Expandir o mapa para tela cheia",
+      "search": {
+        "label": "Pesquisar um local",
+        "placeholder": "Localidade ou morada",
+        "submit": "Pesquisar",
+        "disclosure": "As pesquisas são enviadas para o Photon (photon.komoot.io), que usa dados do OpenStreetMap.",
+        "openPhoton": "Abrir o Photon num novo separador",
+        "searching": "A pesquisar...",
+        "results": "{count, plural, one {# local encontrado} other {# locais encontrados}}",
+        "noResults": "Nenhum local encontrado. Tente outro nome ou clique no mapa.",
+        "errorNetwork": "A pesquisa de locais não está disponível. Verifique a ligação à internet. Ainda pode clicar no mapa ou introduzir as coordenadas.",
+        "errorRateLimited": "Demasiadas pesquisas. Aguarde um momento e tente novamente.",
+        "errorUnavailable": "O serviço de pesquisa não respondeu. Ainda pode clicar no mapa ou introduzir as coordenadas.",
+        "kind": {
+          "city": "Cidade",
+          "town": "Vila",
+          "village": "Aldeia",
+          "station": "Estação",
+          "airport": "Aeroporto"
+        }
+      }
     }
   },
   "connectivity": {
@@ -5254,12 +5302,37 @@
     }
   },
   "wizard": {
+    "actions": {
+      "reloadPage": "Recarregar página"
+    },
     "skip": "Ignorar",
     "back": "Voltar",
     "next": "Seguinte",
     "done": "Concluído",
     "progress": "Passo {current} de {total}",
     "progressLabel": "Progresso do assistente",
+    "status": {
+      "saving": "A guardar...",
+      "loadingStep": "A carregar passo..."
+    },
+    "errors": {
+      "saveFailed": "Não foi possível guardar este passo. Verifique a ligação e tente novamente, ou ignore a configuração e altere isto mais tarde nas Definições.",
+      "saveRejected": "As definições deste passo não foram aceites. Verifique os valores e tente novamente, ou ignore a configuração e altere isto mais tarde nas Definições.",
+      "stepLoadFailed": "Não foi possível carregar este passo. Prima Tentar novamente ou recarregue a página.",
+      "stepLoadFailedReload": "Ainda não foi possível carregar este passo. Recarregue a página para tentar novamente; as escolhas guardadas em passos anteriores são mantidas.",
+      "audioSourceSaveUnfinished": "A alteração da fonte de áudio não foi concluída. Verifique as fontes de áudio em Configurações > Áudio.",
+      "saveUnfinished": "Algumas alterações da configuração não foram guardadas. Verifique-as nas Definições."
+    },
+    "reasons": {
+      "completeStep": "Conclua este passo para continuar."
+    },
+    "leaveConfirm": {
+      "title": "Sair da configuração?",
+      "message": "A configuração não será aberta novamente. As escolhas guardadas em passos anteriores são mantidas; as alterações neste passo não são guardadas. Pode alterar tudo mais tarde nas Definições.",
+      "messageSaving": "A configuração não será aberta novamente. As escolhas guardadas em passos anteriores são mantidas. Este passo ainda está a ser guardado e algumas ou todas as suas alterações podem não ser mantidas. Pode alterar tudo mais tarde nas Definições.",
+      "stay": "Continuar a configurar",
+      "leave": "Sair da configuração"
+    },
     "whatsNew": {
       "title": "Novidades na {version}"
     },
@@ -5282,13 +5355,6 @@
         "locationHelp": "A sua localização ajuda a filtrar espécies prováveis na sua área",
         "latitudeLabel": "Latitude",
         "longitudeLabel": "Longitude",
-        "useMyLocation": "Usar a minha localização",
-        "locationDetected": "Localização detetada",
-        "locationError": "Não foi possível detetar a localização. Por favor, introduza as coordenadas manualmente.",
-        "locationDenied": "Acesso à localização negado. Por favor, introduza as coordenadas manualmente.",
-        "geolocationRequiresHttps": "A localização do navegador requer HTTPS. Insira as coordenadas manualmente ou use o mapa.",
-        "geolocationDenied": "A permissão de localização foi negada. Insira as coordenadas manualmente ou use o mapa.",
-        "geolocationFailed": "Não foi possível determinar a sua localização. Insira as coordenadas manualmente ou use o mapa.",
         "localesLoading": "Carregando idiomas...",
         "localesLoadFailed": "Não foi possível carregar as opções de idioma. Inglês foi selecionado como padrão."
       },
@@ -5304,7 +5370,19 @@
         "rtspUrlPlaceholder": "rtsp://user:password@host:port/stream",
         "rtspUrlHelp": "Introduza o URL da sua transmissão de áudio RTSP",
         "additionalSourcesHint": "Pode adicionar mais fontes de áudio posteriormente nas Definições.",
-        "configureLater": "Ignorar - configurar mais tarde"
+        "devicesLoadFailed": "Não foi possível listar os dispositivos de áudio deste sistema.",
+        "useStreamInstead": "Usar antes um fluxo RTSP",
+        "setUpLater": "Configurar o áudio mais tarde",
+        "setUpLaterChosen": "O áudio não será configurado agora. Adicione uma placa de som ou um fluxo mais tarde nas Definições.",
+        "streamReplacesSoundCards": "As placas de som deixam de capturar quando usa um fluxo. Pode adicioná-las novamente nas Definições.",
+        "soundCardReplacesStream": "O fluxo mostrado na opção de fluxo é desligado quando usa uma placa de som. Pode voltar a ligá-lo nas Definições.",
+        "reasons": {
+          "chooseDevice": "Escolha um dispositivo de áudio ou configure o áudio mais tarde.",
+          "devicesFailed": "Não foi possível listar os dispositivos de áudio. Tente novamente, use um fluxo ou configure o áudio mais tarde.",
+          "noDevices": "Nenhum dispositivo de áudio encontrado. Use um fluxo ou configure o áudio mais tarde.",
+          "enterUrl": "Introduza o URL do fluxo ou configure o áudio mais tarde.",
+          "urlScheme": "Introduza um URL do fluxo completo que comece por rtsp:// ou rtsps:// e não tenha espaços."
+        }
       },
       "detection": {
         "title": "Limiar de Deteção",
@@ -5316,6 +5394,7 @@
         "highAccuracyDesc": "Menos falsos positivos, pode perder algumas aves",
         "highSensitivity": "Alta Sensibilidade",
         "highSensitivityDesc": "Mais deteções, mais falsos positivos",
+        "descriptionStored": "Escolha quão rigorosa deve ser a identificação de aves. Atual: {threshold}, sem predefinição.",
         "threshold": "Limiar de confiança",
         "fpFilterNote": "Quando o seu sistema estiver a funcionar e comprovado, pode ativar o filtro de falsos positivos nas Definições para reduzir ainda mais as deteções incorretas."
       },
@@ -5325,10 +5404,12 @@
         "privacyFilterHelp": "Filtra deteções quando são detetadas vozes humanas perto do microfone",
         "birdweatherLabel": "Partilhar deteções com o BirdWeather",
         "birdweatherHelp": "Contribua com as suas deteções de aves para a rede comunitária BirdWeather",
-        "birdweatherIdLabel": "ID da Estação BirdWeather",
-        "birdweatherIdPlaceholder": "Introduza o ID da sua estação BirdWeather",
         "errorReportingLabel": "Enviar relatórios de erros anónimos",
-        "errorReportingHelp": "Ajude a melhorar o BirdNET-Go enviando relatórios de erros anónimos quando algo corre mal"
+        "errorReportingHelp": "Ajude a melhorar o BirdNET-Go enviando relatórios de erros anónimos quando algo corre mal",
+        "reasons": {
+          "enterToken": "Introduza o token do BirdWeather ou desative a partilha com o BirdWeather.",
+          "tokenFormat": "Um token do BirdWeather tem 24 letras e dígitos."
+        }
       },
       "responsibleUse": {
         "title": "Utilização Responsável do BirdNET-Go",
@@ -5567,6 +5648,8 @@
         "catalogLoadFailed": "Falha ao carregar o catálogo de modelos",
         "installFailed": "Falha ao iniciar a instalação do modelo",
         "removeFailed": "Falha ao remover o modelo",
+        "removeHasDependents": "{name} é necessário para {models}. Remova primeiro esses modelos.",
+        "operationInProgress": "Já está em curso uma instalação, reinstalação ou remoção de modelo ({name}). Tente novamente quando terminar.",
         "actionFailed": "Ocorreu um problema com {name}",
         "downloadSourceHint": "Se o huggingface.co estiver bloqueado ou lento em sua rede, defina um espelho na seção Origem de download abaixo.",
         "goToDownloadSource": "Ir para Origem de download",
