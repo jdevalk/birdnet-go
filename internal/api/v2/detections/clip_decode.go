@@ -13,8 +13,8 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/tphakala/birdnet-go/internal/audiocore/convert"
 	"github.com/tphakala/birdnet-go/internal/errors"
+	dsppcm "github.com/tphakala/go-audio-dsp/pcm"
 )
 
 const (
@@ -135,19 +135,15 @@ func decodeClipMonoPCM16(
 			Build()
 	}
 
-	channels, err := convert.ConvertToFloat32(pcm, 16)
-	if err != nil {
+	// Drop a trailing half sample, matching the former convert.ConvertToFloat32.
+	pcm = pcm[:len(pcm)&^1]
+	samples := make([]float32, len(pcm)/2)
+	if _, err := dsppcm.BytesToFloat32(samples, pcm); err != nil {
 		return nil, errors.New(err).
 			Component("api/v2/reanalyze").
 			Category(errors.CategoryAudio).
 			Context("operation", "pcm_to_float32").
 			Build()
 	}
-	if len(channels) == 0 {
-		return nil, errors.Newf("conversion returned zero channels").
-			Component("api/v2/reanalyze").
-			Category(errors.CategoryAudio).
-			Build()
-	}
-	return channels[0], nil
+	return samples, nil
 }
