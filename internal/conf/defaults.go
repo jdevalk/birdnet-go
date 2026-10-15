@@ -107,9 +107,9 @@ func setDefaultConfig() {
 	viper.SetDefault("bat.falsepositivefilter.level", 2)
 	viper.SetDefault("bat.ultrasonicfilter.enabled", true)
 	viper.SetDefault("bat.ultrasonicfilter.cvthreshold", 0.15)
-	viper.SetDefault("bat.ultrasonicfilter.fftsize", 8192)
-	viper.SetDefault("bat.ultrasonicfilter.hopsize", 4096)
-	viper.SetDefault("bat.ultrasonicfilter.frequencysplithz", 20000)
+	viper.SetDefault("bat.ultrasonicfilter.fftsize", DefaultUltrasonicFFTSize)
+	viper.SetDefault("bat.ultrasonicfilter.hopsize", DefaultUltrasonicHopSize)
+	viper.SetDefault("bat.ultrasonicfilter.frequencysplithz", DefaultUltrasonicSplitHz)
 
 	// Global model enablement (BirdNET only by default)
 	viper.SetDefault("models.enabled", []string{"birdnet"})
@@ -144,7 +144,7 @@ func setDefaultConfig() {
 	viper.SetDefault("realtime.audio.export.normalization.enabled", false)                             // disabled by default
 	viper.SetDefault("realtime.audio.export.normalization.targetLUFS", DefaultNormalizationTargetLUFS) // EBU R128 broadcast standard
 	viper.SetDefault("realtime.audio.export.normalization.loudnessRange", 7.0)                         // typical range for broadcast
-	viper.SetDefault("realtime.audio.export.normalization.truePeak", -2.0)                             // headroom to prevent clipping
+	viper.SetDefault("realtime.audio.export.normalization.truePeak", DefaultNormalizationTruePeak)     // headroom to prevent clipping
 
 	// Quiet hours configuration (sound card)
 	viper.SetDefault("realtime.audio.quiethours.enabled", false)
