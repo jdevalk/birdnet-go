@@ -3760,6 +3760,8 @@
         "frequencyResponse": "Frekvencia válasz",
         "cutoffFrequency": "Levágási frekvencia",
         "cutoffFrequencyHelp": "Az a frekvencia, ahol a szűrő kezdi csökkenteni a jeleket. A madárhangok tipikusan 1-10 kHz tartományban vannak.",
+        "centerFrequency": "Középfrekvencia",
+        "bandwidth": "Sávszélesség",
         "qFactor": "Q faktor",
         "qFactorHelp": "A szűrő élességét szabályozza. Az alacsonyabb értékek (0.1-1) enyhébb meredekséget, a magasabb értékek (1-10) meredekebb levágást hoznak létre.",
         "gain": "Erősítés",
@@ -3767,17 +3769,31 @@
         "attenuation": "Csillapítás",
         "attenuationHelp": "A szűrő lecsengetési rátája. A magasabb értékek meredekebb csillapítást biztosítanak a szűrt frekvenciáknál.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Ki",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Több szűrőt is hozzáadhat az optimális madár detektáláshoz a környezetében.",
+        "emptyEntryRestored": "Adjon meg egy számot. Az előző érték megmaradt.",
         "graph": {
           "flatResponse": "Lapos válasz (nincs szűrő alkalmazva)",
           "frequency": "Frekvencia (Hz)",
-          "gain": "Erősítés (dB)"
+          "gain": "Erősítés (dB)",
+          "loading": "A frekvenciaválasz számítása...",
+          "updating": "A frekvenciaválasz frissítése...",
+          "error": "A frekvenciaválasz nem számítható ki. Frissül, amikor módosít egy szűrőt, vagy az Újra lehetőséget választja.",
+          "sampleRate": "{rate} Hz mintavételi frekvenciára számítva.",
+          "clipped": "A válasz csúcsa {peak} dB, ami a grafikon teteje felett van.",
+          "skippedHeading": "{count, plural, one {# szűrő nem lesz alkalmazva a hangra} other {# szűrő nem lesz alkalmazva a hangra}}",
+          "skippedReasons": {
+            "unknown_type": "A(z) {number}. szűrő ({type}, {frequency} Hz) kihagyva: ez a szűrőtípus nem támogatott.",
+            "invalid_parameters": "A(z) {number}. szűrő ({type}, {frequency} Hz) kihagyva: a beállításai {rate} Hz-en nem érvényesek.",
+            "add_failed": "A(z) {number}. szűrő ({type}, {frequency} Hz) kihagyva: nem sikerült hozzáadni a szűrőlánchoz.",
+            "unknown": "A(z) {number}. szűrő ({type}, {frequency} Hz) kihagyva."
+          }
         }
       },
       "soundLevelMonitoring": {

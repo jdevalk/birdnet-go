@@ -3760,6 +3760,8 @@
         "frequencyResponse": "Frekvenssvar",
         "cutoffFrequency": "Gränsfrekvens",
         "cutoffFrequencyHelp": "Frekvens vid vilken filtret börjar dämpa signaler. Fågelläten ligger typiskt i intervallet 1-10 kHz.",
+        "centerFrequency": "Mittfrekvens",
+        "bandwidth": "Bandbredd",
         "qFactor": "Q-faktor",
         "qFactorHelp": "Kvalitetsfaktorn styr filtrets skärpa. Lägre värden (0,1-1) ger mjukare lutning, högre värden (1-10) ger brantare avskärning.",
         "gain": "Förstärkning",
@@ -3767,17 +3769,31 @@
         "attenuation": "Dämpning",
         "attenuationHelp": "Filtrets avklingningshastighet. Högre värden ger brantare dämpning av filtrerade frekvenser.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Av",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Lägg till flera filter för att forma frekvensvaret för optimal fågeldetektering i din miljö.",
+        "emptyEntryRestored": "Ange ett tal. Det tidigare värdet behölls.",
         "graph": {
           "flatResponse": "Plant svar (inga filter tillämpade)",
           "frequency": "Frekvens (Hz)",
-          "gain": "Förstärkning (dB)"
+          "gain": "Förstärkning (dB)",
+          "loading": "Beräknar frekvenssvaret...",
+          "updating": "Uppdaterar frekvenssvaret...",
+          "error": "Frekvenssvaret kunde inte beräknas. Det uppdateras när du ändrar ett filter eller väljer Försök igen.",
+          "sampleRate": "Beräknat för en samplingsfrekvens på {rate} Hz.",
+          "clipped": "Svaret toppar vid {peak} dB, över grafens övre kant.",
+          "skippedHeading": "{count, plural, one {# filter tillämpas inte på ljudet} other {# filter tillämpas inte på ljudet}}",
+          "skippedReasons": {
+            "unknown_type": "Filter {number} ({type}, {frequency} Hz) hoppas över: den här filtertypen stöds inte.",
+            "invalid_parameters": "Filter {number} ({type}, {frequency} Hz) hoppas över: dess inställningar är inte giltiga vid {rate} Hz.",
+            "add_failed": "Filter {number} ({type}, {frequency} Hz) hoppas över: det kunde inte läggas till i filterkedjan.",
+            "unknown": "Filter {number} ({type}, {frequency} Hz) hoppas över."
+          }
         }
       },
       "soundLevelMonitoring": {

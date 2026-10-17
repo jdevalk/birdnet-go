@@ -91,7 +91,12 @@ type Processor struct {
 	privacyCoverage map[coverageKey][]audioSpan
 	// heldLabelHits holds the label hit of each source waiting for a second hit
 	// (see recordLabelHit), guarded by detectionMutex and created lazily.
-	heldLabelHits    map[string]heldLabelHit
+	heldLabelHits map[string]heldLabelHit
+	// humanHits lists the counted speech hits of each source with the model or
+	// VAD gate that produced them (see appendHumanHitLocked), guarded by
+	// detectionMutex and created lazily. The discard log reads it to name every
+	// contributor to a verdict.
+	humanHits        map[string][]humanHit
 	controlChan      chan string
 	JobQueue         *jobqueue.JobQueue // Queue for managing job retries
 	workerCancel     context.CancelFunc // Function to cancel worker goroutines
@@ -1121,9 +1126,12 @@ func (p *Processor) shouldFilterDetection(settings *conf.Settings, result datast
 		return true, 0
 	}
 
-	// Check human detection privacy filter. Match the raw label so Perch v2's
-	// FSD50K human classes are caught too, not just BirdNET's "Human *" classes.
-	if isHumanVocalization(result.Species) && result.Confidence > baseThreshold {
+	// Drop human sounds from the saved detections. Match the raw label so Perch
+	// v2's FSD50K human classes are caught too, not just BirdNET's "Human *"
+	// classes. This uses the broad human-sound check, not the privacy filter's
+	// narrower set (which leaves out Perch body and action classes), so those
+	// classes (Hands, Crowd, ...) are still dropped as non-bird detections.
+	if isHumanSoundLabel(result.Species) && result.Confidence > baseThreshold {
 		return true, 0 // Filter out human detections for privacy
 	}
 
@@ -1432,8 +1440,10 @@ func (p *Processor) handleDogDetection(settings *conf.Settings, item classifier.
 // handleHumanDetection handles the detection of human vocalizations and records
 // the hit in LastHumanDetection, stamped with the end of the chunk's audio (the
 // processing time when the producer gave none) and never moving the stored time
-// backward. When the effective base overlap is above labelConfirmMinBaseOverlap
-// a hit counts only once a second hit confirms it, see recordLabelHit.
+// backward. The hit carries the model that scored it (item.ModelID) and its
+// confidence, so logs and the discard summary can name it. When the effective
+// base overlap is above labelConfirmMinBaseOverlap a hit counts only once a
+// second hit confirms it, see recordLabelHit.
 //
 //nolint:gocritic // hugeParam: Pass by value is intentional - avoids pointer dereferencing in hot path
 func (p *Processor) handleHumanDetection(settings *conf.Settings, item classifier.Results, result datastore.Results) {
@@ -1445,7 +1455,7 @@ func (p *Processor) handleHumanDetection(settings *conf.Settings, item classifie
 		// clip. Above the confirmation overlap a lone hit is held (see
 		// recordLabelHit) and counts only when a second hit confirms it.
 		end, _ := audioEndOrNow(&item)
-		hit := heldLabelHit{at: end, confidence: result.Confidence}
+		hit := heldLabelHit{at: end, confidence: result.Confidence, modelID: item.ModelID}
 		d := p.recordLabelHit(settings, item.Source.ID, hit)
 		p.logLabelHitDecision(settings, item.Source.ID, &hit, &d)
 	}
@@ -1609,7 +1619,10 @@ func (p *Processor) buildClipPath(settings *conf.Settings, scientificName string
 // consistency within a single flush cycle. priv is the detection's privacyCheck
 // for that cycle; the privacy filter discards a detection when the source's
 // latest speech hit in it is at or after the saved clip's begin less
-// privacyClipGuard.
+// privacyClipGuard. A discard logs the model and score of that hit and, with
+// privacyfilter.debug on, a summary of the detectors that counted hits
+// reaching the clip (priv.contributions); the counts are lower bounds once the
+// attribution list is full (humanHitMaxPerSource).
 func (p *Processor) shouldDiscardDetection(item *PendingDetection, settings *conf.Settings, minDetections int, priv *privacyCheck) (shouldDiscard bool, reason string) {
 	// Check minimum detection count
 	if item.Count < minDetections {
@@ -1638,8 +1651,28 @@ func (p *Processor) shouldDiscardDetection(item *PendingDetection, settings *con
 				logger.Time("detection_time", item.FirstDetected),
 				logger.Time("last_human_detection", lastHumanDetection.Time),
 				logger.String("trigger", lastHumanDetection.Trigger),
+				logger.String("hit_model_id", lastHumanDetection.ModelID),
+				logger.Float64("hit_score", lastHumanDetection.Score),
 				logger.String("source", p.getDisplayNameForSource(item.Source)),
 				logger.String("operation", privacyFilterOperation))
+			if settings.Realtime.PrivacyFilter.Debug {
+				// With privacyfilter.debug on, say who decided: the detectors that
+				// counted hits reaching the saved clip, with hit counts and best
+				// scores (lower bounds once the attribution list is full), next to
+				// the detection that was dropped.
+				GetLogger().Info("privacy filter dropped detection",
+					logger.String("species", item.Detection.Result.Species.CommonName),
+					logger.String("detection_model_id", item.BestModelID),
+					logger.Time("clip_begin", priv.clip.from),
+					logger.Time("clip_end", priv.clip.to),
+					logger.Duration("clip_guard", privacyClipGuard),
+					logger.Time("last_hit_time", lastHumanDetection.Time),
+					logger.String("last_hit_model_id", lastHumanDetection.ModelID),
+					logger.String("last_hit_trigger", lastHumanDetection.Trigger),
+					logger.String("contributors", formatHitContributions(priv.contributions)),
+					logger.String("source", p.getDisplayNameForSource(item.Source)),
+					logger.String("operation", privacyFilterDiscardOperation))
+			}
 			// Attribute the discard to the trigger that flagged the human voice
 			// (label match vs VAD speech gate), when telemetry is enabled.
 			if settings.Realtime.Telemetry.Enabled && p.Metrics != nil {
@@ -2935,18 +2968,22 @@ func (p *Processor) initPreRenderer() {
 			return
 		}
 
-		// Validate Sox binary is configured and exists
-		if p.Settings.Realtime.Audio.SoxPath == "" {
-			GetLogger().Error("Sox binary not configured, disabling pre-rendering",
-				logger.String("operation", "prerenderer_init"))
-			return
-		}
-		if _, err := exec.LookPath(p.Settings.Realtime.Audio.SoxPath); err != nil {
-			GetLogger().Error("Sox binary not found, disabling pre-rendering",
-				logger.String("path", p.Settings.Realtime.Audio.SoxPath),
-				logger.Error(err),
-				logger.String("operation", "prerenderer_init"))
-			return
+		// Validate Sox binary is configured and exists. The native renderer draws
+		// prerender PCM in Go (spectrogram generator.go GenerateFromPCM) and the gate
+		// cannot change while the process runs, so this prerenderer never reaches sox.
+		if !conf.NativeSpectrogramEnabled() {
+			if p.Settings.Realtime.Audio.SoxPath == "" {
+				GetLogger().Error("Sox binary not configured, disabling pre-rendering",
+					logger.String("operation", "prerenderer_init"))
+				return
+			}
+			if _, err := exec.LookPath(p.Settings.Realtime.Audio.SoxPath); err != nil {
+				GetLogger().Error("Sox binary not found, disabling pre-rendering",
+					logger.String("path", p.Settings.Realtime.Audio.SoxPath),
+					logger.Error(err),
+					logger.String("operation", "prerenderer_init"))
+				return
+			}
 		}
 
 		// Create SecureFS for path validation
@@ -2972,6 +3009,7 @@ func (p *Processor) initPreRenderer() {
 		GetLogger().Info("Spectrogram pre-renderer initialized",
 			logger.String("size", p.Settings.Realtime.Dashboard.Spectrogram.Size),
 			logger.Bool("raw", p.Settings.Realtime.Dashboard.Spectrogram.Raw),
+			logger.Bool("native_renderer", conf.NativeSpectrogramEnabled()),
 			logger.String("operation", "prerenderer_init"))
 	})
 }

@@ -3759,6 +3759,8 @@
         "frequencyResponse": "Taajuusvaste",
         "cutoffFrequency": "Rajataajuus",
         "cutoffFrequencyHelp": "Taajuus, jossa suodatin alkaa vaimentaa signaaleja. Lintuäänten taajuudet ovat tyypillisesti 1-10 kHz välillä.",
+        "centerFrequency": "Keskitaajuus",
+        "bandwidth": "Kaistanleveys",
         "qFactor": "Q-kerroin",
         "qFactorHelp": "Laatukerroin ohjaa suodattimen terävyyttä. Matalat arvot (0.1-1) luovat loivempia kaarevia, korkeammat arvot (1-10) luovat jyrkempiä katkoja.",
         "gain": "Vahvistus",
@@ -3766,17 +3768,31 @@
         "attenuation": "Vaimennus",
         "attenuationHelp": "Suodattimen vaimennusnopeus. Korkeammat arvot tarjoavat jyrkemmän suodatettujen taajuuksien vaimentamisen.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Pois",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Lisää useita suodattimia muodostaaksesi taajuusvasteen optimaaliseen lintujen tunnistukseen ympäristössäsi.",
+        "emptyEntryRestored": "Anna numero. Edellinen arvo säilytettiin.",
         "graph": {
           "flatResponse": "Tasainen vaste (Ei suodattimia käytössä)",
           "frequency": "Taajuus (Hz)",
-          "gain": "Vahvistus (dB)"
+          "gain": "Vahvistus (dB)",
+          "loading": "Lasketaan taajuusvastetta...",
+          "updating": "Päivitetään taajuusvastetta...",
+          "error": "Taajuusvastetta ei voitu laskea. Se päivittyy, kun muutat suodatinta tai valitset Yritä uudelleen.",
+          "sampleRate": "Laskettu {rate} Hz:n näytteenottotaajuudelle.",
+          "clipped": "Vaste yltää huippuun {peak} dB, joka on kaavion yläreunan yläpuolella.",
+          "skippedHeading": "{count, plural, one {# suodatin ei ole käytössä äänessä} other {# suodatinta ei käytetä ääneen}}",
+          "skippedReasons": {
+            "unknown_type": "Suodatin {number} ({type}, {frequency} Hz) ohitetaan: tätä suodatintyyppiä ei tueta.",
+            "invalid_parameters": "Suodatin {number} ({type}, {frequency} Hz) ohitetaan: sen asetukset eivät kelpaa {rate} Hz:n taajuudella.",
+            "add_failed": "Suodatin {number} ({type}, {frequency} Hz) ohitetaan: sitä ei voitu lisätä suodatinketjuun.",
+            "unknown": "Suodatin {number} ({type}, {frequency} Hz) ohitetaan."
+          }
         }
       },
       "soundLevelMonitoring": {

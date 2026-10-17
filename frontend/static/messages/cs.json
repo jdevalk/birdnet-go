@@ -3760,6 +3760,8 @@
         "frequencyResponse": "Frekvenční odezva",
         "cutoffFrequency": "Mezní frekvence",
         "cutoffFrequencyHelp": "Frekvence, při které filtr začíná tlumit signály. Ptačí zpěv se obvykle pohybuje v rozmezí 1-10 kHz.",
+        "centerFrequency": "Střední frekvence",
+        "bandwidth": "Šířka pásma",
         "qFactor": "Q faktor",
         "qFactorHelp": "Činitel jakosti (Q faktor) řídí ostrost filtru. Nižší hodnoty (0,1-1) vytvářejí jemnější sklony, vyšší hodnoty (1-10) vytvářejí strmější řezy.",
         "gain": "Zesílení",
@@ -3767,17 +3769,31 @@
         "attenuation": "Útlum",
         "attenuationHelp": "Rychlost poklesu filtru. Vyšší hodnoty poskytují strmější tlumení filtrovaných frekvencí.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Vypnuto",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Přidejte více filtrů pro tvarování frekvenční odezvy pro optimální detekci ptáků ve vašem prostředí.",
+        "emptyEntryRestored": "Zadejte číslo. Předchozí hodnota byla zachována.",
         "graph": {
           "flatResponse": "Plochá odezva (žádné filtry nejsou použity)",
           "frequency": "Frekvence (Hz)",
-          "gain": "Zesílení (dB)"
+          "gain": "Zesílení (dB)",
+          "loading": "Výpočet frekvenční odezvy...",
+          "updating": "Aktualizace frekvenční odezvy...",
+          "error": "Frekvenční odezvu nelze vypočítat. Aktualizuje se při změně filtru nebo po výběru možnosti Zkusit znovu.",
+          "sampleRate": "Vypočteno pro vzorkovací frekvenci {rate} Hz.",
+          "clipped": "Odezva dosahuje maxima {peak} dB, což je nad horním okrajem grafu.",
+          "skippedHeading": "{count, plural, one {# filtr se na zvuk nepoužije} few {# filtry se na zvuk nepoužijí} many {# filtru se na zvuk nepoužije} other {# filtrů se na zvuk nepoužije}}",
+          "skippedReasons": {
+            "unknown_type": "Filtr {number} ({type}, {frequency} Hz) je přeskočen: tento typ filtru není podporován.",
+            "invalid_parameters": "Filtr {number} ({type}, {frequency} Hz) je přeskočen: jeho nastavení není platné při {rate} Hz.",
+            "add_failed": "Filtr {number} ({type}, {frequency} Hz) je přeskočen: nepodařilo se jej přidat do řetězce filtrů.",
+            "unknown": "Filtr {number} ({type}, {frequency} Hz) je přeskočen."
+          }
         }
       },
       "soundLevelMonitoring": {

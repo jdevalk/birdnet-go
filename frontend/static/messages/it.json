@@ -3760,6 +3760,8 @@
         "frequencyResponse": "Risposta Frequenza",
         "cutoffFrequency": "Frequenza Taglio",
         "cutoffFrequencyHelp": "Frequenza alla quale il filtro inizia ad attenuare segnali. Richiami uccelli variano tipicamente da 1-10 kHz.",
+        "centerFrequency": "Frequenza centrale",
+        "bandwidth": "Larghezza di banda",
         "qFactor": "Fattore Q",
         "qFactorHelp": "Fattore qualità controlla la nitidezza del filtro. Valori più bassi (0.1-1) creano pendenze più dolci, valori più alti (1-10) creano tagli più ripidi.",
         "gain": "Guadagno",
@@ -3767,17 +3769,31 @@
         "attenuation": "Attenuazione",
         "attenuationHelp": "Tasso attenuazione filtro. Valori più alti forniscono attenuazione più ripida delle frequenze filtrate.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Disattivato",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Aggiungi più filtri per modellare la risposta in frequenza per rilevamento ottimale uccelli nel tuo ambiente.",
+        "emptyEntryRestored": "Inserisci un numero. È stato mantenuto il valore precedente.",
         "graph": {
           "flatResponse": "Risposta Piatta (Nessun Filtro Applicato)",
           "frequency": "Frequenza (Hz)",
-          "gain": "Guadagno (dB)"
+          "gain": "Guadagno (dB)",
+          "loading": "Calcolo della risposta in frequenza...",
+          "updating": "Aggiornamento della risposta in frequenza...",
+          "error": "Impossibile calcolare la risposta in frequenza. Si aggiorna quando modifichi un filtro o selezioni Riprova.",
+          "sampleRate": "Calcolata per una frequenza di campionamento di {rate} Hz.",
+          "clipped": "La risposta raggiunge un picco di {peak} dB, sopra il bordo superiore del grafico.",
+          "skippedHeading": "{count, plural, one {# filtro non viene applicato all'audio} other {# filtri non vengono applicati all'audio}}",
+          "skippedReasons": {
+            "unknown_type": "Il filtro {number} ({type}, {frequency} Hz) viene saltato: questo tipo di filtro non è supportato.",
+            "invalid_parameters": "Il filtro {number} ({type}, {frequency} Hz) viene saltato: le sue impostazioni non sono valide a {rate} Hz.",
+            "add_failed": "Il filtro {number} ({type}, {frequency} Hz) viene saltato: non è stato possibile aggiungerlo alla catena di filtri.",
+            "unknown": "Il filtro {number} ({type}, {frequency} Hz) viene saltato."
+          }
         }
       },
       "soundLevelMonitoring": {

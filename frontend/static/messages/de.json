@@ -3759,6 +3759,8 @@
         "frequencyResponse": "Frequenzgang",
         "cutoffFrequency": "Grenzfrequenz",
         "cutoffFrequencyHelp": "Frequenz, bei der der Filter beginnt, Signale zu dämpfen. Vogelrufe liegen typischerweise zwischen 1-10 kHz.",
+        "centerFrequency": "Mittenfrequenz",
+        "bandwidth": "Bandbreite",
         "qFactor": "Q-Faktor",
         "qFactorHelp": "Qualitätsfaktor steuert die Schärfe des Filters. Niedrigere Werte (0,1-1) erzeugen sanftere Übergänge, höhere Werte (1-10) erzeugen steilere Abschnitte.",
         "gain": "Verstärkung",
@@ -3766,17 +3768,31 @@
         "attenuation": "Dämpfung",
         "attenuationHelp": "Filterabrollrate. Höhere Werte sorgen für steilere Dämpfung gefilterter Frequenzen.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Aus",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Fügen Sie mehrere Filter hinzu, um den Frequenzgang für optimale Vogelerkennung in Ihrer Umgebung zu gestalten.",
+        "emptyEntryRestored": "Geben Sie eine Zahl ein. Der vorherige Wert wurde beibehalten.",
         "graph": {
           "flatResponse": "Flacher Frequenzgang (Keine Filter aktiv)",
           "frequency": "Frequenz (Hz)",
-          "gain": "Verstärkung (dB)"
+          "gain": "Verstärkung (dB)",
+          "loading": "Frequenzgang wird berechnet...",
+          "updating": "Frequenzgang wird aktualisiert...",
+          "error": "Der Frequenzgang konnte nicht berechnet werden. Er wird aktualisiert, wenn du einen Filter änderst oder Erneut versuchen wählst.",
+          "sampleRate": "Berechnet für eine Abtastrate von {rate} Hz.",
+          "clipped": "Der Frequenzgang erreicht seinen Höchstwert bei {peak} dB, oberhalb des oberen Rands des Diagramms.",
+          "skippedHeading": "{count, plural, one {# Filter wird nicht auf das Audio angewendet} other {# Filter werden nicht auf das Audio angewendet}}",
+          "skippedReasons": {
+            "unknown_type": "Filter {number} ({type}, {frequency} Hz) wird übersprungen: Dieser Filtertyp wird nicht unterstützt.",
+            "invalid_parameters": "Filter {number} ({type}, {frequency} Hz) wird übersprungen: Seine Einstellungen sind bei {rate} Hz ungültig.",
+            "add_failed": "Filter {number} ({type}, {frequency} Hz) wird übersprungen: Er konnte nicht zur Filterkette hinzugefügt werden.",
+            "unknown": "Filter {number} ({type}, {frequency} Hz) wird übersprungen."
+          }
         }
       },
       "soundLevelMonitoring": {

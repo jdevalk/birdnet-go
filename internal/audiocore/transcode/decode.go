@@ -29,6 +29,10 @@ type pcmBuffer struct {
 	SampleRate int
 	// Channels is the interleaved channel count.
 	Channels int
+	// declaredFrames is the frame count the header declares for a whole-file read
+	// of a source whose length is exact, or unknownFrames when no comparison with
+	// Frames is meaningful (windowed reads and formats without an exact length).
+	declaredFrames int64
 	// wavRoom, when non-nil, is the buffer Data was sliced from, with exactly
 	// wavHeaderBytes of unused space before Data. encodeWAV then builds the WAV in
 	// place instead of copying the samples.
@@ -68,6 +72,13 @@ func decode(ctx context.Context, path string, win *window, maxBytes int) (*pcmBu
 // is read, a source whose sample rate is below minRate (0 accepts any rate). The
 // rejection wraps ErrBelowMinimumRate.
 func decodeAtLeast(ctx context.Context, path string, win *window, maxBytes, minRate int) (*pcmBuffer, error) {
+	return decodeChannels(ctx, path, win, maxBytes, minRate, maxSourceChannels)
+}
+
+// decodeChannels is decodeAtLeast that accepts sources of up to maxChannels
+// channels. The buffer keeps the source channel count; maxBytes counts the
+// interleaved bytes.
+func decodeChannels(ctx context.Context, path string, win *window, maxBytes, minRate, maxChannels int) (*pcmBuffer, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -86,7 +97,7 @@ func decodeAtLeast(ctx context.Context, path string, win *window, maxBytes, minR
 	}
 	defer func() { _ = f.Close() }()
 
-	src, err := openSource(f, path)
+	src, err := openSourceChannels(f, path, maxChannels)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +193,11 @@ func decodeSource(ctx context.Context, src *source, win *window, fileSize int64,
 		}
 		return nil, wrapSentinel(ErrUndecodableSource, nil, "decode_read", "source holds no audio", errors.CategoryAudio)
 	}
-	return &pcmBuffer{Data: data, SampleRate: src.sampleRate, Channels: src.channels}, nil
+	declared := int64(unknownFrames)
+	if win == nil && src.exactLength {
+		declared = src.totalFrames
+	}
+	return &pcmBuffer{Data: data, SampleRate: src.sampleRate, Channels: src.channels, declaredFrames: declared}, nil
 }
 
 // positionSource moves the reader to startFrame, past any hidden leading frames:

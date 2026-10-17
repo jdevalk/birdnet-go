@@ -2746,21 +2746,35 @@ export type TranslationKey =
   | 'settings.audio.audioFilters.frequencyResponse'
   | 'settings.audio.audioFilters.cutoffFrequency'
   | 'settings.audio.audioFilters.cutoffFrequencyHelp'
+  | 'settings.audio.audioFilters.centerFrequency'
+  | 'settings.audio.audioFilters.bandwidth'
   | 'settings.audio.audioFilters.qFactor'
   | 'settings.audio.audioFilters.qFactorHelp'
   | 'settings.audio.audioFilters.gain'
   | 'settings.audio.audioFilters.gainHelp'
   | 'settings.audio.audioFilters.attenuation'
   | 'settings.audio.audioFilters.attenuationHelp'
-  | 'settings.audio.audioFilters.attenuationLevels.0db'
+  | 'settings.audio.audioFilters.attenuationLevels.off'
   | 'settings.audio.audioFilters.attenuationLevels.12db'
   | 'settings.audio.audioFilters.attenuationLevels.24db'
   | 'settings.audio.audioFilters.attenuationLevels.36db'
   | 'settings.audio.audioFilters.attenuationLevels.48db'
+  | 'settings.audio.audioFilters.attenuationLevels.custom' // params: db
   | 'settings.audio.audioFilters.filterHelp'
+  | 'settings.audio.audioFilters.emptyEntryRestored'
   | 'settings.audio.audioFilters.graph.flatResponse'
   | 'settings.audio.audioFilters.graph.frequency'
   | 'settings.audio.audioFilters.graph.gain'
+  | 'settings.audio.audioFilters.graph.loading'
+  | 'settings.audio.audioFilters.graph.updating'
+  | 'settings.audio.audioFilters.graph.error'
+  | 'settings.audio.audioFilters.graph.sampleRate' // params: rate
+  | 'settings.audio.audioFilters.graph.clipped' // params: peak
+  | 'settings.audio.audioFilters.graph.skippedHeading' // params: count
+  | 'settings.audio.audioFilters.graph.skippedReasons.unknown_type' // params: number, type, frequency
+  | 'settings.audio.audioFilters.graph.skippedReasons.invalid_parameters' // params: number, type, frequency, rate
+  | 'settings.audio.audioFilters.graph.skippedReasons.add_failed' // params: number, type, frequency
+  | 'settings.audio.audioFilters.graph.skippedReasons.unknown' // params: number, type, frequency
   | 'settings.audio.soundLevelMonitoring.title'
   | 'settings.audio.soundLevelMonitoring.description'
   | 'settings.audio.soundLevelMonitoring.enable'
@@ -4761,6 +4775,31 @@ export type TranslationParams = {
   'settings.audio.streams.format.withSampleRate': {
     rate: string | number;
     channels: string | number;
+  };
+  'settings.audio.audioFilters.attenuationLevels.custom': { db: string | number };
+  'settings.audio.audioFilters.graph.sampleRate': { rate: string | number };
+  'settings.audio.audioFilters.graph.clipped': { peak: string | number };
+  'settings.audio.audioFilters.graph.skippedHeading': { count: string | number };
+  'settings.audio.audioFilters.graph.skippedReasons.unknown_type': {
+    number: string | number;
+    type: string | number;
+    frequency: string | number;
+  };
+  'settings.audio.audioFilters.graph.skippedReasons.invalid_parameters': {
+    number: string | number;
+    type: string | number;
+    frequency: string | number;
+    rate: string | number;
+  };
+  'settings.audio.audioFilters.graph.skippedReasons.add_failed': {
+    number: string | number;
+    type: string | number;
+    frequency: string | number;
+  };
+  'settings.audio.audioFilters.graph.skippedReasons.unknown': {
+    number: string | number;
+    type: string | number;
+    frequency: string | number;
   };
   'settings.audio.clipRecording.preCaptureHelp': { max: string | number };
   'settings.audio.clipRecording.bitrateHelp': { min: string | number; max: string | number };

@@ -3759,6 +3759,8 @@
         "frequencyResponse": "Charakterystyka Częstotliwościowa",
         "cutoffFrequency": "Częstotliwość Odcięcia",
         "cutoffFrequencyHelp": "Częstotliwość, przy której filtr zaczyna tłumić sygnały. Odgłosy ptaków zazwyczaj mieszczą się w zakresie 1-10 kHz.",
+        "centerFrequency": "Częstotliwość środkowa",
+        "bandwidth": "Szerokość pasma",
         "qFactor": "Współczynnik Q",
         "qFactorHelp": "Współczynnik jakości kontroluje ostrość filtra. Niższe wartości (0.1-1) tworzą łagodniejsze zbocza, wyższe wartości (1-10) tworzą ostrzejsze odcięcia.",
         "gain": "Wzmocnienie",
@@ -3766,17 +3768,31 @@
         "attenuation": "Tłumienie",
         "attenuationHelp": "Szybkość tłumienia filtra. Wyższe wartości zapewniają ostrzejsze tłumienie filtrowanych częstotliwości.",
         "attenuationLevels": {
-          "0db": "0dB",
+          "off": "Wyłączony",
           "12db": "12dB",
           "24db": "24dB",
           "36db": "36dB",
-          "48db": "48dB"
+          "48db": "48dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Dodaj wiele filtrów, aby ukształtować charakterystykę częstotliwościową dla optymalnej detekcji ptaków w twoim środowisku.",
+        "emptyEntryRestored": "Wpisz liczbę. Zachowano poprzednią wartość.",
         "graph": {
           "flatResponse": "Charakterystyka płaska (Brak filtrów)",
           "frequency": "Częstotliwość (Hz)",
-          "gain": "Wzmocnienie (dB)"
+          "gain": "Wzmocnienie (dB)",
+          "loading": "Obliczanie charakterystyki częstotliwościowej...",
+          "updating": "Aktualizowanie charakterystyki częstotliwościowej...",
+          "error": "Nie udało się obliczyć charakterystyki częstotliwościowej. Zostanie zaktualizowana po zmianie filtra lub po wybraniu opcji Ponów próbę.",
+          "sampleRate": "Obliczono dla częstotliwości próbkowania {rate} Hz.",
+          "clipped": "Odpowiedź osiąga szczyt {peak} dB, powyżej górnej krawędzi wykresu.",
+          "skippedHeading": "{count, plural, one {# filtr nie jest stosowany do dźwięku} few {# filtry nie są stosowane do dźwięku} many {# filtrów nie jest stosowanych do dźwięku} other {# filtra nie jest stosowane do dźwięku}}",
+          "skippedReasons": {
+            "unknown_type": "Filtr {number} ({type}, {frequency} Hz) jest pomijany: ten typ filtra nie jest obsługiwany.",
+            "invalid_parameters": "Filtr {number} ({type}, {frequency} Hz) jest pomijany: jego ustawienia są nieprawidłowe przy {rate} Hz.",
+            "add_failed": "Filtr {number} ({type}, {frequency} Hz) jest pomijany: nie udało się dodać go do łańcucha filtrów.",
+            "unknown": "Filtr {number} ({type}, {frequency} Hz) jest pomijany."
+          }
         }
       },
       "soundLevelMonitoring": {

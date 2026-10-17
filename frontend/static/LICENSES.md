@@ -15,6 +15,25 @@ privacy-filter speech gate. Unmodified, byte-identical to upstream.
 License: https://github.com/snakers4/silero-vad/blob/master/LICENSE
 Source: MIT
 
+## Derived Code
+
+### SoX spectrogram effect
+
+Palette, colour mapping and axis layout in internal/spectrogram/soxchrome are derived from
+SoX src/spectrogram.c, (c) 2008-9 robs@users.sourceforge.net. That package is licensed under
+the GNU LGPL 2.1 or later (internal/spectrogram/soxchrome/LICENSE).
+
+License: https://sourceforge.net/p/sox/code/ci/master/tree/LICENSE.LGPL
+Source: LGPL-2.1-or-later
+
+### Go fonts
+
+Go Mono from golang.org/x/image/font/gofont, (c) 2016 Bigelow & Holmes Inc., draws
+spectrogram axis text.
+
+License: https://cs.opensource.google/go/x/image/+/v0.47.0:font/gofont/ttfs/README
+Source: BSD-3-Clause
+
 ## Dependencies
 
 ### cloud.google.com/go/auth
@@ -414,12 +433,12 @@ Source: LGPL-2.1
 
 ### github.com/tphakala/go-audio-dsp
 
-License: https://github.com/tphakala/go-audio-dsp/blob/v0.6.0/LICENSE
+License: https://github.com/tphakala/go-audio-dsp/blob/v0.9.0/LICENSE
 Source: Apache-2.0
 
 ### github.com/tphakala/go-audio-resampler
 
-License: https://github.com/tphakala/go-audio-resampler/blob/v1.7.0/LICENSE
+License: https://github.com/tphakala/go-audio-resampler/blob/v1.9.0/LICENSE
 Source: LGPL-2.1
 
 ### github.com/tphakala/go-audio-stream
@@ -464,7 +483,7 @@ Source: MIT
 
 ### github.com/tphakala/simd
 
-License: https://github.com/tphakala/simd/blob/v1.12.0/LICENSE
+License: https://github.com/tphakala/simd/blob/v1.13.0/LICENSE
 Source: MIT
 
 ### github.com/valyala/bytebufferpool
@@ -525,6 +544,11 @@ Source: Apache-2.0
 ### golang.org/x/crypto
 
 License: https://cs.opensource.google/go/x/crypto/+/v0.58.0:LICENSE
+Source: BSD-3-Clause
+
+### golang.org/x/image
+
+License: https://cs.opensource.google/go/x/image/+/v0.47.0:LICENSE
 Source: BSD-3-Clause
 
 ### golang.org/x/net

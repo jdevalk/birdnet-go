@@ -3760,6 +3760,8 @@
         "frequencyResponse": "Frekvensrespons",
         "cutoffFrequency": "Knekkfrekvens",
         "cutoffFrequencyHelp": "Frekvensen der filteret begynner å dempe signaler. Fuglekall er typisk mellom 1-10 kHz.",
+        "centerFrequency": "Senterfrekvens",
+        "bandwidth": "Båndbredde",
         "qFactor": "Q-faktor",
         "qFactorHelp": "Kvalitetsfaktoren styrer filterets skarphet. Lave verdier (0,1-1) gir mykere helninger, høyere verdier (1-10) gir brattere avkuttinger.",
         "gain": "Forsterkning",
@@ -3767,17 +3769,31 @@
         "attenuation": "Demping",
         "attenuationHelp": "Filteravtagshastighet. Høyere verdier gir brattere demping av filtrerte frekvenser.",
         "attenuationLevels": {
-          "0db": "0 dB",
+          "off": "Av",
           "12db": "12 dB",
           "24db": "24 dB",
           "36db": "36 dB",
-          "48db": "48 dB"
+          "48db": "48 dB",
+          "custom": "{db} dB"
         },
         "filterHelp": "Legg til flere filtre for å forme frekvensresponsen for optimal fugledeteksjon i ditt miljø.",
+        "emptyEntryRestored": "Skriv inn et tall. Den forrige verdien ble beholdt.",
         "graph": {
           "flatResponse": "Flat respons (ingen filtre brukt)",
           "frequency": "Frekvens (Hz)",
-          "gain": "Forsterkning (dB)"
+          "gain": "Forsterkning (dB)",
+          "loading": "Beregner frekvensresponsen...",
+          "updating": "Oppdaterer frekvensresponsen...",
+          "error": "Kunne ikke beregne frekvensresponsen. Den oppdateres når du endrer et filter, eller når du velger Prøv igjen.",
+          "sampleRate": "Beregnet for en samplingsfrekvens på {rate} Hz.",
+          "clipped": "Responsen topper på {peak} dB, over toppen av grafen.",
+          "skippedHeading": "{count, plural, one {# filter brukes ikke på lyden} other {# filtre brukes ikke på lyden}}",
+          "skippedReasons": {
+            "unknown_type": "Filter {number} ({type}, {frequency} Hz) hoppes over: denne filtertypen støttes ikke.",
+            "invalid_parameters": "Filter {number} ({type}, {frequency} Hz) hoppes over: innstillingene er ikke gyldige ved {rate} Hz.",
+            "add_failed": "Filter {number} ({type}, {frequency} Hz) hoppes over: det kunne ikke legges til i filterkjeden.",
+            "unknown": "Filter {number} ({type}, {frequency} Hz) hoppes over."
+          }
         }
       },
       "soundLevelMonitoring": {
