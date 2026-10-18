@@ -194,7 +194,7 @@ type carryoverHistoryDatastore struct {
 	gotEndDate      string
 }
 
-func (d *carryoverHistoryDatastore) GetSpeciesFirstDetectionInPeriod(_ context.Context, startDate, endDate string, _, _ int) ([]datastore.NewSpeciesData, error) {
+func (d *carryoverHistoryDatastore) GetSpeciesFirstDetectionInPeriod(_ context.Context, startDate, endDate string, _, _ int, _ ...uint) ([]datastore.NewSpeciesData, error) {
 	d.gotStartDate, d.gotEndDate = startDate, endDate
 	return d.firstDetections, nil
 }
