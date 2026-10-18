@@ -399,50 +399,111 @@ func TestNativeGate_ProfileRateSetsNyquist(t *testing.T) {
 	t.Setenv(conf.EnvNativeSpectrogramRenderer, "native")
 	gen, env := newNativeGenerator(t)
 	const (
-		srcRate   = 48000
 		toneHz    = 3000.0
 		birdNyq   = 12000.0
 		rawWidth  = nativeTestWidth
 		wantRow   = 96 // round((1 - 3000/12000) * (129 - 1))
 		sourceNyq = 24000.0
 	)
-	samples := toneSamples(srcRate, nativeTestSeconds, toneHz)
-	audio := writeNativeWAV(t, env.TempDir, "tone.wav", samples, srcRate)
 	require.NotEqual(t, wantRow, int(math.Round((1-toneHz/sourceNyq)*(nativeTestRows-1))), "the source rate must give a different row")
 	require.Equal(t, wantRow, int(math.Round((1-toneHz/birdNyq)*(nativeTestRows-1))))
 
-	fromFile := filepath.Join(env.TempDir, "file.png")
-	require.NoError(t, gen.GenerateFromFile(t.Context(), audio, fromFile, rawWidth, true))
-	fromPCM := filepath.Join(env.TempDir, "pcm.png")
-	require.NoError(t, gen.GenerateFromPCM(t.Context(), samplesToPCM(samples), fromPCM, rawWidth, true, srcRate))
+	// 48 kHz is analysed at its own rate, 44.1 kHz is not an exact multiple of the
+	// profile rate and 12 kHz is below it, so both of those are resampled.
+	tests := []struct {
+		name string
+		rate int
+	}{
+		{"48 kHz analysed without resampling", 48000},
+		{"44.1 kHz resampled", 44100},
+		{"12 kHz resampled", 12000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			samples := toneSamples(tt.rate, nativeTestSeconds, toneHz)
+			audio := writeNativeWAV(t, env.TempDir, "tone.wav", samples, tt.rate)
 
-	for name, path := range map[string]string{"file": fromFile, "pcm": fromPCM} {
-		img := decodePNG(t, path)
-		assert.InDelta(t, wantRow, brightestRow(img, img.Bounds().Dx()/2), 1, name)
+			fromFile := filepath.Join(env.TempDir, "file.png")
+			require.NoError(t, gen.GenerateFromFile(t.Context(), audio, fromFile, rawWidth, true))
+			fromPCM := filepath.Join(env.TempDir, "pcm.png")
+			require.NoError(t, gen.GenerateFromPCM(t.Context(), samplesToPCM(samples), fromPCM, rawWidth, true, tt.rate))
+
+			for name, path := range map[string]string{"file": fromFile, "pcm": fromPCM} {
+				img := decodePNG(t, path)
+				assert.InDelta(t, wantRow, brightestRow(img, img.Bounds().Dx()/2), 1, name)
+			}
+		})
 	}
 }
 
-func TestNativeGate_BatProfileSetsNyquist(t *testing.T) {
+// analysisSource keeps a clip at an accepted multiple of the profile rate at its
+// own rate and resamples every other clip to the profile rate.
+func TestAnalysisSource(t *testing.T) {
+	const birdHz = 24000
+	tests := []struct {
+		name        string
+		rate        int
+		profile     FrequencyProfile
+		wantRate    int
+		wantDisplay int
+	}{
+		{"bird 48 kHz is not resampled", 48000, BirdProfile(), 48000, birdHz},
+		{"bird 44.1 kHz is resampled", 44100, BirdProfile(), birdHz, birdHz},
+		{"bird 96 kHz is resampled", 96000, BirdProfile(), birdHz, birdHz},
+		{"bat 256 kHz keeps its rate", 256000, BatProfile(), 256000, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			decoded, err := transcode.MonoFromPCM16(samplesToPCM(toneSamples(tt.rate, 0.1, 1000)), tt.rate, 0)
+			require.NoError(t, err)
+
+			src, displayRate, err := analysisSource(decoded, tt.profile)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantRate, src.SampleRate())
+			assert.Equal(t, tt.wantDisplay, displayRate)
+		})
+	}
+}
+
+func TestNativeGate_BatProfileKeepsNativeRate(t *testing.T) {
 	t.Setenv(conf.EnvNativeSpectrogramRenderer, "native")
 	gen, env := newNativeGenerator(t)
 	const (
-		srcRate = 256000
-		toneHz  = 50000.0
-		batNyq  = 128000.0
-		seconds = 0.5
+		seconds     = 0.5
+		legacyNyqHz = 128000.0 // the old fixed bat axis, which must no longer apply
 	)
-	wantRow := int(math.Round((1 - toneHz/batNyq) * (nativeTestRows - 1)))
-	samples := toneSamples(srcRate, seconds, toneHz)
-	audio := writeNativeWAV(t, env.TempDir, "bat.wav", samples, srcRate)
+	tests := []struct {
+		name    string
+		srcRate int
+		toneHz  float64
+	}{
+		{"192 kHz clip", 192000, 80000},
+		{"256 kHz clip", 256000, 50000},
+		{"384 kHz clip", 384000, 150000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nyq := float64(tt.srcRate) / 2
+			wantRow := int(math.Round((1 - tt.toneHz/nyq) * (nativeTestRows - 1)))
+			legacyRow := int(math.Round((1 - tt.toneHz/legacyNyqHz) * (nativeTestRows - 1)))
+			samples := toneSamples(tt.srcRate, seconds, tt.toneHz)
+			audio := writeNativeWAV(t, env.TempDir, "bat.wav", samples, tt.srcRate)
 
-	fromFile := filepath.Join(env.TempDir, "file.png")
-	require.NoError(t, gen.GenerateFromFile(t.Context(), audio, fromFile, nativeTestWidth, true, WithFrequencyProfile(BatProfile())))
-	fromPCM := filepath.Join(env.TempDir, "pcm.png")
-	require.NoError(t, gen.GenerateFromPCM(t.Context(), samplesToPCM(samples), fromPCM, nativeTestWidth, true, srcRate, WithFrequencyProfile(BatProfile())))
+			fromFile := filepath.Join(env.TempDir, "file.png")
+			require.NoError(t, gen.GenerateFromFile(t.Context(), audio, fromFile, nativeTestWidth, true, WithFrequencyProfile(BatProfile())))
+			fromPCM := filepath.Join(env.TempDir, "pcm.png")
+			require.NoError(t, gen.GenerateFromPCM(t.Context(), samplesToPCM(samples), fromPCM, nativeTestWidth, true, tt.srcRate, WithFrequencyProfile(BatProfile())))
 
-	for name, path := range map[string]string{"file": fromFile, "pcm": fromPCM} {
-		img := decodePNG(t, path)
-		assert.InDelta(t, wantRow, brightestRow(img, img.Bounds().Dx()/2), 1, name)
+			for name, path := range map[string]string{"file": fromFile, "pcm": fromPCM} {
+				img := decodePNG(t, path)
+				got := brightestRow(img, img.Bounds().Dx()/2)
+				assert.InDelta(t, wantRow, got, 1, name)
+				if tt.srcRate != 256000 {
+					assert.NotEqual(t, legacyRow, got, "%s: row must not match a 128 kHz Nyquist", name)
+				}
+			}
+		})
 	}
 }
 
@@ -521,7 +582,7 @@ func TestRenderNative_OverwritesStaleTemp(t *testing.T) {
 	temp := filepath.Join(env.TempDir, "stale.png")
 	require.NoError(t, os.WriteFile(temp, bytes.Repeat([]byte("stale"), 1000), 0o600))
 
-	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
+	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), 0, temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
 
 	require.NoError(t, err)
 	requireNativePNG(t, temp)
@@ -537,7 +598,7 @@ func TestRenderNative_DoesNotWriteThroughASymlink(t *testing.T) {
 		t.Skipf("symlinks are not available: %v", err)
 	}
 
-	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
+	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), 0, temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
 
 	require.NoError(t, err)
 	got, readErr := os.ReadFile(victim) //nolint:gosec // G304: test path
@@ -554,7 +615,7 @@ func TestRenderNative_RemoveFailureIsFileIO(t *testing.T) {
 	require.NoError(t, os.MkdirAll(temp, 0o750))
 	require.NoError(t, os.WriteFile(filepath.Join(temp, "inner"), []byte("x"), 0o600))
 
-	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
+	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), 0, temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
 
 	require.Error(t, err)
 	enhanced, ok := errors.AsType[*errors.EnhancedError](err)
@@ -604,7 +665,7 @@ func TestRenderNative_OpenFailureIsFileIO(t *testing.T) {
 	gen, env := newNativeGenerator(t)
 	temp := filepath.Join(env.TempDir, "no-such-dir", "out.png")
 
-	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
+	err := gen.renderNative(t.Context(), env.Settings, nativeTestSource(t), 0, temp, nativeTestWidth, false, nativeOperationFile, 0, 0)
 
 	require.Error(t, err)
 	enhanced, ok := errors.AsType[*errors.EnhancedError](err)

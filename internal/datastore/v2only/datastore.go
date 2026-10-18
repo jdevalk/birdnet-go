@@ -881,6 +881,11 @@ func (ds *Datastore) Save(note *datastore.Note, results []datastore.Results) err
 	}
 	if note.ClipName != "" {
 		det.ClipName = &note.ClipName
+		// The rate describes the clip file, so it is stored only with a clip;
+		// an unknown rate stays NULL rather than 0.
+		if note.ClipSampleRate > 0 {
+			det.ClipSampleRate = &note.ClipSampleRate
+		}
 	}
 	if !note.BeginTime.IsZero() {
 		bt := note.BeginTime.UnixMilli()
@@ -1009,6 +1014,14 @@ func (ds *Datastore) Get(id string) (datastore.Note, error) {
 	return ds.detectionToNote(det), nil
 }
 
+// clipSampleRateValue returns the stored clip sample rate, or 0 when it is NULL.
+func clipSampleRateValue(rate *int) int {
+	if rate == nil {
+		return 0
+	}
+	return *rate
+}
+
 // detectionToNote converts a v2 Detection to a legacy Note, including the runtime-only
 // SpectrogramClipName of a detection whose audio was removed but whose spectrogram was kept.
 // Common name is looked up from the name maps which are built at startup.
@@ -1123,6 +1136,7 @@ func (ds *Datastore) detectionToNote(det *entities.Detection) datastore.Note {
 		Longitude:           lon,
 		ClipName:            clipName,
 		SpectrogramClipName: spectrogramClipName,
+		ClipSampleRate:      clipSampleRateValue(det.ClipSampleRate),
 		BeginTime:           beginTime,
 		EndTime:             endTime,
 		ProcessingTime:      processingTime,
@@ -1267,6 +1281,7 @@ func (ds *Datastore) detectionToRecord(det *entities.Detection) datastore.Detect
 		Unlikely:        det.Unlikely,
 		HasAudio:        hasAudio,
 		SpectrogramOnly: spectrogramOnly,
+		ClipSampleRate:  clipSampleRateValue(det.ClipSampleRate),
 		Device:          device,
 		Source:          source,
 		TimeOfDay:       timeOfDay,
@@ -1812,6 +1827,17 @@ func (ds *Datastore) GetNoteKeptSpectrogram(noteID string) (clipName, modelType 
 		clipName = *row.SpectrogramClipName
 	}
 	return clipName, modelType, nil
+}
+
+// RecordClipSampleRate forwards to the v2 detection repository, which holds the
+// guarded UPDATE and runs it under ctx.
+func (ds *Datastore) RecordClipSampleRate(ctx context.Context, noteID uint, clipName string, rate int) error {
+	return ds.detection.RecordClipSampleRate(ctx, noteID, clipName, rate)
+}
+
+// FillClipSampleRate forwards to the v2 detection repository, see RecordClipSampleRate.
+func (ds *Datastore) FillClipSampleRate(ctx context.Context, noteID uint, clipName string, rate int) (bool, error) {
+	return ds.detection.FillClipSampleRate(ctx, noteID, clipName, rate)
 }
 
 // DeleteNoteClipPath deletes the clip path for a note.
@@ -3299,14 +3325,24 @@ func (ds *Datastore) GetSpeciesFirstAndLastDetectionTimeBefore(ctx context.Conte
 
 	prefix := ds.manager.TablePrefix()
 	labelIDsClause, labelIDsArgs := labelIDsForScientificName(prefix, scientificName)
+	priorDetections := func(aggregate string) *gorm.DB {
+		return ds.manager.DB().
+			Table(prefix+"detections d").
+			Select(aggregate).
+			Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
+			Where("d.detected_at < ?", before.Unix()).
+			// See labelIDsForScientificName for the matching rule.
+			Where(labelIDsClause, labelIDsArgs...).
+			Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive))
+	}
+
+	// Each bound gets its own scalar subquery. SQLite answers a lone MIN() or
+	// MAX() by seeking to one end of the (label_id, detected_at) index, but
+	// with both in one SELECT it scans every matching row, which takes over a
+	// second for a species with hundreds of thousands of detections.
 	query := ds.manager.DB().WithContext(ctx).
-		Table(prefix+"detections d").
-		Select("MIN(d.detected_at) as first_detected_at, MAX(d.detected_at) as last_detected_at").
-		Joins(fmt.Sprintf("LEFT JOIN %sdetection_reviews dr ON d.id = dr.detection_id", prefix)).
-		Where("d.detected_at < ?", before.Unix()).
-		// See labelIDsForScientificName for the matching rule.
-		Where(labelIDsClause, labelIDsArgs...).
-		Where("(dr.verified IS NULL OR dr.verified != ?)", string(entities.VerificationFalsePositive))
+		Raw("SELECT (?) AS first_detected_at, (?) AS last_detected_at",
+			priorDetections("MIN(d.detected_at)"), priorDetections("MAX(d.detected_at)"))
 
 	if err := query.Scan(&result).Error; err != nil {
 		return nil, nil, errors.New(err).

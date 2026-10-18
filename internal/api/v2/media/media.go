@@ -641,11 +641,11 @@ var audioServeExtensions = []string{".flac", ".wav", ".opus", ".m4a", ".mp3", ".
 
 // findAlternateAudioPath looks for a completed clip that shares relClipPath's base
 // name but carries a different known audio extension. The DB clip_name and the
-// file on disk are normally kept in lockstep by resolveExportFormat, but a rare
-// resample-failure strand (or a manual rename) can still leave the stored name
-// pointing at a container the file was not written in; serving the actual file
-// beats a 404. It probes the fixed candidate names directly (no directory
-// listing), so it is O(1) per extension and deterministic on the ordered set.
+// file on disk normally agree, because the exporter writes the stored name. A
+// row written by an older version, or a manual rename, can still point at a
+// container the file was not written in; serving the actual file beats a 404.
+// It probes the fixed candidate names directly (no directory listing), so it is
+// O(1) per extension and deterministic on the ordered set.
 // Temp files are handled separately (findEncodingTempPath) and the original,
 // already-missing extension is skipped.
 func (c *Handler) findAlternateAudioPath(relClipPath string) (string, bool) {
@@ -846,10 +846,10 @@ func (c *Handler) noteCaptureTimes(noteID string) (begin, end time.Time) {
 // created the temp file yet or already renamed it. Returns nil if the file was
 // successfully served, or the original/translated error otherwise.
 func (c *Handler) handleAudio404WithWait(ctx echo.Context, relClipPath string, originalErr error, detectionBeginTime, detectionEndTime time.Time, logFields ...logger.Field) error {
-	// A completed clip whose stored name drifted from the file on disk (a rare
-	// resample-failure strand, or a manual rename) is served from its actual path
-	// rather than 404'd. resolveExportFormat keeps the deterministic cases in
-	// lockstep; this is the safety net for the rest. The Content-Type and
+	// A completed clip whose stored name drifted from the file on disk (a row from
+	// an older version, or a manual rename) is served from its actual path rather
+	// than 404'd. The exporter writes the stored name, so this is the safety net
+	// for such rows only. The Content-Type and
 	// Content-Disposition the caller set from the stored extension are rewritten to
 	// match the file actually served; the 404 above did not commit the response, so
 	// these still take effect.
@@ -1782,6 +1782,10 @@ var msgInvalidSpectrogramWidth = fmt.Sprintf("Spectrogram width must be between 
 // errInvalidSpectrogramWidth marks a legacy width parameter outside the supported bounds.
 var errInvalidSpectrogramWidth = errors.NewStd("spectrogram width out of range")
 
+// spectrogramRateParam is the query parameter carrying the clip sample rate (Hz)
+// the client labels its frequency axis with.
+const spectrogramRateParam = "sr"
+
 // spectrogramParameters holds parsed query parameters for spectrogram requests.
 // This struct is reusable across multiple endpoints.
 type spectrogramParameters struct {
@@ -1790,6 +1794,7 @@ type spectrogramParameters struct {
 	raw          bool   // Whether to generate raw spectrogram without axes
 	style        string // Visual style preset (from settings, used in filename to prevent stale cache)
 	dynamicRange string // Dynamic range in dB (from settings, used in filename to prevent stale cache)
+	overlayRate  int    // Clip sample rate (Hz) the client labels its axis with; > 0 selects exact-render-only serving, 0 when absent or invalid
 }
 
 // parseSpectrogramParameters extracts and validates spectrogram parameters from the request.
@@ -1803,6 +1808,9 @@ type spectrogramParameters struct {
 //   - width: Legacy parameter for custom width (100-2000px). Ignored if 'size' is present.
 //     A value that is not an integer is ignored like an unknown size.
 //   - raw: Whether to generate raw spectrogram without axes/legends
+//   - sr: Clip sample rate in Hz that the client draws its frequency axis from. A
+//     positive integer makes the endpoint serve only the exact current render of the
+//     clip and never a substitute; anything else is ignored.
 //
 // Style and dynamic range are read from settings (not query params) because they are
 // global settings that affect the visual appearance of all spectrograms. Including them
@@ -1815,6 +1823,9 @@ func (c *Handler) parseSpectrogramParameters(ctx echo.Context) (spectrogramParam
 		raw:          parseRawParameter(ctx.QueryParam("raw")),
 		style:        spec.Style,
 		dynamicRange: spec.DynamicRange,
+	}
+	if rate, err := strconv.Atoi(ctx.QueryParam(spectrogramRateParam)); err == nil && rate > 0 {
+		params.overlayRate = rate
 	}
 
 	// Parse size parameter
@@ -2082,6 +2093,12 @@ func (c *Handler) handleAutoPreRenderMode(ctx echo.Context, noteID, clipPath str
 //   - raw: Whether to generate raw spectrogram without axes/legends
 //     Default: true (for backward compatibility with cached spectrograms)
 //     Accepts: "true", "false", "1", "0", "t", "f", "yes", "no", "on", "off"
+//   - sr: Clip sample rate in Hz the client draws its frequency axis from. A positive
+//     integer makes the endpoint serve only the exact current render of the clip:
+//     where only a substitute (for example an older render at another frequency
+//     range) exists, it answers 404 instead. Invalid or absent values are ignored.
+//     If the detection's model type cannot be looked up, an sr request answers 503
+//     with Retry-After rather than rendering with a guessed profile.
 //
 // Response Format:
 // The response format varies based on the spectrogram generation mode setting and availability.
@@ -2145,8 +2162,19 @@ func (c *Handler) ServeSpectrogramByID(ctx echo.Context) error {
 	// Resolve frequency profile from detection's model type. The same profile drives
 	// both the generation effects (profileOpt) and the cache filename token
 	// (freqSuffix) so a bat render never collides with a bird-profile PNG. The helper
-	// logs a warning and falls back to the bird profile when the lookup fails.
-	profile := c.resolveDetectionFrequencyProfile(noteID)
+	// logs a warning and falls back to the bird profile when the lookup fails. A
+	// request that carries sr is the exception: its client labels the axis from the
+	// clip rate, so a guessed bird render would be cached under the wrong token and
+	// mislabelled. It gets a retryable 503 instead.
+	var profile spectrogram.FrequencyProfile
+	if params.overlayRate > 0 {
+		var lookupErr error
+		if profile, lookupErr = c.lookupFrequencyProfile(noteID); lookupErr != nil {
+			return c.writeProfileUnavailable(ctx, noteID, lookupErr)
+		}
+	} else {
+		profile = c.resolveDetectionFrequencyProfile(noteID)
+	}
 	profileOpt := spectrogram.WithFrequencyProfile(profile)
 	freqSuffix := spectrogram.ProfileSuffix(profile)
 
@@ -2252,7 +2280,9 @@ func (c *Handler) ServeSpectrogram(ctx echo.Context) error {
 //   - "failed": Generation failed
 //   - "exists": Already exists on disk
 //
-// A legacy width query value outside 100..2000 answers 400.
+// A legacy width query value outside 100..2000 answers 400. It answers 503 with
+// Retry-After when the detection's model type cannot be looked up, rather than
+// checking for a file under a guessed profile.
 func (c *Handler) GetSpectrogramStatus(ctx echo.Context) error {
 	// Defense in depth: initMediaRoutes already skips registering this handler when the
 	// datastore is disabled, but guard the c.DS dereferences below anyway.
@@ -2328,7 +2358,12 @@ func (c *Handler) GetSpectrogramStatus(ctx echo.Context) error {
 
 	// Resolve the profile token only after the queue miss (this path is about to stat
 	// the disk anyway), so queue-hit polls stay free of a model-type lookup.
-	freqSuffix := c.spectrogramProfileSuffix(noteID)
+	// A failed lookup answers 503 rather than checking for a file under a guessed profile.
+	profile, lookupErr := c.lookupFrequencyProfile(noteID)
+	if lookupErr != nil {
+		return c.writeProfileUnavailable(ctx, noteID, lookupErr)
+	}
+	freqSuffix := spectrogram.ProfileSuffix(profile)
 	_, _, _, relSpectrogramPath := buildSpectrogramPaths(relAudioPath, params.width, params.raw, params.style, params.dynamicRange, freqSuffix)
 
 	// Check if file exists and is non-empty
@@ -2356,38 +2391,6 @@ func (c *Handler) GetSpectrogramStatus(ctx echo.Context) error {
 	})
 }
 
-// GenerateSpectrogramByID triggers spectrogram generation for a specific detection
-//
-// Route: POST /api/v2/spectrogram/:id/generate
-//
-// This endpoint is designed for "user-requested" mode where spectrograms are only
-// generated when explicitly requested by the user clicking a button in the UI.
-//
-// Query Parameters:
-//   - size: Spectrogram size - "md" (514px), "lg" (1026px), "xl" (2050px)
-//     Default: "lg"
-//   - raw: Whether to generate raw spectrogram without axes/legends
-//     Default: true (for backward compatibility)
-//
-// Response Format (API v2 envelope):
-//
-//	{
-//	  "data": {
-//	    "status": "generated",
-//	    "path": "/api/v2/spectrogram/:id?raw=true"
-//	  },
-//	  "error": "",
-//	  "message": "Spectrogram generated successfully"
-//	}
-//
-// HTTP Status Codes:
-//   - 200 OK: Spectrogram generated successfully
-//   - 400 Bad Request: legacy width outside 100..2000
-//   - 503 Service Unavailable: Audio file not ready (includes Retry-After header)
-//   - 404 Not Found: Audio file not found
-//   - 408 Request Timeout: Generation timed out
-//   - 500 Internal Server Error: Generation failed
-//
 // runAsyncSpectrogramGeneration is the background worker spawned by
 // GenerateSpectrogramByID. It waits out any pending Extended Capture clip export before
 // generating, then records the outcome in the queue status and logs it: a clip that is
@@ -2476,6 +2479,40 @@ func (c *Handler) runAsyncSpectrogramGeneration(noteID, clipPath, relAudioPath, 
 		logger.String("spectrogram_path", spectrogramPath))
 }
 
+// GenerateSpectrogramByID triggers spectrogram generation for a specific detection
+//
+// Route: POST /api/v2/spectrogram/:id/generate
+//
+// This endpoint is designed for "user-requested" mode where spectrograms are only
+// generated when explicitly requested by the user clicking a button in the UI.
+//
+// Query Parameters:
+//   - size: Spectrogram size - "md" (514px), "lg" (1026px), "xl" (2050px)
+//     Default: "lg"
+//   - raw: Whether to generate raw spectrogram without axes/legends
+//     Default: true (for backward compatibility)
+//
+// Response Format (API v2 envelope), for 200 when the spectrogram already exists:
+//
+//	{
+//	  "data": {
+//	    "status": "exists",
+//	    "path": "/api/v2/spectrogram/:id?raw=true"
+//	  },
+//	  "error": "",
+//	  "message": "Spectrogram already exists"
+//	}
+//
+// A 202 carries the queue status in "data"; poll the status endpoint for progress.
+// A generation failure is reported through the status endpoint, not by this handler.
+//
+// HTTP Status Codes:
+//   - 200 OK: spectrogram already exists
+//   - 202 Accepted: generation queued or already in progress
+//   - 400 Bad Request: legacy width outside 100..2000
+//   - 404 Not Found: Audio file not found
+//   - 503 Service Unavailable: Audio file not ready, or the detection's model type
+//     could not be looked up (includes Retry-After header); nothing is queued or written
 func (c *Handler) GenerateSpectrogramByID(ctx echo.Context) error {
 	// Validate note ID and get clip path using shared helper
 	noteID, clipPath, err := c.validateNoteIDAndGetClipPath(ctx)
@@ -2519,8 +2556,13 @@ func (c *Handler) GenerateSpectrogramByID(ctx echo.Context) error {
 
 	// Resolve the detection's frequency profile up front: it feeds both the cache
 	// filename/queue-key token (so a bat render does not collide with a bird PNG)
-	// and the generation options threaded into the async worker below.
-	profile := c.resolveDetectionFrequencyProfile(noteID)
+	// and the generation options threaded into the async worker below. A failed
+	// lookup answers 503 instead of guessing: nothing is queued or written under a
+	// wrong profile.
+	profile, lookupErr := c.lookupFrequencyProfile(noteID)
+	if lookupErr != nil {
+		return c.writeProfileUnavailable(ctx, noteID, lookupErr)
+	}
 	freqSuffix := spectrogram.ProfileSuffix(profile)
 
 	// Build the spectrogram path (for the on-disk existence check) and the immutable
@@ -2709,23 +2751,40 @@ func getSpectrogramLogger() logger.Logger {
 
 // resolveDetectionFrequencyProfile resolves a detection's spectrogram frequency
 // profile from its model type, defaulting to the bird profile when the model
-// type cannot be looked up.
+// type cannot be looked up. Do not use it where a wrong profile would be persisted
+// or reported; use lookupFrequencyProfile there.
 func (c *Handler) resolveDetectionFrequencyProfile(noteID string) spectrogram.FrequencyProfile {
-	modelType, err := c.DS.GetNoteModelType(noteID)
+	profile, err := c.lookupFrequencyProfile(noteID)
 	if err != nil {
 		c.LogWarnIfEnabled("GetNoteModelType failed, defaulting to bird profile",
 			logger.String("note_id", noteID),
 			logger.Error(err))
 	}
-	return spectrogram.ProfileForModelType(modelType)
+	return profile
 }
 
-// spectrogramProfileSuffix resolves the frequency-profile cache token for a
-// detection so by-ID spectrogram paths and queue keys do not collide with the
-// default bird-profile render. Returns "" (bird) when the model type cannot be
-// resolved.
-func (c *Handler) spectrogramProfileSuffix(noteID string) string {
-	return spectrogram.ProfileSuffix(c.resolveDetectionFrequencyProfile(noteID))
+// lookupFrequencyProfile returns the frequency profile for a detection's model type.
+// On a failed lookup it returns the bird profile together with the error, so a
+// caller that must not render with a guessed profile can refuse.
+func (c *Handler) lookupFrequencyProfile(noteID string) (spectrogram.FrequencyProfile, error) {
+	modelType, err := c.DS.GetNoteModelType(noteID)
+	return spectrogram.ProfileForModelType(modelType), err
+}
+
+// msgSpectrogramProfileUnavailable is the 503 message returned when a detection's
+// model type cannot be looked up and the request must not guess a profile.
+const msgSpectrogramProfileUnavailable = "Spectrogram profile is not available yet, please retry"
+
+// writeProfileUnavailable answers a retryable 503 with Retry-After when the model
+// type lookup failed and the caller must not render or report under a guessed
+// profile. It logs at Debug only, so a transient database error does not reach the
+// error log, Sentry or the notification bell. Used by the by-ID serve (sr requests),
+// generate and status handlers.
+func (c *Handler) writeProfileUnavailable(ctx echo.Context, noteID string, err error) error {
+	c.LogDebugIfEnabled("Model type lookup failed, not guessing the spectrogram profile",
+		logger.String("note_id", noteID),
+		logger.Error(err))
+	return c.writeAudioNotReady(ctx, err, msgSpectrogramProfileUnavailable, minRetryAfterSeconds)
 }
 
 // buildSpectrogramPaths constructs the spectrogram file paths from the audio path and parameters.
@@ -2745,7 +2804,7 @@ func buildSpectrogramPaths(relAudioPath string, width int, raw bool, style, dyna
 	// produce no suffix for backward compatibility with existing cached spectrograms.
 	styleSuffix := buildStyleSuffix(style, dynamicRange)
 
-	// Append the frequency-profile token (e.g. "bat-v2") so renders made with a
+	// Append the frequency-profile token (e.g. "bat-v3") so renders made with a
 	// non-default profile get a distinct filename and do not collide with an
 	// existing bird-profile PNG. Bird (empty token) keeps the legacy filename.
 	if freqSuffix != "" {
@@ -3649,7 +3708,9 @@ func (c *Handler) generateSpectrogram(ctx context.Context, audioPath string, wid
 // Export.Path changes mid-flight. An empty queueKey falls back to the path-based
 // buildSpectrogramKey, which is also used as the singleflight coalescing key so that
 // concurrent requests for the same on-disk file still share one generation pass.
-// audioPath is retained only for log and error context.
+// audioPath is retained only for log and error context. After a fresh render with a
+// non-empty freqSuffix it also removes, best-effort, the default-profile file and the
+// files of any token that suffix supersedes (spectrogram.SupersededSuffixesForToken).
 func (c *Handler) generateSpectrogramFromRel(ctx context.Context, relAudioPath, audioPath, queueKey string, width int, raw bool, style, dynamicRange, freqSuffix string, extraOpts ...spectrogram.GenerateOption) (string, error) {
 	start := time.Now()
 	getSpectrogramLogger().Debug("Spectrogram generation requested",
@@ -3834,18 +3895,29 @@ func (c *Handler) generateSpectrogramFromRel(ctx context.Context, relAudioPath, 
 	// old bird-profile image (e.g. one cached while the bat gate was disabled) is not
 	// left orphaned alongside the new one. Best-effort: a missing file is fine.
 	if freqSuffix != "" {
-		if _, _, _, birdRelPath := buildSpectrogramPaths(relAudioPath, width, raw, style, dynamicRange, ""); birdRelPath != relSpectrogramPath {
-			absBirdPath := filepath.Join(c.SFS.BaseDir(), birdRelPath)
-			if rmErr := c.SFS.Remove(absBirdPath); rmErr != nil && !os.IsNotExist(rmErr) {
-				getSpectrogramLogger().Debug("Failed to remove stale default-profile spectrogram",
-					logger.String("path", birdRelPath),
-					logger.Error(rmErr))
-			}
-		}
+		c.removeStaleRender(relAudioPath, width, raw, style, dynamicRange, "")
+	}
+
+	// A superseded profile token (e.g. bat-v2 and bat for bat-v3) left renders with
+	// a different frequency range next to the new one. Remove them the same way.
+	for _, oldSuffix := range spectrogram.SupersededSuffixesForToken(freqSuffix) {
+		c.removeStaleRender(relAudioPath, width, raw, style, dynamicRange, oldSuffix)
 	}
 
 	// Return the relative path of the newly created spectrogram
 	return relSpectrogramPath, nil
+}
+
+// removeStaleRender removes, best-effort, the render of the clip that carries
+// staleSuffix instead of the current profile token (callers pass a suffix that
+// differs from the one just written). A missing file is fine.
+func (c *Handler) removeStaleRender(relAudioPath string, width int, raw bool, style, dynamicRange, staleSuffix string) {
+	_, _, _, staleRel := buildSpectrogramPaths(relAudioPath, width, raw, style, dynamicRange, staleSuffix)
+	if rmErr := c.SFS.Remove(filepath.Join(c.SFS.BaseDir(), staleRel)); rmErr != nil && !os.IsNotExist(rmErr) {
+		getSpectrogramLogger().Debug("Failed to remove stale spectrogram render",
+			logger.String("path", staleRel),
+			logger.Error(rmErr))
+	}
 }
 
 // Note: createSpectrogramWithSoX, getSoxSpectrogramArgs, createSpectrogramWithFFmpeg,
