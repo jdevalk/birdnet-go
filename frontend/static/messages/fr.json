@@ -2793,7 +2793,7 @@
           "title": "Ce qui est inclus dans le rapport :",
           "applicationLogs": "**Journaux d'application** - Erreurs récentes et informations de débogage",
           "configuration": "**Configuration** - Vos paramètres avec les données sensibles supprimées",
-          "systemInfo": "**Informations système** - Version du système d'exploitation, mémoire et détails d'exécution",
+          "systemInfo": "**Informations système** - Version du système d'exploitation, mémoire, matériel, périphériques USB connectés et cartes son, et détails d'exécution",
           "notIncluded": "**NON inclus** - Fichiers audio, détections d'oiseaux ou données personnelles"
         },
         "userMessage": {
@@ -2946,6 +2946,11 @@
             "unit": "min",
             "helpText": "Empêche les notifications répétées pour la même espèce pendant cette période. Mettre à 0 pour désactiver."
           }
+        },
+        "rulesNotice": {
+          "message": "Les notifications push de détection proviennent des règles d'alerte de l'onglet Règles. Les règles de détection intégrées notifient uniquement dans l'application. Pour recevoir des notifications push, ajoutez l'action {pushAction} à la règle {ruleName}, ou créez une règle pour l'événement {eventName} avec une condition de confiance et un délai.",
+          "previousFilters": "Vos réglages Confiance minimale ({confidence} %) et Délai par espèce ({minutes} min) définis ici ne sont pas utilisés par les règles d'alerte.",
+          "openRules": "Ouvrir les règles"
         },
         "noProviders": "Aucun fournisseur configuré",
         "noProvidersDescription": "Ajoutez un fournisseur pour commencer à recevoir des notifications push",

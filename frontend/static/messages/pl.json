@@ -2793,7 +2793,7 @@
           "title": "Co jest zawarte w raporcie:",
           "applicationLogs": "**Logi aplikacji** - Ostatnie błędy i informacje debugowania",
           "configuration": "**Konfiguracja** - Twoje ustawienia z usuniętymi wrażliwymi danymi",
-          "systemInfo": "**Informacje systemowe** - Wersja systemu operacyjnego, pamięć i szczegóły środowiska uruchomieniowego",
+          "systemInfo": "**Informacje systemowe** - Wersja systemu operacyjnego, pamięć, sprzęt, podłączone urządzenia USB i karty dźwiękowe oraz szczegóły środowiska uruchomieniowego",
           "notIncluded": "**NIE zawiera** - Pliki audio, detekcje ptaków ani dane osobowe"
         },
         "userMessage": {
@@ -2946,6 +2946,11 @@
             "unit": "min",
             "helpText": "Zapobiegaj powtórnym powiadomieniom dla tego samego gatunku w tym oknie czasowym. Ustaw na 0, aby wyłączyć."
           }
+        },
+        "rulesNotice": {
+          "message": "Powiadomienia push o wykryciach pochodzą z reguł alertów na karcie Reguły. Wbudowane reguły wykryć powiadamiają tylko w aplikacji. Aby otrzymywać powiadomienia push, dodaj akcję {pushAction} do reguły {ruleName} lub utwórz regułę dla zdarzenia {eventName} z warunkiem pewności i czasem odnowienia.",
+          "previousFilters": "Ustawienia Minimalna pewność ({confidence} %) i Czas oczekiwania gatunku ({minutes} min) wprowadzone tutaj nie są używane przez reguły alertów.",
+          "openRules": "Otwórz Reguły"
         },
         "noProviders": "Brak skonfigurowanych dostawców",
         "noProvidersDescription": "Dodaj dostawcę, aby zacząć otrzymywać powiadomienia push",

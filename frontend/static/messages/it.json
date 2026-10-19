@@ -2794,7 +2794,7 @@
           "title": "Cosa è incluso nel rapporto:",
           "applicationLogs": "**Log applicazione** - Errori recenti e informazioni debug",
           "configuration": "**Configurazione** - Le tue impostazioni con dati sensibili rimossi",
-          "systemInfo": "**Informazioni sistema** - Versione OS, memoria e dettagli runtime",
+          "systemInfo": "**Informazioni sistema** - Versione OS, memoria, hardware, dispositivi USB collegati e schede audio, e dettagli runtime",
           "notIncluded": "**NON incluso** - File audio, rilevamenti uccelli o dati personali"
         },
         "userMessage": {
@@ -2947,6 +2947,11 @@
             "unit": "min",
             "helpText": "Previene notifiche ripetute per la stessa specie entro questa finestra temporale. Imposta a 0 per disabilitare."
           }
+        },
+        "rulesNotice": {
+          "message": "Le notifiche push dei rilevamenti provengono dalle regole di allerta nella scheda Regole. Le regole di rilevamento predefinite notificano solo nell'app. Per ricevere notifiche push, aggiungi l'azione {pushAction} alla regola {ruleName}, oppure crea una regola per l'evento {eventName} con una condizione di confidenza e un tempo di attesa.",
+          "previousFilters": "Le regole di allerta non usano le impostazioni Confidenza Minima ({confidence} %) e Raffreddamento Specie ({minutes} min) definite qui.",
+          "openRules": "Apri Regole"
         },
         "noProviders": "Nessun fornitore configurato",
         "noProvidersDescription": "Aggiungi un fornitore per iniziare a ricevere notifiche push",

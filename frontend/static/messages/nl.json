@@ -2793,7 +2793,7 @@
           "title": "Wat is opgenomen in het rapport:",
           "applicationLogs": "**Applicatie logs** - Recente fouten en debug informatie",
           "configuration": "**Configuratie** - Jouw instellingen met gevoelige gegevens verwijderd",
-          "systemInfo": "**Systeem informatie** - OS versie, geheugen, en runtime details",
+          "systemInfo": "**Systeem informatie** - OS versie, geheugen, hardware, aangesloten USB-apparaten en geluidskaarten, en runtime details",
           "notIncluded": "**NIET opgenomen** - Audio bestanden, vogel herkenningen, of persoonlijke gegevens"
         },
         "userMessage": {
@@ -2946,6 +2946,11 @@
             "unit": "min",
             "helpText": "Voorkom herhaalde notificaties voor dezelfde soort binnen dit tijdvenster. Stel in op 0 om uit te schakelen."
           }
+        },
+        "rulesNotice": {
+          "message": "Pushmeldingen voor detecties komen van de waarschuwingsregels op het tabblad Regels. De ingebouwde detectieregels melden alleen in de app. Voeg voor pushmeldingen de actie {pushAction} toe aan de regel {ruleName}, of maak een regel voor de gebeurtenis {eventName} met een betrouwbaarheidsvoorwaarde en een wachttijd.",
+          "previousFilters": "Uw instellingen Minimale betrouwbaarheid ({confidence} %) en Soort-afkoeltijd ({minutes} min) hier worden niet gebruikt door waarschuwingsregels.",
+          "openRules": "Regels openen"
         },
         "noProviders": "Geen providers geconfigureerd",
         "noProvidersDescription": "Voeg een provider toe om pushmeldingen te ontvangen",

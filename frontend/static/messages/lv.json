@@ -2794,7 +2794,7 @@
           "title": "Kas ir iekļauts ziņojumā:",
           "applicationLogs": "**Lietojumprogrammas žurnāli** - nesenie kļūdu un atkļūdošanas ieraksti",
           "configuration": "**Konfigurācija** - jūsu iestatījumi ar noņemtiem sensitīviem datiem",
-          "systemInfo": "**Sistēmas informācija** - OS versija, atmiņa un izpildlaika detaļas",
+          "systemInfo": "**Sistēmas informācija** - OS versija, atmiņa, aparatūra, pievienotās USB ierīces un skaņas kartes, kā arī izpildlaika detaļas",
           "notIncluded": "**NAV iekļauts** - audio faili, putnu noteikšanas vai personiskie dati"
         },
         "userMessage": {
@@ -2947,6 +2947,11 @@
             "unit": "min",
             "helpText": "Novērst atkārtotus paziņojumus par to pašu sugu šajā laika periodā. Iestatiet 0, lai atspējotu."
           }
+        },
+        "rulesNotice": {
+          "message": "Push paziņojumus par noteikšanām sūta brīdinājumu noteikumi cilnē Noteikumi. Iebūvētie noteikšanas noteikumi paziņo tikai lietotnē. Lai saņemtu push paziņojumus, pievienojiet darbību {pushAction} noteikumam {ruleName} vai izveidojiet noteikumu notikumam {eventName} ar ticamības nosacījumu un atdzišanas periodu.",
+          "previousFilters": "Brīdinājumu noteikumi neizmanto šeit iestatītās vērtības Minimālā ticamība ({confidence}%) un Sugas pauze ({minutes} min).",
+          "openRules": "Atvērt Noteikumus"
         },
         "noProviders": "Nav konfigurētu nodrošinātāju",
         "noProvidersDescription": "Pievienojiet nodrošinātāju, lai sāktu saņemt push paziņojumus",

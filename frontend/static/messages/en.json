@@ -2794,7 +2794,7 @@
           "title": "What's included in the report:",
           "applicationLogs": "**Application logs** - Recent errors and debug information",
           "configuration": "**Configuration** - Your settings with sensitive data removed",
-          "systemInfo": "**System information** - OS version, memory, and runtime details",
+          "systemInfo": "**System information** - OS version, memory, hardware, connected USB devices and sound cards, and runtime details",
           "notIncluded": "**NOT included** - Audio files, bird detections, or personal data"
         },
         "userMessage": {
@@ -2947,6 +2947,11 @@
             "unit": "min",
             "helpText": "Prevent repeated notifications for the same species within this time window. Set to 0 to disable."
           }
+        },
+        "rulesNotice": {
+          "message": "Detection push notifications come from alert rules on the Rules tab. The built-in detection rules notify only in the app. To get pushes, add the {pushAction} action to the {ruleName} rule, or create a rule for the {eventName} event with a confidence condition and a cooldown.",
+          "previousFilters": "Your Minimum Confidence ({confidence}%) and Species Cooldown ({minutes} min) settings here are not used by alert rules.",
+          "openRules": "Open Rules"
         },
         "noProviders": "No providers configured",
         "noProvidersDescription": "Add a provider to start receiving push notifications",
