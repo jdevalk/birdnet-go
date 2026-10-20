@@ -16,7 +16,7 @@ require (
 	github.com/invopop/jsonschema v0.14.0
 	github.com/jarcoal/httpmock v1.4.2
 	github.com/jlaffaye/ftp v0.2.4
-	github.com/klauspost/cpuid/v2 v2.4.0
+	github.com/klauspost/cpuid/v2 v2.4.1
 	github.com/labstack/echo/v4 v4.16.0
 	github.com/labstack/gommon v0.5.0
 	github.com/markbates/goth v1.82.0
@@ -41,11 +41,11 @@ require (
 	github.com/tphakala/go-audio-dsp v0.10.1
 	github.com/tphakala/go-audio-resampler v1.9.0
 	github.com/tphakala/go-audio-stream v0.6.0
-	github.com/tphakala/go-flac v1.3.0
+	github.com/tphakala/go-flac v1.4.0
 	github.com/tphakala/go-hls v0.1.0
-	github.com/tphakala/go-m4a v0.7.0
+	github.com/tphakala/go-m4a v0.8.0
 	github.com/tphakala/go-mp3 v0.2.0
-	github.com/tphakala/go-opus v1.2.1
+	github.com/tphakala/go-opus v1.3.0
 	github.com/tphakala/go-tflite v0.2.2-0.20260514101223-29408e53fff7
 	github.com/tphakala/go-wav v1.1.0
 	github.com/yalue/onnxruntime_go v1.30.1
