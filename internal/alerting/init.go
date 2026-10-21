@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"slices"
+	"strconv"
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/conf"
+	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
 	"github.com/tphakala/birdnet-go/internal/datastore/v2/repository"
 	"github.com/tphakala/birdnet-go/internal/events"
 	"github.com/tphakala/birdnet-go/internal/logger"
@@ -358,7 +361,12 @@ func Initialize(
 }
 
 // seedDefaultRules ensures all built-in default rules exist. It checks by name
-// so partial seeds from previous runs self-heal on restart.
+// so partial seeds from previous runs self-heal on restart. It also adds the
+// default escalation steps to existing built-in rules that lack them,
+// including legacy rows without a name key. The two checks differ on purpose:
+// a rule counts as already seeded by name alone, but only counts as the shipped
+// default for migration when its trigger and conditions match too (see
+// defaultRuleFor).
 func seedDefaultRules(ctx context.Context, repo repository.AlertRuleRepository, log logger.Logger) error {
 	existing, err := repo.ListRules(ctx, repository.AlertRuleFilter{})
 	if err != nil {
@@ -386,25 +394,123 @@ func seedDefaultRules(ctx context.Context, repo repository.AlertRuleRepository, 
 		log.Info("seeded default alert rules", logger.Int("created", created))
 	}
 
-	// Migrate existing built-in rules: populate EscalationSteps on rules
-	// that were seeded before escalation support was added.
-	allDefaults := DefaultRules()
-	defaultSteps := make(map[string][]float64, len(allDefaults))
-	for i := range allDefaults {
-		if allDefaults[i].BuiltIn && len(allDefaults[i].EscalationSteps) > 0 {
-			defaultSteps[allDefaults[i].NameKey] = allDefaults[i].EscalationSteps
+	migrateEscalationSteps(ctx, repo, existing, log)
+
+	return nil
+}
+
+// defaultRuleFor returns the shipped default that a stored built-in rule was
+// seeded from. Rules with a NameKey match the default with the same key. Rules
+// seeded before name keys existed have an empty NameKey and match the default
+// with the same Name. Either way the trigger definition and conditions must be
+// equal to the default's too, so a rule whose threshold was changed is not
+// mistaken for the default and given steps that start above its threshold.
+func defaultRuleFor(rule *entities.AlertRule, defaults []entities.AlertRule) (*entities.AlertRule, bool) {
+	if !rule.BuiltIn {
+		return nil, false
+	}
+	for i := range defaults {
+		def := &defaults[i]
+		var identified bool
+		if rule.NameKey != "" {
+			identified = def.NameKey == rule.NameKey
+		} else {
+			identified = def.Name == rule.Name
+		}
+		if identified && sameTrigger(rule, def) {
+			return def, true
 		}
 	}
+	return nil, false
+}
+
+// SameThreshold reports whether two rules fire at the same values: the same
+// object type, trigger type, metric and event, and the same conditions on
+// Property, Operator and Value (numbers compare by value under a numeric operator). Conditions are all
+// required to hold, so their order does not matter. It decides whether escalation steps still fit a rule,
+// because a stepped rule fires only at or above its lowest step. DurationSec is
+// not compared: steps do not depend on how long a condition must hold.
+func SameThreshold(a, b *entities.AlertRule) bool {
+	return sameRuleShape(a, b) &&
+		sameConditions(a.Conditions, b.Conditions, func(x, y entities.AlertCondition) bool {
+			return x.Property == y.Property && x.Operator == y.Operator && sameConditionValue(x.Operator, x.Value, y.Value)
+		})
+}
+
+// sameTrigger reports whether two rules have the same trigger definition and
+// conditions: SameThreshold, with the same matching of conditions and values,
+// plus an equal DurationSec on each matched condition. IDs, sort order and
+// timestamps are ignored.
+func sameTrigger(a, b *entities.AlertRule) bool {
+	return sameRuleShape(a, b) &&
+		sameConditions(a.Conditions, b.Conditions, func(x, y entities.AlertCondition) bool {
+			return x.Property == y.Property && x.Operator == y.Operator && sameConditionValue(x.Operator, x.Value, y.Value) &&
+				x.DurationSec == y.DurationSec
+		})
+}
+
+// sameConditionValue reports whether two condition values are equal under an
+// operator. For the numeric operators the evaluator reads the value as a number,
+// so values that both parse as numbers are compared as numbers: "90" and "90.0"
+// are the same threshold. Any other operator compares text, and then the values
+// must match exactly.
+func sameConditionValue(operator, a, b string) bool {
+	if a == b {
+		return true
+	}
+	if !slices.Contains(numericOperators, operator) {
+		return false
+	}
+	fa, errA := strconv.ParseFloat(a, 64)
+	fb, errB := strconv.ParseFloat(b, 64)
+	return errA == nil && errB == nil && fa == fb
+}
+
+// sameRuleShape reports whether two rules have the same object type, trigger
+// type, metric and event.
+func sameRuleShape(a, b *entities.AlertRule) bool {
+	return a.ObjectType == b.ObjectType && a.TriggerType == b.TriggerType &&
+		a.MetricName == b.MetricName && a.EventName == b.EventName
+}
+
+// sameConditions reports whether a and b hold the same conditions in any order,
+// where same says when two conditions are equal. Each condition of b matches at
+// most one condition of a, so [x, x] and [x, y] differ.
+func sameConditions(a, b []entities.AlertCondition, same func(x, y entities.AlertCondition) bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	used := make([]bool, len(b))
+	for _, x := range a {
+		matched := false
+		for i, y := range b {
+			if !used[i] && same(x, y) {
+				used[i] = true
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+// migrateEscalationSteps fills EscalationSteps on stored built-in rules that
+// were seeded before escalation support was added. Rules that already have
+// steps are left alone, and so are rules whose trigger or conditions differ
+// from the default (see defaultRuleFor). A failed update is logged and does
+// not stop the remaining rules.
+func migrateEscalationSteps(ctx context.Context, repo repository.AlertRuleRepository, existing []entities.AlertRule, log logger.Logger) {
+	allDefaults := DefaultRules()
 	for i := range existing {
 		rule := &existing[i]
-		if !rule.BuiltIn || rule.NameKey == "" {
+		def, ok := defaultRuleFor(rule, allDefaults)
+		if !ok || len(def.EscalationSteps) == 0 || len(rule.EscalationSteps) > 0 {
 			continue
 		}
-		steps, ok := defaultSteps[rule.NameKey]
-		if !ok || len(rule.EscalationSteps) > 0 {
-			continue
-		}
-		rule.EscalationSteps = steps
+		rule.EscalationSteps = slices.Clone(def.EscalationSteps)
 		if err := repo.UpdateRule(ctx, rule); err != nil {
 			log.Warn("failed to migrate escalation steps for built-in rule",
 				logger.String("name", rule.Name),
@@ -414,6 +520,4 @@ func seedDefaultRules(ctx context.Context, repo repository.AlertRuleRepository, 
 		log.Info("migrated escalation steps for built-in rule",
 			logger.String("name", rule.Name))
 	}
-
-	return nil
 }
