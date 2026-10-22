@@ -1600,7 +1600,7 @@
           "restartTitle": "Vyžadován restart",
           "restartBody": "Restartujte aplikaci pro přepnutí na databázi V2. Vyčištění původní databáze bude k dispozici po restartu.",
           "fallbackError": "Nesoulad počtu záznamů mezi původní a V2 databází. Některé záznamy se možná nemigrovaly správně.",
-          "migrateInfo": "Migrace přenese {count} záznamů z původní databáze do nového schématu V2. Režim duálního zápisu zajišťuje nulovou ztrátu dat během migrace.",
+          "migrateInfo": "Migrace přenese {count} záznamů z původní databáze do nového schématu V2. Nové detekce uložené během migrace se také zkopírují do nové databáze.",
           "sourceLegacy": "Zdroj (původní)",
           "targetV2": "Cíl (V2)",
           "recordsLabel": "Záznamy",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Systém můžete dále běžně používat, zatímco migrace běží na pozadí.",
-          "dual_write": "Migrace probíhá. Vaše data jsou v bezpečí - všechny nové detekce se ukládají do obou databází.",
+          "dual_write": "Migrace probíhá. Vaše data jsou v bezpečí - nové detekce se ukládají do stávající databáze a během migrace se kopírují do nové databáze.",
           "migrating": "Kopírují se vaše stávající detekce do nové databáze.",
           "validating": "Ověřuje se, zda byly všechny záznamy zkopírovány správně. Téměř hotovo!",
           "cutover": "Přepínání na novou databázi. Zabere to jen okamžik.",
@@ -3256,10 +3256,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Nahrávat detekce do BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg nebyl nalezen",
-          "message": "Nainstalujte prosím FFmpeg pro povolení podpory kódování FLAC. BirdWeather ukončuje podporu nahrávání WAV ve prospěch komprimovaných zvukových souborů FLAC."
-        },
         "enable": "Povolit nahrávání do BirdWeather",
         "token": {
           "label": "Token BirdWeather",
@@ -5079,6 +5075,7 @@
       "loop": "Přepnout opakování",
       "player": "Přehrávač zvuku",
       "autoplayBlocked": "Kliknutím spustíte přehrávání (automatické přehrávání blokováno)",
+      "hlsLoadFailed": "Nepodařilo se načíst přehrávač zvuku, obnovte stránku a zkuste to znovu",
       "hlsNotSupported": "Přehrávání HLS není v tomto prohlížeči podporováno",
       "streamStarting": "Spouštění audio streamu...",
       "levelFor": "Úroveň zvuku pro {source}",
@@ -5313,6 +5310,9 @@
       "invalidJSON": "Neplatný JSON",
       "invalidEscalation": "Eskalační kroky jsou neplatné",
       "engineUnavailable": "Správce výstrah není dostupný"
+    },
+    "insights": {
+      "v2Required": "Přehledy vyžadují rozšířenou databázi (v2)"
     },
     "detection": {
       "invalidDate": "Neplatný formát {paramName}, použijte RRRR-MM-DD"

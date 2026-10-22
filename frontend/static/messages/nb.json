@@ -1600,7 +1600,7 @@
           "restartTitle": "Omstart kreves",
           "restartBody": "Start applikasjonen på nytt for å bytte til V2-databasen. Opprydding av eldre database vil være tilgjengelig etter omstart.",
           "fallbackError": "Antall poster stemmer ikke mellom eldre og V2-database. Noen poster kan ikke ha migrert korrekt.",
-          "migrateInfo": "Migreringen vil overføre {count} poster fra den eldre databasen til det nye V2-skjemaet. Dobbeltskrivemodus sikrer nulldatatap under migrering.",
+          "migrateInfo": "Migreringen vil overføre {count} poster fra den eldre databasen til det nye V2-skjemaet. Nye registreringer som lagres under migreringen kopieres også til den nye databasen.",
           "sourceLegacy": "Kilde (eldre)",
           "targetV2": "Mål (V2)",
           "recordsLabel": "Poster",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Du kan fortsette å bruke systemet normalt mens migreringen kjører i bakgrunnen.",
-          "dual_write": "Migrering pågår. Dataene dine er trygge - alle nye registreringer lagres i begge databaser.",
+          "dual_write": "Migrering pågår. Dataene dine er trygge - nye registreringer lagres i den gjeldende databasen og kopieres til den nye databasen under migreringen.",
           "migrating": "Kopierer eksisterende registreringer til den nye databasen.",
           "validating": "Verifiserer at alle poster er kopiert korrekt. Nesten ferdig!",
           "cutover": "Bytter til den nye databasen. Dette tar bare et øyeblikk.",
@@ -3256,10 +3256,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Last opp registreringer til BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg ikke funnet",
-          "message": "Installer FFmpeg for å aktivere FLAC-kodingsstøtte. BirdWeather avvikler WAV-opplastinger til fordel for komprimerte FLAC-lydfiler."
-        },
         "enable": "Aktiver BirdWeather-opplastinger",
         "token": {
           "label": "BirdWeather-token",
@@ -5079,6 +5075,7 @@
       "loop": "Veksle sløyfe",
       "player": "Lydspiller",
       "autoplayBlocked": "Klikk for å spille av (autoavspilling blokkert)",
+      "hlsLoadFailed": "Kunne ikke laste lydspilleren, last siden på nytt og prøv igjen",
       "hlsNotSupported": "HLS-avspilling støttes ikke i denne nettleseren",
       "streamStarting": "Starter lydstrøm...",
       "levelFor": "Lydnivå for {source}",
@@ -5313,6 +5310,9 @@
       "invalidJSON": "Ugyldig JSON",
       "invalidEscalation": "Eskaleringstrinn er ugyldige",
       "engineUnavailable": "Varslingsmotoren er utilgjengelig"
+    },
+    "insights": {
+      "v2Required": "Innsikt krever den forbedrede (v2) databasen"
     },
     "detection": {
       "invalidDate": "Ugyldig {paramName}-format, bruk ÅÅÅÅ-MM-DD"

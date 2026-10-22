@@ -147,12 +147,21 @@ debug: false # Enable debug messages for troubleshooting
 main:
   name: BirdNET-Go # Name of this node, used to identify the source of notes
   timeas24h: true # true for 24-hour time format, false for 12-hour time format
-  log:
-    enabled: false # Enable main application logging
-    path: logs/birdnet.log # Path to log file
-    rotation: daily # Log rotation type: daily, weekly, or size
-    maxsize: 10485760 # Maximum log size in bytes for size rotation (10MB)
-    rotationday: Sunday # Day of the week for weekly rotation
+
+# Application logging settings
+logging:
+  default_level: info # Default log level for all modules: debug, info, warn, error
+  console:
+    enabled: true # Enable console output
+    level: info # Log level for console output
+  file_output:
+    enabled: true # Enable file output
+    path: logs/application.log # Path to log file
+    level: info # Log level for file output
+    max_size: 100 # Maximum size in MB before rotation (0 = disabled)
+    max_age: 30 # Maximum age in days to keep rotated logs (0 = no limit)
+    max_rotated_files: 10 # Maximum number of rotated log files to keep (0 = no limit)
+    compress: false # Compress rotated logs with gzip
 
 # BirdNET model specific settings
 birdnet:
@@ -243,9 +252,9 @@ realtime:
     locationaccuracy: 10 # Accuracy of location in meters
     retrysettings:
       enabled: true # Enable retry mechanism
-      maxretries: 5 # Maximum number of retry attempts
-      initialdelay: 5 # Initial delay before first retry in seconds
-      maxdelay: 300 # Maximum delay between retries in seconds
+      maxretries: 3 # Maximum number of retry attempts
+      initialdelay: 30 # Initial delay before first retry in seconds
+      maxdelay: 600 # Maximum delay between retries in seconds
       backoffmultiplier: 2.0 # Multiplier for exponential backoff
 
   # Weather integration settings
@@ -292,9 +301,11 @@ realtime:
     retrysettings:
       enabled: true # Enable retry mechanism
       maxretries: 5 # Maximum number of retry attempts
-      initialdelay: 5 # Initial delay before first retry in seconds
-      maxdelay: 300 # Maximum delay between retries in seconds
+      initialdelay: 30 # Initial delay before first retry in seconds
+      maxdelay: 3600 # Maximum delay between retries in seconds
       backoffmultiplier: 2.0 # Multiplier for exponential backoff
+      # Retries apply when a publish fails with an error. While the broker connection is down, publishes are skipped:
+      # they are not queued or retried, so detections made during an outage are not sent later.
 
   # Telemetry settings
   telemetry:
@@ -351,12 +362,6 @@ webserver:
   debug: false # Enable debug mode for web server
   enabled: true # Enable web server
   port: "8080" # Port for web server
-  log:
-    enabled: false # Enable web server logging
-    path: logs/webserver.log # Path to log file
-    rotation: daily # Log rotation type: daily, weekly, or size
-    maxsize: 10485760 # Maximum log size in bytes for size rotation (10MB)
-    rotationday: Sunday # Day of the week for weekly rotation
 
 # Security settings
 security:
@@ -3532,10 +3537,6 @@ realtime:
 
 ## Log Rotation
 
-The application supports several log rotation strategies:
-
-- Daily rotation
-- Weekly rotation (on a specified day)
-- Size-based rotation (with configurable maximum size)
+Rotation is based on file size only. Once the active log file grows past `logging.file_output.max_size` (megabytes), it is rotated out. The `max_age` (days), `max_rotated_files` (count) and `compress` (gzip) options under `logging.file_output` decide how long rotated files are kept and whether they are compressed. The [Configuration Reference](configuration-reference.md) lists every option in the `logging` section.
 
 This helps manage log files for long-running installations.

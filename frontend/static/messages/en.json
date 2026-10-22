@@ -1600,7 +1600,7 @@
           "restartTitle": "Restart Required",
           "restartBody": "Restart the application to switch to the V2 database. Legacy database cleanup will be available after restart.",
           "fallbackError": "Record count mismatch between legacy and V2 databases. Some records may not have migrated correctly.",
-          "migrateInfo": "Migration will transfer {count} records from the legacy database to the new V2 schema. Dual-write mode ensures zero data loss during migration.",
+          "migrateInfo": "Migration will transfer {count} records from the legacy database to the new V2 schema. New detections saved during migration are copied to the new database as well.",
           "sourceLegacy": "Source (Legacy)",
           "targetV2": "Target (V2)",
           "recordsLabel": "Records",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "You can continue using the system normally while migration runs in the background.",
-          "dual_write": "Migration in progress. Your data is safe - all new detections are being saved to both databases.",
+          "dual_write": "Migration in progress. Your data is safe - new detections are saved to the current database and copied to the new database as the migration runs.",
           "migrating": "Copying your existing detections to the new database.",
           "validating": "Verifying all records were copied correctly. Almost done!",
           "cutover": "Switching to the new database. This only takes a moment.",
@@ -3256,10 +3256,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Upload detections to BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg not detected",
-          "message": "Please install FFmpeg to enable FLAC encoding support, BirdWeather is deprecating WAV uploads in favor of compressed FLAC audio files."
-        },
         "enable": "Enable BirdWeather Uploads",
         "token": {
           "label": "BirdWeather token",
@@ -5079,6 +5075,7 @@
       "loop": "Toggle loop",
       "player": "Audio player",
       "autoplayBlocked": "Click to play (autoplay blocked)",
+      "hlsLoadFailed": "Could not load the audio player, reload the page and try again",
       "hlsNotSupported": "HLS playback not supported in this browser",
       "streamStarting": "Starting audio stream...",
       "levelFor": "Audio level for {source}",
@@ -5313,6 +5310,9 @@
       "invalidJSON": "Invalid JSON",
       "invalidEscalation": "Escalation steps are invalid",
       "engineUnavailable": "Alerting engine is unavailable"
+    },
+    "insights": {
+      "v2Required": "Insights require the enhanced (v2) database"
     },
     "detection": {
       "invalidDate": "Invalid {paramName} format, use YYYY-MM-DD"

@@ -1600,7 +1600,7 @@
           "restartTitle": "Herstart vereist",
           "restartBody": "Herstart de applicatie om naar de V2-database te schakelen. Opruiming van de oude database is beschikbaar na herstart.",
           "fallbackError": "Verschil in recordaantal tussen legacy- en V2-database. Sommige records zijn mogelijk niet correct gemigreerd.",
-          "migrateInfo": "De migratie zal {count} records overzetten van de legacy-database naar het nieuwe V2-schema. De dual-write-modus garandeert nul dataverlies tijdens de migratie.",
+          "migrateInfo": "De migratie zal {count} records overzetten van de legacy-database naar het nieuwe V2-schema. Nieuwe detecties die tijdens de migratie worden opgeslagen, worden ook naar de nieuwe database gekopieerd.",
           "sourceLegacy": "Bron (legacy)",
           "targetV2": "Doel (V2)",
           "recordsLabel": "Records",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "U kunt het systeem normaal blijven gebruiken terwijl de migratie op de achtergrond draait.",
-          "dual_write": "Migratie is bezig. Uw gegevens zijn veilig - alle nieuwe detecties worden opgeslagen in beide databases. U kunt BirdNET-Go gewoon blijven gebruiken.",
+          "dual_write": "Migratie is bezig. Uw gegevens zijn veilig - nieuwe detecties worden opgeslagen in de huidige database en tijdens de migratie naar de nieuwe database gekopieerd. U kunt BirdNET-Go gewoon blijven gebruiken.",
           "migrating": "Bestaande detecties worden gekopieerd naar de nieuwe database. Dit kan even duren afhankelijk van hoeveel detecties u heeft. U kunt op elk moment pauzeren en hervatten.",
           "validating": "Controleren of alle records correct zijn gekopieerd. Bijna klaar!",
           "cutover": "Overschakelen naar de nieuwe database. Dit duurt slechts een moment.",
@@ -3255,10 +3255,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Upload herkenningen naar BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg niet gedetecteerd",
-          "message": "Installeer FFmpeg om FLAC encoding ondersteuning in te schakelen, BirdWeather stopt met WAV uploads ten gunste van gecomprimeerde FLAC audio bestanden."
-        },
         "enable": "Schakel BirdWeather Uploads in",
         "token": {
           "label": "BirdWeather-token",
@@ -5078,6 +5074,7 @@
       "loop": "Herhaling aan/uit",
       "player": "Audiospeler",
       "autoplayBlocked": "Klik om af te spelen (autoplay geblokkeerd)",
+      "hlsLoadFailed": "De audiospeler kon niet worden geladen, laad de pagina opnieuw en probeer het nogmaals",
       "hlsNotSupported": "HLS-weergave wordt niet ondersteund in deze browser",
       "streamStarting": "Audiostream wordt gestart...",
       "levelFor": "Audioniveau voor {source}",
@@ -5312,6 +5309,9 @@
       "invalidJSON": "Ongeldige JSON",
       "invalidEscalation": "Escalatiestappen zijn ongeldig",
       "engineUnavailable": "Alerting-engine is niet beschikbaar"
+    },
+    "insights": {
+      "v2Required": "Inzichten vereisen de uitgebreide (v2) database"
     },
     "detection": {
       "invalidDate": "Ongeldig {paramName}-formaat, gebruik JJJJ-MM-DD"

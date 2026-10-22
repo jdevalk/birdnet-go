@@ -1600,7 +1600,7 @@
           "restartTitle": "Nepieciešama restartēšana",
           "restartBody": "Restartējiet lietojumprogrammu, lai pārslēgtos uz V2 datubāzi. Mantotās datubāzes tīrīšana būs pieejama pēc restartēšanas.",
           "fallbackError": "Ierakstu skaita neatbilstība starp mantoto un V2 datubāzēm. Daži ieraksti, iespējams, nav pareizi migrēti.",
-          "migrateInfo": "Migrācija pārsūtīs {count} ierakstus no mantotās datubāzes uz jauno V2 shēmu. Dubultrakstīšanas režīms nodrošina nulles datu zudumu migrācijas laikā.",
+          "migrateInfo": "Migrācija pārsūtīs {count} ierakstus no mantotās datubāzes uz jauno V2 shēmu. Migrācijas laikā saglabātās jaunās atpazīšanas tiek kopētas arī uz jauno datubāzi.",
           "sourceLegacy": "Avots (mantotā)",
           "targetV2": "Mērķis (V2)",
           "recordsLabel": "Ieraksti",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Varat turpināt normāli izmantot sistēmu, kamēr migrācija darbojas fonā.",
-          "dual_write": "Migrācija noris. Jūsu dati ir drošībā - visas jaunās atpazīšanas tiek saglabātas abās datubāzēs.",
+          "dual_write": "Migrācija noris. Jūsu dati ir drošībā - jaunās atpazīšanas tiek saglabātas pašreizējā datubāzē un migrācijas laikā tiek kopētas uz jauno datubāzi.",
           "migrating": "Kopē jūsu esošās atpazīšanas uz jauno datubāzi.",
           "validating": "Pārbauda, vai visi ieraksti tika pareizi nokopēti. Gandrīz gatavs!",
           "cutover": "Pārslēdzas uz jauno datubāzi. Tas aizņem tikai brīdi.",
@@ -3256,10 +3256,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Augšupielādēt noteikšanas uz BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg nav atrasts",
-          "message": "Lūdzu, instalējiet FFmpeg, lai iespējotu FLAC kodēšanas atbalstu. BirdWeather pārtrauc WAV augšupielādes par labu saspiestiem FLAC audio failiem."
-        },
         "enable": "Iespējot BirdWeather augšupielādes",
         "token": {
           "label": "BirdWeather tokens",
@@ -5079,6 +5075,7 @@
       "loop": "Pārslēgt cilpu",
       "player": "Audio atskaņotājs",
       "autoplayBlocked": "Noklikšķiniet, lai atskaņotu (automātiskā atskaņošana bloķēta)",
+      "hlsLoadFailed": "Neizdevās ielādēt audio atskaņotāju, lūdzu, pārlādējiet lapu un mēģiniet vēlreiz",
       "hlsNotSupported": "HLS atskaņošana šajā pārlūkā netiek atbalstīta",
       "streamStarting": "Tiek startēta audio straume...",
       "levelFor": "Audio līmenis avotam {source}",
@@ -5313,6 +5310,9 @@
       "invalidJSON": "Nederīgs JSON",
       "invalidEscalation": "Eskalācijas soļi nav derīgi",
       "engineUnavailable": "Brīdinājumu dzinis nav pieejams"
+    },
+    "insights": {
+      "v2Required": "Analīzei nepieciešama uzlabotā (v2) datubāze"
     },
     "detection": {
       "invalidDate": "Nederīgs {paramName} formāts, izmantojiet YYYY-MM-DD"

@@ -2398,8 +2398,6 @@ export type TranslationKey =
   | 'settings.filters.errors.speciesLoadFailed'
   | 'settings.integration.birdweather.title'
   | 'settings.integration.birdweather.description'
-  | 'settings.integration.birdweather.ffmpegWarning.title'
-  | 'settings.integration.birdweather.ffmpegWarning.message'
   | 'settings.integration.birdweather.enable'
   | 'settings.integration.birdweather.token.label'
   | 'settings.integration.birdweather.token.helpText'
@@ -3728,6 +3726,7 @@ export type TranslationKey =
   | 'media.audio.loop'
   | 'media.audio.player'
   | 'media.audio.autoplayBlocked'
+  | 'media.audio.hlsLoadFailed'
   | 'media.audio.hlsNotSupported'
   | 'media.audio.streamStarting'
   | 'media.audio.levelFor' // params: source
@@ -3896,6 +3895,7 @@ export type TranslationKey =
   | 'errors.alert.invalidJSON'
   | 'errors.alert.invalidEscalation'
   | 'errors.alert.engineUnavailable'
+  | 'errors.insights.v2Required'
   | 'errors.detection.invalidDate' // params: paramName
   | 'errors.backup.invalidType'
   | 'errors.backup.alreadyRunning'

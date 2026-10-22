@@ -1600,7 +1600,7 @@
           "restartTitle": "Reinicialização necessária",
           "restartBody": "Reinicie o aplicativo para mudar para o banco de dados V2. A limpeza do banco de dados legado estará disponível após a reinicialização.",
           "fallbackError": "Divergência na contagem de registos entre os bancos de dados legado e V2. Alguns registos podem não ter sido migrados corretamente.",
-          "migrateInfo": "A migração transferirá {count} registos do banco de dados legado para o novo esquema V2. O modo de escrita dupla garante zero perda de dados durante a migração.",
+          "migrateInfo": "A migração transferirá {count} registos do banco de dados legado para o novo esquema V2. As novas detecções salvas durante a migração também são copiadas para o novo banco de dados.",
           "sourceLegacy": "Origem (legado)",
           "targetV2": "Destino (V2)",
           "recordsLabel": "Registos",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Você pode continuar usando o sistema normalmente enquanto a migração é executada em segundo plano.",
-          "dual_write": "Migração em andamento. Seus dados estão seguros - todas as novas detecções estão sendo salvas em ambos os bancos de dados. Você pode continuar usando o BirdNET-Go normalmente.",
+          "dual_write": "Migração em andamento. Seus dados estão seguros - as novas detecções são salvas no banco de dados atual e copiadas para o novo banco de dados durante a migração. Você pode continuar usando o BirdNET-Go normalmente.",
           "migrating": "Copiando suas detecções existentes para o novo banco de dados. Isso pode demorar um pouco dependendo de quantas detecções você tem. Você pode pausar e retomar a qualquer momento.",
           "validating": "Verificando se todos os registos foram copiados corretamente. Quase pronto!",
           "cutover": "Alternando para o novo banco de dados. Isso leva apenas um momento.",
@@ -3255,10 +3255,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Enviar detecções para o BirdWeather",
-        "ffmpegWarning": {
-          "title": "FFmpeg não detectado",
-          "message": "Por favor, instale o FFmpeg para habilitar o suporte à codificação FLAC. O BirdWeather está descontinuando uploads WAV em favor de arquivos de áudio FLAC comprimidos."
-        },
         "enable": "Ativar uploads para BirdWeather",
         "token": {
           "label": "Token do BirdWeather",
@@ -5078,6 +5074,7 @@
       "loop": "Alternar repetição",
       "player": "Reprodutor de áudio",
       "autoplayBlocked": "Clique para reproduzir (reprodução automática bloqueada)",
+      "hlsLoadFailed": "Não foi possível carregar o reprodutor de áudio, recarregue a página e tente novamente",
       "hlsNotSupported": "A reprodução HLS não é suportada neste navegador",
       "streamStarting": "Iniciando transmissão de áudio...",
       "levelFor": "Nível de áudio para {source}",
@@ -5312,6 +5309,9 @@
       "invalidJSON": "JSON inválido",
       "invalidEscalation": "Os passos de escalação são inválidos",
       "engineUnavailable": "O mecanismo de alerta está indisponível"
+    },
+    "insights": {
+      "v2Required": "As análises requerem a base de dados melhorada (v2)"
     },
     "detection": {
       "invalidDate": "Formato de {paramName} inválido, utilize AAAA-MM-DD"

@@ -1600,7 +1600,7 @@
           "restartTitle": "Neustart erforderlich",
           "restartBody": "Starten Sie die Anwendung neu, um zur V2-Datenbank zu wechseln. Die Bereinigung der Legacy-Datenbank ist nach dem Neustart verfügbar.",
           "fallbackError": "Abweichung der Datensatzanzahl zwischen Legacy- und V2-Datenbank. Einige Datensätze wurden möglicherweise nicht korrekt migriert.",
-          "migrateInfo": "Die Migration überträgt {count} Datensätze von der Legacy-Datenbank in das neue V2-Schema. Der Dual-Write-Modus stellt sicher, dass während der Migration keine Daten verloren gehen.",
+          "migrateInfo": "Die Migration überträgt {count} Datensätze von der Legacy-Datenbank in das neue V2-Schema. Während der Migration gespeicherte neue Erkennungen werden ebenfalls in die neue Datenbank kopiert.",
           "sourceLegacy": "Quelle (Legacy)",
           "targetV2": "Ziel (V2)",
           "recordsLabel": "Datensätze",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Sie können das System normal weiter verwenden, während die Migration im Hintergrund läuft.",
-          "dual_write": "Migration läuft. Ihre Daten sind sicher - alle neuen Erkennungen werden in beide Datenbanken gespeichert. Sie können BirdNET-Go normal weiter nutzen.",
+          "dual_write": "Migration läuft. Ihre Daten sind sicher - neue Erkennungen werden in der aktuellen Datenbank gespeichert und während der Migration in die neue Datenbank kopiert. Sie können BirdNET-Go normal weiter nutzen.",
           "migrating": "Kopiere Ihre bestehenden Erkennungen in die neue Datenbank. Dies kann je nach Anzahl der Erkennungen eine Weile dauern. Sie können jederzeit pausieren und fortsetzen.",
           "validating": "Überprüfe, ob alle Datensätze korrekt kopiert wurden. Fast fertig!",
           "cutover": "Wechsle zur neuen Datenbank. Das dauert nur einen Moment.",
@@ -3255,10 +3255,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Erkennungen zu BirdWeather hochladen",
-        "ffmpegWarning": {
-          "title": "FFmpeg nicht erkannt",
-          "message": "Bitte installieren Sie FFmpeg, um die FLAC-Kodierungsunterstützung zu aktivieren. BirdWeather veraltet WAV-Uploads zugunsten komprimierter FLAC-Audiodateien."
-        },
         "enable": "BirdWeather-Uploads aktivieren",
         "token": {
           "label": "BirdWeather-Token",
@@ -5078,6 +5074,7 @@
       "loop": "Wiederholung umschalten",
       "player": "Audioplayer",
       "autoplayBlocked": "Klicken zum Abspielen (Autoplay blockiert)",
+      "hlsLoadFailed": "Der Audioplayer konnte nicht geladen werden, bitte die Seite neu laden und erneut versuchen",
       "hlsNotSupported": "HLS-Wiedergabe wird in diesem Browser nicht unterstützt",
       "streamStarting": "Audiostream wird gestartet...",
       "levelFor": "Audiopegel für {source}",
@@ -5312,6 +5309,9 @@
       "invalidJSON": "Ungültiges JSON",
       "invalidEscalation": "Eskalationsstufen sind ungültig",
       "engineUnavailable": "Die Alerting-Engine ist nicht verfügbar"
+    },
+    "insights": {
+      "v2Required": "Einblicke erfordern die erweiterte (v2) Datenbank"
     },
     "detection": {
       "invalidDate": "Ungültiges {paramName}-Format, verwenden Sie JJJJ-MM-TT"

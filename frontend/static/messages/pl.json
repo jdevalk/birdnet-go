@@ -1600,7 +1600,7 @@
           "restartTitle": "Wymagane ponowne uruchomienie",
           "restartBody": "Uruchom ponownie aplikację, aby przełączyć się na bazę danych V2. Czyszczenie starszej bazy danych będzie dostępne po ponownym uruchomieniu.",
           "fallbackError": "Niezgodność liczby rekordów między starszą bazą danych a V2. Niektóre rekordy mogły nie zostać poprawnie zmigrowane.",
-          "migrateInfo": "Migracja przeniesie {count} rekordów ze starszej bazy danych do nowego schematu V2. Tryb podwójnego zapisu zapewnia brak utraty danych podczas migracji.",
+          "migrateInfo": "Migracja przeniesie {count} rekordów ze starszej bazy danych do nowego schematu V2. Nowe wykrycia zapisane podczas migracji są również kopiowane do nowej bazy danych.",
           "sourceLegacy": "Źródło (starsza)",
           "targetV2": "Cel (V2)",
           "recordsLabel": "Rekordy",
@@ -1652,7 +1652,7 @@
         },
         "notes": {
           "in_progress": "Możesz normalnie korzystać z systemu, podczas gdy migracja działa w tle.",
-          "dual_write": "Migracja w toku. Twoje dane są bezpieczne - wszystkie nowe wykrycia są zapisywane w obu bazach danych. Możesz nadal normalnie korzystać z BirdNET-Go.",
+          "dual_write": "Migracja w toku. Twoje dane są bezpieczne - nowe wykrycia są zapisywane w bieżącej bazie danych i kopiowane do nowej bazy podczas migracji. Możesz nadal normalnie korzystać z BirdNET-Go.",
           "migrating": "Kopiowanie istniejących wykryć do nowej bazy danych. Może to potrwać, w zależności od liczby wykryć. Możesz wstrzymać i wznowić w dowolnym momencie.",
           "validating": "Sprawdzanie, czy wszystkie rekordy zostały poprawnie skopiowane. Prawie gotowe!",
           "cutover": "Przełączanie na nową bazę danych. To zajmie tylko chwilę.",
@@ -3255,10 +3255,6 @@
       "birdweather": {
         "title": "BirdWeather",
         "description": "Przesyłaj detekcje do BirdWeather",
-        "ffmpegWarning": {
-          "title": "Nie wykryto FFmpeg",
-          "message": "Proszę zainstalować FFmpeg, aby włączyć obsługę kodowania FLAC, BirdWeather wycofuje przesyłanie WAV na rzecz skompresowanych plików audio FLAC."
-        },
         "enable": "Włącz Przesyłanie do BirdWeather",
         "token": {
           "label": "Token BirdWeather",
@@ -5078,6 +5074,7 @@
       "loop": "Przełącz pętlę",
       "player": "Odtwarzacz audio",
       "autoplayBlocked": "Kliknij, aby odtworzyć (autoodtwarzanie zablokowane)",
+      "hlsLoadFailed": "Nie udało się załadować odtwarzacza audio, odśwież stronę i spróbuj ponownie",
       "hlsNotSupported": "Odtwarzanie HLS nie jest obsługiwane w tej przeglądarce",
       "streamStarting": "Uruchamianie strumienia audio...",
       "levelFor": "Poziom dźwięku dla {source}",
@@ -5312,6 +5309,9 @@
       "invalidJSON": "Nieprawidłowy JSON",
       "invalidEscalation": "Kroki eskalacji są nieprawidłowe",
       "engineUnavailable": "Silnik alertów jest niedostępny"
+    },
+    "insights": {
+      "v2Required": "Analizy wymagają rozszerzonej bazy danych (v2)"
     },
     "detection": {
       "invalidDate": "Nieprawidłowy format {paramName}, użyj RRRR-MM-DD"
