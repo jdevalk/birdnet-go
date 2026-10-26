@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tphakala/birdnet-go/internal/analysis/privacyrollup"
 	"github.com/tphakala/birdnet-go/internal/classifier"
 	"github.com/tphakala/birdnet-go/internal/conf"
 	"github.com/tphakala/birdnet-go/internal/observability/metrics"
@@ -199,7 +200,7 @@ func (c *chunkAudio) coverage() audioSpan {
 func (p *Processor) recordHumanDetection(source string, at time.Time, trigger string) {
 	p.detectionMutex.Lock()
 	defer p.detectionMutex.Unlock()
-	p.recordHumanHitLocked(source, at, trigger, "", 0)
+	p.recordHumanHitLocked(source, humanHit{at: at, trigger: trigger, thresholdMilli: privacyrollup.NoThresholdMilli})
 }
 
 // recordHumanHitLocked is recordHumanDetection for a caller that already holds
@@ -207,12 +208,12 @@ func (p *Processor) recordHumanDetection(source string, at time.Time, trigger st
 // its score. The hit joins the per-source attribution list (every counted hit,
 // whichever model produced it, so the discard log can name all contributors)
 // and moves LastHumanDetection forward under the rule of recordHumanDetection.
-func (p *Processor) recordHumanHitLocked(source string, at time.Time, trigger, modelID string, score float64) {
-	p.appendHumanHitLocked(source, humanHit{at: at, trigger: trigger, modelID: modelID, score: score})
-	if existing, ok := p.LastHumanDetection[source]; ok && !at.After(existing.Time) {
+func (p *Processor) recordHumanHitLocked(source string, hit humanHit) {
+	p.appendHumanHitLocked(source, hit)
+	if existing, ok := p.LastHumanDetection[source]; ok && !hit.at.After(existing.Time) {
 		return
 	}
-	p.LastHumanDetection[source] = HumanDetection{Time: at, Trigger: trigger, ModelID: modelID, Score: score}
+	p.LastHumanDetection[source] = HumanDetection{Time: hit.at, Trigger: hit.trigger, ModelID: hit.modelID, Score: hit.score, ThresholdMilli: hit.thresholdMilli}
 }
 
 // clipSpan returns the exact audio span the exporter saves for a pending
@@ -399,6 +400,9 @@ type privacyCheck struct {
 	hit     HumanDetection
 	hasHit  bool
 	verdict coverageVerdict
+	// detector is the detector the coverage verdict was computed for
+	// (metrics.TriggerLabel or metrics.TriggerVAD).
+	detector string
 	// contributions lists who produced the counted hits that reach the saved clip
 	// (see hitContributionsLocked). Filled only with privacyfilter.debug on and a
 	// latest hit that reaches the clip, for the discard log.
@@ -430,7 +434,9 @@ func (p *Processor) checkPrivacy(settings *conf.Settings, item *PendingDetection
 	p.detectionMutex.RLock()
 	defer p.detectionMutex.RUnlock()
 	hit, hasHit := p.LastHumanDetection[item.Source]
-	check := privacyCheck{clip: clip, hit: hit, hasHit: hasHit, verdict: p.coverageVerdictLocked(settings, item.Source, item.BestModelID, clip, now)}
+	detector := p.requiredDetectorLocked(settings, item.Source, now)
+	check := privacyCheck{clip: clip, hit: hit, hasHit: hasHit, detector: detector,
+		verdict: p.coverageVerdictLocked(settings, detector, item.Source, item.BestModelID, clip, now)}
 	// Only a hit that reaches the clip leads to a discard, so only then is the
 	// contributor list of any use.
 	reachFrom := clip.from.Add(-privacyClipGuard)
@@ -440,15 +446,15 @@ func (p *Processor) checkPrivacy(settings *conf.Settings, item *PendingDetection
 	return check
 }
 
-// coverageVerdictLocked is the coverage half of checkPrivacy; model is the model
+// coverageVerdictLocked is the coverage half of checkPrivacy; detector is the
+// required detector of the source (requiredDetectorLocked) and model the model
 // of the pending detection. With the VAD as the required detector, one stream
 // covering the padded clip keeps it; with the label detector one current model
 // must have covered all of it and every current model its own share
 // (labelCoverageCoversLocked). Otherwise the verdict defers
 // until the clip end plus privacyCoverageMaxWait, then reports a timeout. The
 // caller must hold detectionMutex.
-func (p *Processor) coverageVerdictLocked(settings *conf.Settings, source, model string, clip audioSpan, now time.Time) coverageVerdict {
-	detector := p.requiredDetectorLocked(settings, source, now)
+func (p *Processor) coverageVerdictLocked(settings *conf.Settings, detector, source, model string, clip audioSpan, now time.Time) coverageVerdict {
 	if !p.hasRecentCoverageLocked(source, detector, now) && !speechBandModel(model) {
 		// No detector has recently scored the source, and the detection comes from
 		// a model whose audio cannot carry speech (the ultrasonic bat model) or
@@ -552,7 +558,7 @@ const (
 	humanHitRetention = time.Duration(conf.MaxExtendedCaptureDuration)*time.Second +
 		humanHitMaxPreCapture + privacyCoverageMaxWait + privacyClipGuard
 
-	// humanHitMaxPerSource bounds the attribution list of one source (about 0.5 MB),
+	// humanHitMaxPerSource bounds the attribution list of one source (about 0.6 MB),
 	// so a long stretch of continuous speech cannot grow it without limit. Once it
 	// is reached the oldest entries by arrival order go first, and contributor
 	// counts are a lower bound.
@@ -563,13 +569,30 @@ const (
 	vadHitModelID = "silero_vad"
 )
 
-// humanHit is one counted speech hit kept for attribution: when it was stamped,
-// what produced it and how strongly.
+// humanHit is the one carrier of a speech hit: the audio end it was stamped
+// with, what produced it (trigger and model), its score and the threshold it was
+// scored against in thousandths. It serves the attribution list, held label hits
+// and the reporting of hit decisions. thresholdMilli is kept so a later
+// confirmation or drop reports the threshold of the hit and not the one in
+// effect when it resolves.
 type humanHit struct {
-	at      time.Time
-	trigger string
-	modelID string
-	score   float64
+	at             time.Time
+	trigger        string
+	modelID        string // model that scored the hit, empty when unknown
+	score          float64
+	thresholdMilli int
+}
+
+// labelHumanHit is a human label hit scored by modelID with confidence, against
+// the privacy filter confidence threshold thresholdMilli (in thousandths).
+func labelHumanHit(at time.Time, modelID string, confidence float32, thresholdMilli int) humanHit {
+	return humanHit{at: at, trigger: metrics.TriggerLabel, modelID: modelID, score: float64(confidence), thresholdMilli: thresholdMilli}
+}
+
+// vadHumanHit is a VAD speech hit with its speech probability, attributed to
+// vadHitModelID, against the VAD threshold thresholdMilli (in thousandths).
+func vadHumanHit(at time.Time, probability float64, thresholdMilli int) humanHit {
+	return humanHit{at: at, trigger: metrics.TriggerVAD, modelID: vadHitModelID, score: probability, thresholdMilli: thresholdMilli}
 }
 
 // appendHumanHitLocked adds hit to the attribution list of source and drops

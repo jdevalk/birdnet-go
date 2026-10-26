@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/analysis/jobqueue"
+	"github.com/tphakala/birdnet-go/internal/analysis/privacyrollup"
 	"github.com/tphakala/birdnet-go/internal/analysis/species"
 	"github.com/tphakala/birdnet-go/internal/audiocore"
 	"github.com/tphakala/birdnet-go/internal/audiocore/audioformat"
@@ -90,12 +91,16 @@ type Processor struct {
 	privacyCoverage map[coverageKey][]audioSpan
 	// heldLabelHits holds the label hit of each source waiting for a second hit
 	// (see recordLabelHit), guarded by detectionMutex and created lazily.
-	heldLabelHits map[string]heldLabelHit
+	heldLabelHits map[string]humanHit
 	// humanHits lists the counted speech hits of each source with the model or
 	// VAD gate that produced them (see appendHumanHitLocked), guarded by
 	// detectionMutex and created lazily. The discard log reads it to name every
 	// contributor to a verdict.
-	humanHits        map[string][]humanHit
+	humanHits map[string][]humanHit
+	// privacyRollup receives privacy filter activity for the hourly rollup. It is
+	// set once before Start (SetPrivacyRollup) and never written again, so it needs
+	// no lock; nil leaves every hit site a no-op.
+	privacyRollup    privacyrollup.Recorder
 	controlChan      chan string
 	JobQueue         *jobqueue.JobQueue // Queue for managing job retries
 	workerCancel     context.CancelFunc // Function to cancel worker goroutines
@@ -787,91 +792,98 @@ func (p *Processor) processDetections(item classifier.Results) {
 	hitAt, _ := audioEndOrNow(&item)
 
 	for i := range detectionResults {
-		det := detectionResults[i]
-		commonName := strings.ToLower(det.Result.Species.CommonName)
-		confidence := det.Result.Confidence
-
-		// Lock the mutex to ensure thread-safe access to shared resources
-		p.pendingMutex.Lock()
-
-		now := time.Now()
-		mapKey := pendingKeyForDetection(item.Source.ID, &det)
-
-		if existing, exists := p.pendingDetections[mapKey]; exists {
-			// Update the existing detection (may be from same or different model)
-			oldConfidence := existing.Confidence
-			existing.LastUpdated = now
-			existing.AudioCapturedAt = item.AudioCapturedAt
-			if confidence > existing.Confidence {
-				existing.Detection = det
-				existing.Confidence = confidence
-				existing.BestModelID = item.ModelID
-				existing.Source = item.Source.ID
-				GetLogger().Debug("Updated pending detection with higher confidence",
-					logger.String("species", commonName),
-					logger.String("model_id", item.ModelID),
-					logger.Float64("old_confidence", oldConfidence),
-					logger.Float64("new_confidence", confidence),
-					logger.Int("count", existing.Count+1),
-					logger.String("operation", "update_pending_detection"))
-			}
-			existing.Count++
-
-			// Track per-model contribution
-			if existing.ModelContributions == nil {
-				existing.ModelContributions = make(map[string]ModelContribution, 1)
-			}
-			contrib := existing.ModelContributions[item.ModelID]
-			contrib.recordHit(confidence, hitAt)
-			existing.ModelContributions[item.ModelID] = contrib
-
-			p.pendingDetections[mapKey] = existing
-		} else {
-			GetLogger().Info("Created new pending detection",
-				logger.String("species", commonName),
-				logger.Float64("confidence", confidence),
-				logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
-				logger.String("model_id", item.ModelID),
-				logger.Time("flush_deadline", now.Add(detectionWindow)),
-				logger.String("operation", "create_pending_detection"))
-			var contrib ModelContribution
-			contrib.recordHit(confidence, hitAt)
-			p.pendingDetections[mapKey] = PendingDetection{
-				Detection:       det,
-				Confidence:      confidence,
-				Source:          item.Source.ID,
-				BestModelID:     item.ModelID,
-				FirstDetected:   item.StartTime,
-				CreatedAt:       now,
-				AudioCapturedAt: item.AudioCapturedAt,
-				LastUpdated:     item.StartTime,
-				// FlushDeadline is relative to NOW (not startTime) to ensure it's always in the future.
-				// startTime is backdated for audio extraction, but FlushDeadline needs to be a future deadline.
-				FlushDeadline:      now.Add(detectionWindow),
-				Count:              1,
-				ModelContributions: map[string]ModelContribution{item.ModelID: contrib},
-			}
-		}
-
-		// Apply extended capture if species qualifies
-		if p.isExtendedCaptureSpecies(det.Result.Species.ScientificName) {
-			p.applyExtendedCapture(mapKey, now, detectionWindow)
-		}
-
-		// Note: the dynamic-threshold expiry timer is renewed only from approved,
-		// filter-passing detections above Trigger in LearnFromApprovedDetection
-		// (via processApprovedDetection). Renewing it here from pending detections
-		// above the model base let sub-trigger noise sustain a lowered gate
-		// indefinitely (#4194), so no renewal happens on the pending path.
-
-		// Unlock the mutex to allow other goroutines to access shared resources
-		p.pendingMutex.Unlock()
+		p.mergePendingHit(&item, &detectionResults[i], hitAt, detectionWindow)
 	}
 
 	// Broadcast updated pending detections snapshot for "currently hearing" UI.
 	// This runs after all new detections are incorporated into pendingDetections.
 	snapshot := p.SnapshotVisiblePending()
 	p.broadcastPendingSnapshot(snapshot)
+}
+
+// mergePendingHit folds one detection of the chunk item into pendingDetections: it
+// updates the pending entry for the detection's source and species (which another
+// model may have created) or creates one, counts the hit, records it in the model's
+// contribution statistics stamped with hitAt, and applies extended capture when the
+// species qualifies. It takes and releases pendingMutex itself; the caller must not
+// hold it.
+func (p *Processor) mergePendingHit(item *classifier.Results, det *Detections, hitAt time.Time, detectionWindow time.Duration) {
+	commonName := strings.ToLower(det.Result.Species.CommonName)
+	confidence := det.Result.Confidence
+
+	// Lock the mutex to ensure thread-safe access to shared resources
+	p.pendingMutex.Lock()
+	defer p.pendingMutex.Unlock()
+
+	now := time.Now()
+	mapKey := pendingKeyForDetection(item.Source.ID, det)
+
+	if existing, exists := p.pendingDetections[mapKey]; exists {
+		// Update the existing detection (may be from same or different model)
+		oldConfidence := existing.Confidence
+		existing.LastUpdated = now
+		existing.AudioCapturedAt = item.AudioCapturedAt
+		if confidence > existing.Confidence {
+			existing.Detection = *det
+			existing.Confidence = confidence
+			existing.BestModelID = item.ModelID
+			existing.Source = item.Source.ID
+			GetLogger().Debug("Updated pending detection with higher confidence",
+				logger.String("species", commonName),
+				logger.String("model_id", item.ModelID),
+				logger.Float64("old_confidence", oldConfidence),
+				logger.Float64("new_confidence", confidence),
+				logger.Int("count", existing.Count+1),
+				logger.String("operation", "update_pending_detection"))
+		}
+		existing.Count++
+
+		// Track per-model contribution
+		if existing.ModelContributions == nil {
+			existing.ModelContributions = make(map[string]ModelContribution, 1)
+		}
+		contrib := existing.ModelContributions[item.ModelID]
+		contrib.recordHit(confidence, hitAt)
+		existing.ModelContributions[item.ModelID] = contrib
+
+		p.pendingDetections[mapKey] = existing
+	} else {
+		GetLogger().Info("Created new pending detection",
+			logger.String("species", commonName),
+			logger.Float64("confidence", confidence),
+			logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
+			logger.String("model_id", item.ModelID),
+			logger.Time("flush_deadline", now.Add(detectionWindow)),
+			logger.String("operation", "create_pending_detection"))
+		var contrib ModelContribution
+		contrib.recordHit(confidence, hitAt)
+		p.pendingDetections[mapKey] = PendingDetection{
+			Detection:       *det,
+			Confidence:      confidence,
+			Source:          item.Source.ID,
+			BestModelID:     item.ModelID,
+			FirstDetected:   item.StartTime,
+			CreatedAt:       now,
+			AudioCapturedAt: item.AudioCapturedAt,
+			LastUpdated:     item.StartTime,
+			// FlushDeadline is relative to NOW (not startTime) to ensure it's always in the future.
+			// startTime is backdated for audio extraction, but FlushDeadline needs to be a future deadline.
+			FlushDeadline:      now.Add(detectionWindow),
+			Count:              1,
+			ModelContributions: map[string]ModelContribution{item.ModelID: contrib},
+		}
+	}
+
+	// Apply extended capture if species qualifies
+	if p.isExtendedCaptureSpecies(det.Result.Species.ScientificName) {
+		p.applyExtendedCapture(mapKey, now, detectionWindow)
+	}
+
+	// Note: the dynamic-threshold expiry timer is renewed only from approved,
+	// filter-passing detections above Trigger in LearnFromApprovedDetection
+	// (via processApprovedDetection). Renewing it here from pending detections
+	// above the model base let sub-trigger noise sustain a lowered gate
+	// indefinitely (#4194), so no renewal happens on the pending path.
 }
 
 // processResults processes the results from the BirdNET prediction and returns a list of detections.
@@ -1352,21 +1364,12 @@ func (p *Processor) resolveAudioSource(source datastore.AudioSource) detection.A
 
 	// Try to get additional details from registry
 	// Use same lookup order as NewWithSpeciesInfo: connection string first, then ID
-	registry := p.Registry()
-	if registry != nil {
-		if existingSource, exists := registry.GetByConnection(source.ID); exists {
-			audioSource.ID = existingSource.ID
-			audioSource.SafeString = existingSource.SafeString
-			audioSource.DisplayName = existingSource.DisplayName
-			audioSource.Type = detection.DetermineSourceType(existingSource.SafeString)
-			audioSource.SampleRate = existingSource.SampleRate
-		} else if existingSource, exists := registry.Get(source.ID); exists {
-			audioSource.ID = existingSource.ID
-			audioSource.SafeString = existingSource.SafeString
-			audioSource.DisplayName = existingSource.DisplayName
-			audioSource.Type = detection.DetermineSourceType(existingSource.SafeString)
-			audioSource.SampleRate = existingSource.SampleRate
-		}
+	if existingSource, exists := p.registeredSource(source.ID); exists {
+		audioSource.ID = existingSource.ID
+		audioSource.SafeString = existingSource.SafeString
+		audioSource.DisplayName = existingSource.DisplayName
+		audioSource.Type = detection.DetermineSourceType(existingSource.SafeString)
+		audioSource.SampleRate = existingSource.SampleRate
 	}
 
 	if audioSource.SampleRate <= 0 && p.BufferMgr != nil {
@@ -1487,9 +1490,10 @@ func (p *Processor) handleHumanDetection(settings *conf.Settings, item classifie
 		// clip. Above the confirmation overlap a lone hit is held (see
 		// recordLabelHit) and counts only when a second hit confirms it.
 		end, _ := audioEndOrNow(&item)
-		hit := heldLabelHit{at: end, confidence: result.Confidence, modelID: item.ModelID}
+		hit := labelHumanHit(end, item.ModelID, result.Confidence,
+			privacyrollup.ThresholdMilli(float64(settings.Realtime.PrivacyFilter.Confidence)))
 		d := p.recordLabelHit(settings, item.Source.ID, hit)
-		p.logLabelHitDecision(settings, item.Source.ID, &hit, &d)
+		p.reportHitDecision(settings, item.Source.ID, &hit, &d)
 	}
 }
 
@@ -1717,7 +1721,7 @@ func (p *Processor) shouldDiscardDetection(item *PendingDetection, settings *con
 				}
 				p.Metrics.PrivacyFilter.RecordDiscard(trigger)
 			}
-			return true, "privacy filter"
+			return true, reasonPrivacyFilter
 		}
 	}
 
@@ -1960,6 +1964,8 @@ func (p *Processor) flushPendingDetections() (pendingCount, flushedCount int) {
 
 	var terminalNotifs []SSEPendingDetection
 	var broadcastSnapshot []SSEPendingDetection
+	// Privacy rollup events, handed off after pendingMutex is released.
+	var rollupEvents []sourcedEvent
 
 	p.pendingMutex.Lock()
 
@@ -1998,6 +2004,9 @@ func (p *Processor) flushPendingDetections() (pendingCount, flushedCount int) {
 				logger.Int("model_count", len(item.ModelContributions)),
 				logger.String("reason", reason),
 				logger.String("operation", "discard_detection"))
+			if reason == reasonPrivacyFilter && p.privacyRollup != nil {
+				rollupEvents = append(rollupEvents, discardEvent(item.Source, &priv.hit))
+			}
 			delete(p.pendingDetections, mapKey)
 
 			if item.Count >= visThresholds.getThreshold(item.BestModelID) {
@@ -2014,6 +2023,9 @@ func (p *Processor) flushPendingDetections() (pendingCount, flushedCount int) {
 			continue
 		case coverageTimedOut:
 			p.recordUnscannedSave(settings, &item, priv.clip, speciesName)
+			if p.privacyRollup != nil {
+				rollupEvents = append(rollupEvents, unscannedSaveEvent(item.Source, &priv))
+			}
 		case coverageKeep:
 		}
 
@@ -2051,6 +2063,8 @@ func (p *Processor) flushPendingDetections() (pendingCount, flushedCount int) {
 	}
 
 	p.pendingMutex.Unlock()
+
+	p.recordPrivacyEvents(settings, rollupEvents...)
 
 	if broadcastSnapshot != nil {
 		p.broadcastPendingSnapshot(broadcastSnapshot)
