@@ -538,6 +538,25 @@ type DaylightFilterSettings struct {
 	Species []string `yaml:"species" json:"species"` // species, families, orders, or genera to filter during daylight
 }
 
+// ModelConsensusSettings configures the model consensus false positive filter. A
+// detection in scope is discarded unless enough distinct models of its taxon group
+// (bird or bat) detected it within the pending window. Only models that scored the
+// audio of the detection's hits, can classify the species and pass the range filter
+// for it are eligible, and the requirement is capped at the eligible count, so a
+// species that only one model can detect always passes.
+type ModelConsensusSettings struct {
+	AllSpecies    bool     `yaml:"allspecies" json:"allSpecies"`       // true to require consensus for every species; takes precedence over listedspecies
+	ListedSpecies bool     `yaml:"listedspecies" json:"listedSpecies"` // true to require consensus for the species in species
+	Species       []string `yaml:"species" json:"species"`             // species that need consensus when listedspecies is on; scientific names keep working after a locale change
+	MinModels     int      `yaml:"minmodels" json:"minModels"`         // agreeing models required, 2 to 4, capped at the number of eligible models
+	AllEligible   bool     `yaml:"alleligible" json:"allEligible"`     // true to require every eligible model instead of minmodels
+	Debug         bool     `yaml:"debug" json:"debug"`                 // true to log each consensus discard at info level, with the agreeing and eligible models
+}
+
+// Enabled reports whether the filter is switched on, for every species or for the
+// listed ones.
+func (m *ModelConsensusSettings) Enabled() bool { return m.AllSpecies || m.ListedSpecies }
+
 // RTSPHealthSettings contains settings for RTSP stream health monitoring.
 type RTSPHealthSettings struct {
 	HealthyDataThreshold int `yaml:"healthydatathreshold" json:"healthyDataThreshold"` // seconds before stream considered unhealthy (default: 60)
@@ -904,6 +923,7 @@ type RealtimeSettings struct {
 	PrivacyFilter    PrivacyFilterSettings    `yaml:"privacyfilter" json:"privacyFilter"`       // Privacy filter settings
 	DogBarkFilter    DogBarkFilterSettings    `yaml:"dogbarkfilter" json:"dogBarkFilter"`       // Dog bark filter settings
 	DaylightFilter   DaylightFilterSettings   `yaml:"daylightfilter" json:"daylightFilter"`     // Daylight filter settings
+	ModelConsensus   ModelConsensusSettings   `yaml:"modelconsensus" json:"modelConsensus"`     // Model consensus false positive filter settings
 	RTSP             RTSPSettings             `yaml:"rtsp" json:"rtsp"`                         // RTSP settings
 	MQTT             MQTTSettings             `yaml:"mqtt" json:"mqtt"`                         // MQTT settings
 	Telemetry        TelemetrySettings        `yaml:"telemetry" json:"telemetry"`               // Telemetry settings
@@ -1322,6 +1342,14 @@ type BirdNETConfig struct {
 	OpenVINODevice      string              `yaml:"openvinodevice,omitempty" json:"openVinoDevice,omitempty"`           // OpenVINO device preference: "auto" (default), "cpu", or "gpu"
 	HuggingFaceEndpoint string              `yaml:"huggingfaceendpoint,omitempty" json:"huggingFaceEndpoint,omitempty"` // model download host, e.g. "https://hf-mirror.com" where huggingface.co is blocked; empty falls back to $HF_ENDPOINT then https://huggingface.co
 	ModelRegion         string              `yaml:"modelregion,omitempty" json:"modelRegion,omitempty"`                 // regional model preference: "auto" (resolve from coordinates, default), "global" (always global models), or a region slug pin (e.g. "iberia"); empty is treated as "auto"
+
+	// AlternateMinConfidence is the lowest confidence, on the 0 to 1 scale, at which
+	// an alternate prediction of a detection is stored. Alternates below it are
+	// dropped when the detection is saved; the detected species itself is never
+	// affected. 0 stores every alternate. Rows already in the database are not
+	// changed. Not shown in the web UI. Defaults to 0.1. Hot-reloadable through the
+	// settings API; a config file edit applies at the next start.
+	AlternateMinConfidence float64 `yaml:"alternateminconfidence" json:"alternateMinConfidence"`
 }
 
 // Inference backend preferences for BirdNET.Backend.

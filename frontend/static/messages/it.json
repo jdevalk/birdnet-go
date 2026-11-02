@@ -460,6 +460,10 @@
         "legacyRestartRequiredTitle": "Riavvia per completare la migrazione del database",
         "legacyRestartRequiredMessage": "La migrazione è terminata. Riavvia BirdNET-Go per passare al nuovo database. Se questo messaggio resta dopo il riavvio, controlla il log per errori del database."
       },
+      "database": {
+        "serverAttentionTitle": "Il server del database richiede attenzione",
+        "serverAttentionMessage": "Il server MySQL o MariaDB non è una versione supportata, oppure il database non usa il set di caratteri utf8mb4. Apri Sistema > Salute per i dettagli."
+      },
       "cleanup": {
         "completeTitle": "Pulizia del vecchio database completata",
         "completeMessage": "{space} di spazio su disco recuperato.",
@@ -472,7 +476,7 @@
       },
       "ort": {
         "unavailableTitle": "ONNX Runtime non disponibile",
-        "unavailableMessage": "ONNX Runtime {requiredVersion} è richiesto per {modelName} ma non è stato trovato. Consulta la guida all'installazione: {installGuideURL}"
+        "unavailableMessage": "ONNX Runtime {requiredVersion} o versione successiva è richiesto per {modelName} ma non è stato trovato. Consulta la guida all'installazione: {installGuideURL}"
       },
       "region": {
         "staleTitle": "La regione del modello potrebbe essere obsoleta",
@@ -1747,6 +1751,12 @@
             },
             "sqlite_integrity": {
               "name": "Integrità Database"
+            },
+            "mysql_server_version": {
+              "name": "Versione del server di database"
+            },
+            "mysql_charset": {
+              "name": "Set di caratteri del database"
             },
             "mysql_table_health": {
               "name": "Salute Tabelle"

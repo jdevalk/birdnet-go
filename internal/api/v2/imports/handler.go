@@ -36,6 +36,7 @@ import (
 	"strconv"
 
 	"github.com/tphakala/birdnet-go/internal/api/v2/apicore"
+	"github.com/tphakala/birdnet-go/internal/datastore/dbserver"
 	"github.com/tphakala/birdnet-go/internal/imports"
 	"github.com/tphakala/birdnet-go/internal/imports/discovery"
 	"github.com/tphakala/birdnet-go/internal/imports/elevation"
@@ -100,6 +101,14 @@ type Handler struct {
 	// memory_available prerequisite. nil means gopsutil mem.VirtualMemory; tests
 	// inject a fixed value.
 	availableMemoryFn func() (uint64, error)
+	// serverVersionFn reads the raw database server version for the
+	// mysql_server_version prerequisite. nil means dbserver.QueryVersion on the
+	// migration target connection; tests inject a fixed string.
+	serverVersionFn func(ctx context.Context) (string, error)
+	// charsetReportFn reads the character sets for the mysql_charset
+	// prerequisite. nil means dbserver.QueryCharset on the migration target
+	// connection; tests inject a fixed report.
+	charsetReportFn func(ctx context.Context) (dbserver.CharsetReport, error)
 
 	// cleanupStatus tracks the state of legacy database cleanup. It is initialized
 	// lazily in RegisterLegacyCleanupRoutes; the migration status handler reads it
@@ -176,7 +185,7 @@ func (c *Handler) getNotificationService() *notification.Service {
 // Shutdown stops the background singletons this domain owns. It stops the backup
 // job manager's cleanup goroutine (a no-op when no backup routes were registered,
 // so the singleton is nil). The migration worker is stopped separately by
-// internal/analysis via StopMigrationWorker() as part of the datastore lifecycle,
+// internal/analysis via StopMigrationWorker(ctx) as part of the datastore lifecycle,
 // so it is deliberately not torn down here.
 func (c *Handler) Shutdown() {
 	if backupJobManager != nil {

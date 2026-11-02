@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
+	"github.com/tphakala/birdnet-go/internal/wallclock"
 	"gorm.io/gorm"
 )
 
@@ -159,7 +160,7 @@ func TestGetHourlyDistribution_SourceFilter(t *testing.T) {
 
 	// Without filter, all 7 seeded detections should be counted across hours.
 	t.Run("no filter aggregates all sources", func(t *testing.T) {
-		rows, err := repo.GetHourlyDistribution(ctx, 1000, 2000, 0, nil, nil)
+		rows, err := repo.GetHourlyDistribution(ctx, wallclock.Segment{Start: 1000, End: 2000}, nil, nil)
 		require.NoError(t, err)
 		var total int64
 		for _, r := range rows {
@@ -170,7 +171,7 @@ func TestGetHourlyDistribution_SourceFilter(t *testing.T) {
 
 	// With a single source filter, only that source's 4 detections appear.
 	t.Run("single source restricts count", func(t *testing.T) {
-		rows, err := repo.GetHourlyDistribution(ctx, 1000, 2000, 0, nil, nil, srcVoordeurID)
+		rows, err := repo.GetHourlyDistribution(ctx, wallclock.Segment{Start: 1000, End: 2000}, nil, nil, srcVoordeurID)
 		require.NoError(t, err)
 		var total int64
 		for _, r := range rows {
@@ -186,14 +187,14 @@ func TestGetDailyAnalytics_SourceFilter(t *testing.T) {
 	_, repo := setupAnalyticsSourceFixture(t)
 	ctx := t.Context()
 
-	all, err := repo.GetDailyAnalytics(ctx, 1000, 2000, 0, nil, nil)
+	all, err := repo.GetDailyAnalytics(ctx, wallclock.Segment{Start: 1000, End: 2000}, nil, nil)
 	require.NoError(t, err)
 	var allTotal int64
 	for _, r := range all {
 		allTotal += r.TotalDetections
 	}
 
-	filtered, err := repo.GetDailyAnalytics(ctx, 1000, 2000, 0, nil, nil, srcPoortID)
+	filtered, err := repo.GetDailyAnalytics(ctx, wallclock.Segment{Start: 1000, End: 2000}, nil, nil, srcPoortID)
 	require.NoError(t, err)
 	var filteredTotal int64
 	for _, r := range filtered {

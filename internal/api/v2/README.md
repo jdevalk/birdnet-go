@@ -154,21 +154,22 @@ even if it was detected earlier on another source).
 
 ### Detections (`detections/detections.go`)
 
-| Method | Route                         | Handler                  | Auth | Description                                                                                                                |
-| ------ | ----------------------------- | ------------------------ | ---- | -------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/detections`                 | `GetDetections`          | ❌   | List bird detections; `source` (id from `/analytics/sources`, display name, node name or URI) restricts to an audio source |
-| GET    | `/detections/:id`             | `GetDetection`           | ❌   | Get specific detection                                                                                                     |
-| GET    | `/detections/recent`          | `GetRecentDetections`    | ❌   | Recent detections; `limit` defaults to 10 and is capped at 1000                                                            |
-| GET    | `/detections/:id/time-of-day` | `GetDetectionTimeOfDay`  | ❌   | Detection time context                                                                                                     |
-| DELETE | `/detections/:id`             | `DeleteDetection`        | ✅   | Delete detection record                                                                                                    |
-| POST   | `/detections/:id/review`      | `ReviewDetection`        | ✅   | Review/verify detection                                                                                                    |
-| POST   | `/detections/:id/lock`        | `LockDetection`          | ✅   | Lock detection from changes                                                                                                |
-| POST   | `/detections/ignore`          | `IgnoreSpecies`          | ✅   | Toggle species in ignore list (add/remove)                                                                                 |
-| GET    | `/detections/ignored`         | `GetExcludedSpecies`     | ✅   | Get list of excluded species                                                                                               |
-| POST   | `/detections/batch/delete`    | `BatchDeleteDetections`  | ✅   | Bulk delete detections by ID                                                                                               |
-| POST   | `/detections/batch/review`    | `BatchReviewDetections`  | ✅   | Bulk set verification status                                                                                               |
-| POST   | `/detections/batch/lock`      | `BatchLockDetections`    | ✅   | Bulk lock or unlock detections                                                                                             |
-| POST   | `/detections/batch/resolve`   | `BatchResolveDetections` | ✅   | Resolve query params to detection IDs                                                                                      |
+| Method | Route                         | Handler                   | Auth | Description                                                                                                                |
+| ------ | ----------------------------- | ------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/detections`                 | `GetDetections`           | ❌   | List bird detections; `source` (id from `/analytics/sources`, display name, node name or URI) restricts to an audio source |
+| GET    | `/detections/:id`             | `GetDetection`            | ❌   | Get specific detection                                                                                                     |
+| GET    | `/detections/recent`          | `GetRecentDetections`     | ❌   | Recent detections; `limit` defaults to 10 and is capped at 1000                                                            |
+| GET    | `/detections/:id/time-of-day` | `GetDetectionTimeOfDay`   | ❌   | Detection time context                                                                                                     |
+| GET    | `/detections/:id/predictions` | `GetDetectionPredictions` | ❌   | Alternate species the detecting model scored (enhanced database only)                                                      |
+| DELETE | `/detections/:id`             | `DeleteDetection`         | ✅   | Delete detection record                                                                                                    |
+| POST   | `/detections/:id/review`      | `ReviewDetection`         | ✅   | Review/verify detection                                                                                                    |
+| POST   | `/detections/:id/lock`        | `LockDetection`           | ✅   | Lock detection from changes                                                                                                |
+| POST   | `/detections/ignore`          | `IgnoreSpecies`           | ✅   | Toggle species in ignore list (add/remove)                                                                                 |
+| GET    | `/detections/ignored`         | `GetExcludedSpecies`      | ✅   | Get list of excluded species                                                                                               |
+| POST   | `/detections/batch/delete`    | `BatchDeleteDetections`   | ✅   | Bulk delete detections by ID                                                                                               |
+| POST   | `/detections/batch/review`    | `BatchReviewDetections`   | ✅   | Bulk set verification status                                                                                               |
+| POST   | `/detections/batch/lock`      | `BatchLockDetections`     | ✅   | Bulk lock or unlock detections                                                                                             |
+| POST   | `/detections/batch/resolve`   | `BatchResolveDetections`  | ✅   | Resolve query params to detection IDs                                                                                      |
 
 ### Integrations (`integrations/integrations.go`)
 
@@ -301,6 +302,13 @@ responses carry `spectrogramOnly: true` for these detections (the field is omitt
 otherwise); `clipName` / `hasAudio` stay empty / false, so clients show the image but no
 player or download.
 
+**Detection timestamps.** Detection list, detail and recent responses carry `timestamp`, the stored
+instant of the detection as RFC3339 with the UTC offset in effect at that instant. `date` and `time` are the
+station-local wall clock text of the same instant, so on a v2 database the two detections in the repeated hour
+at the end of daylight saving time show the same `date` and `time` and differ in `timestamp`. The weather
+match and moon phase of a response use the same instant. A legacy database stores only offset-free date and
+time text, so there both detections get the first occurrence's offset.
+
 **Spectrogram frequency range.** Bird spectrograms span 0 to 12 kHz. Bat
 spectrograms render at the clip's own sample rate and span 0 to half of it (a 384 kHz clip shows 0 to
 192 kHz, a 192 kHz clip 0 to 96 kHz). Bat renders carry the `-bat-v3` token in their file name, and a
@@ -324,18 +332,50 @@ fresh render removes the older `-bat-v2` and `-bat` files next to it.
 
 **Model contributions.** On the enhanced (v2) database, `GET /detections`, `GET /detections/recent` and
 `GET /detections/:id` carry a read-only `modelContributions` array: one element per model that detected
-the species for this detection, largest hit count first (then highest maximum confidence). Each element
-has `modelName`, `modelVersion`, `modelVariant`, `modelType`, `hitCount` and `maxConfidence`, plus
-`minConfidence`, `meanConfidence`, `firstHitAt` and `lastHitAt`. The last four appear together and are
-omitted when they were not recorded (detections recorded before these statistics existed) or the stored
-values are unusable (zero hit count, minimum above maximum, first hit after last hit). Times are RFC3339 in the server's time
-zone, like `beginTime`.
+the species for this detection, largest hit count first (then highest maximum confidence), and, for
+detections saved since this version, one element with `hitCount` 0 per other model that was active on the
+source when the detection was approved (it had an analysis buffer on the source and was not paused by its
+schedule). Each element has `modelName`, `modelVersion`, `modelVariant`, `modelType` and `hitCount`. Elements
+with hits also have `maxConfidence`, plus `minConfidence`, `meanConfidence`, `firstHitAt` and `lastHitAt`; the
+last four appear together and are omitted when they were not recorded (detections recorded before these
+statistics existed) or the stored values are unusable (minimum above maximum, first hit after last hit).
+Times are RFC3339 in the server's time zone, like `beginTime`. A model missing from the list was not active
+on the source, the detection predates this recording, or its entry could not be saved (contributions are
+written best-effort).
 
 - The whole field is omitted on the legacy database, during migration, for detections with no recorded
   contributions (including migrated ones), and when the read fails or takes longer than 1 second.
 - `POST /search` does not carry it.
 - The SSE `pending` event has its own `modelContributions` with a different element shape (`modelID`,
   `hitCount`, `maxConfidence`, present only when more than one model contributed).
+
+**Detection predictions.** On the enhanced (v2) database, `GET /detections/:id/predictions` returns the
+alternate species the detecting model scored for one detection. `modelPredictions` has one element per
+model, today at most one, with `modelName`, `modelVersion`, `modelVariant`, `modelType` and `predictions`.
+`predictions` is never empty, and `modelPredictions` is `[]` when nothing remains after filtering. Each
+prediction has `scientificName` (the current, canonical name), `commonName`, `speciesCode` and
+`confidence`, ordered by confidence descending, then by scientific name.
+
+- Filtered out: the detected species and its aliases, human sound classes, and a dog class that scores
+  below every non-dog alternate that remains, and is kept when none remains. This is a heuristic: the classifier adds one past its top results so that
+  it stays visible, which a low dog score usually is, but a genuine low-scoring dog result goes with it.
+  The comparison is against the stored alternates, which are only those at or above
+  `birdnet.alternateminconfidence`, so a genuine dog result is hidden when it scores below every stored non-dog alternate,
+  and with fewer stored rows this happens more often.
+- Scope: the species the detecting model ranked in its top 10 for the analysis window that produced
+  the detection, without the detected species and, when a location is set and the model takes part in
+  range filtering, without species outside the location's range (for detections saved after the range
+  filter was applied to alternates), so fewer than 10 can remain. Other models and other windows are
+  not stored, so a species missing here may still have been scored. Alternates below
+  `birdnet.alternateminconfidence` (default 0.1, config file only, 0 stores all) are not stored either,
+  so an empty `modelPredictions` list is normal, most often for Perch; the cutoff applies to detections saved
+  after it was introduced.
+- Old rows: detections saved before this version may list species outside the location's range or alternates
+  below 0.1; detections migrated from the legacy database list only alternates at or above 0.3; Perch
+  detections saved before human class names were stored in full may list truncated human class names such
+  as Male or Child.
+- Status codes: `409` when the enhanced database is not in use, `400` for an id that is not a positive
+  integer that fits in 32 bits, `404` when the detection does not exist, and `500` for a database error.
 
 ### Notifications (`notifications/notifications.go`)
 
@@ -644,6 +684,11 @@ Registered under the system route group. All endpoints require authentication.
 | GET    | `/weather/detection/:id`      | `GetWeatherForDetection`  | ❌   | Weather for detection time          |
 | GET    | `/weather/latest`             | `GetLatestWeather`        | ❌   | Latest weather data                 |
 | GET    | `/weather/sun/:date`          | `GetSunTimes`             | ❌   | Sun times (sunrise/sunset) for date |
+| GET    | `/weather/moon/:date`         | `GetMoonPhase`            | ❌   | Moon phase for date                 |
+
+`:date` on `/weather/daily/:date`, `/weather/hourly/:date` and `/weather/hourly/:date/:hour` must be a real calendar date in `YYYY-MM-DD` form. A non-empty value that is not a real date answers **400** before the database is queried, with `error_key` `errors.detection.invalidDate` and `error_params` `{paramName: "date"}`; an empty value answers **400** without an `error_key`. `/weather/sun/:date` and `/weather/moon/:date` also answer 400 for an invalid date (without an `error_key`).
+
+`/weather/hourly/:date` answers 200 with an empty `data` array and a `message` when no rows exist for the date. The message says the date is in the future when it is after the server's local date.
 
 ### Alert Rules (`alerts/alerts.go`)
 
@@ -692,8 +737,30 @@ Requires enhanced (v2) database. Returns 409 Conflict with `error_key` `errors.i
 **Query Parameters:**
 
 - All insights endpoints except `/insights/model-contributions` accept optional `model_id` query parameter to filter by BirdNET model
-- `/insights/model-contributions` requires `start_date` and accepts optional `end_date` (both `YYYY-MM-DD`, station-local and inclusive; `end_date` defaults to `start_date` + 30 days; at most 366 days). It takes no `model_id`. Counts are lower bounds: contribution rows are written best-effort and are absent for detections migrated from the legacy database
+- `/insights/model-contributions` requires `start_date` and accepts optional `end_date` (both `YYYY-MM-DD`, station-local and inclusive; `end_date` defaults to `start_date` + 30 days; at most 366 days). It takes no `model_id`. Only contribution rows with at least one hit are counted; rows recording a model that was active without a hit are not. Counts are lower bounds: contribution rows are written best-effort and are absent for detections migrated from the legacy database
 - `/insights/dawn-chorus` also accepts `period_days` (default 30, 1 to 365) and `min_days` (default 3, clamped to `period_days`); the response echoes both as `period_days` and `min_days`
+
+### Privacy Filter Activity (`privacy/privacy.go`)
+
+Requires enhanced (v2) database. Returns 409 Conflict with `error_key` `errors.privacyFilter.v2Required` if not available. Every route requires authentication (not admin only) and is never public. The routes use the protected auth middleware, which follows the instance's own authentication settings (`IsAuthRequired` and `OAuth2Server.IsAuthenticationEnabled`): on an instance with no authentication provider configured, or for a client in an allowed bypass subnet, they pass like every other protected route.
+
+| Method | Route                      | Handler        | Auth | Description                                                                                          |
+| ------ | -------------------------- | -------------- | ---- | ---------------------------------------------------------------------------------------------------- |
+| GET    | `/privacy-filter/activity` | `GetActivity`  | ✅   | Hourly rollup of privacy filter activity per source, detector model, trigger and threshold           |
+| GET    | `/privacy-filter/discards` | `ListDiscards` | ✅   | Detections the privacy filter discarded, with the per-detector hits behind each, newest first, paged |
+
+**Query Parameters:**
+
+- Both routes require `start_date` and accept optional `end_date` (`YYYY-MM-DD`, station-local and inclusive; `end_date` defaults to `start_date` + 30 days; at most 31 days, matching the 30-day retention of both tables; years 1970 to 9998 only, counting the defaulted `end_date`, otherwise 400)
+- `/privacy-filter/discards` also accepts `limit` (default 100, 1 to 1000) and `offset` (default 0, at most 1000000). Rows are ordered by discard time descending, then id descending. The response is the same paginated envelope as the detections list (`data`, `total`, `limit`, `offset`, `current_page`, `total_pages`)
+
+**Semantics:**
+
+- Hourly rows are keyed on UTC hours and returned with a UTC `hour_start`. A row is included when its hour overlaps the requested range, so in zones with a half-hour or 45-minute offset the boundary hours belong to both of two adjacent ranges. The response echoes `range_start` and `range_end` (UTC instants, end exclusive) so a client can trim.
+- A discard's time is the wall clock of the flush that dropped the detection, while the rollup counts a discard in the hour of the hit that caused it, so per-hour counts of the two endpoints do not match exactly.
+- All counts are lower bounds. The `margin_*` fields bucket hits by how far the score is above the threshold in effect (`margin_lt_50` below 0.05, `margin_lt_100` 0.05 to 0.10, `margin_lt_200` 0.10 to 0.20, `margin_ge_200` 0.20 or more), not by absolute score. Per row, the sum of the buckets is `hits - confirmed + held`.
+- A row with an empty `model_id` and `threshold` 0 counts unscanned saves. Rows with `trigger_type` `vad` carry the voice activity threshold.
+- Sources appear as `{id, name}`: the display name with any stream URL credentials removed, or `source-<id>` when there is none. The stored source URI is never returned. A discard whose source could not be resolved has `source: null`. No transcript, audio or clip path is returned.
 
 ### Models (`models/models.go`)
 

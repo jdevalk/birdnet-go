@@ -460,6 +460,10 @@
         "legacyRestartRequiredTitle": "Dokončite migráciu databázy reštartom",
         "legacyRestartRequiredMessage": "Migrácia bola dokončená. Reštartujte BirdNET-Go, aby sa prepol na novú databázu. Ak sa táto správa zobrazuje aj po reštarte, skontrolujte v zázname chyby databázy."
       },
+      "database": {
+        "serverAttentionTitle": "Databázový server vyžaduje pozornosť",
+        "serverAttentionMessage": "Server MySQL alebo MariaDB nie je podporovaná verzia, alebo databáza nepoužíva znakovú sadu utf8mb4. Podrobnosti nájdete v časti Systém > Zdravie."
+      },
       "cleanup": {
         "completeTitle": "Vyčistenie starej databázy dokončené",
         "completeMessage": "Uvoľnených {space} miesta na disku.",
@@ -472,7 +476,7 @@
       },
       "ort": {
         "unavailableTitle": "ONNX Runtime nie je k dispozícii",
-        "unavailableMessage": "ONNX Runtime {requiredVersion} je vyžadovaný pre {modelName}, ale nebol nájdený. Pozrite si príručku inštalácie: {installGuideURL}"
+        "unavailableMessage": "ONNX Runtime {requiredVersion} alebo novší je vyžadovaný pre {modelName}, ale nebol nájdený. Pozrite si príručku inštalácie: {installGuideURL}"
       },
       "region": {
         "staleTitle": "Región modelu môže byť zastaraný",
@@ -1747,6 +1751,12 @@
             },
             "sqlite_integrity": {
               "name": "Integrita databázy"
+            },
+            "mysql_server_version": {
+              "name": "Verzia databázového servera"
+            },
+            "mysql_charset": {
+              "name": "Znaková sada databázy"
             },
             "mysql_table_health": {
               "name": "Stav tabuliek"

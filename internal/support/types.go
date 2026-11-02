@@ -246,6 +246,8 @@ type DatabaseInfoProvider interface {
 type DatabaseInfo struct {
 	Dialect           string                `json:"dialect"`
 	EngineVersion     string                `json:"engine_version"`
+	ServerSupport     string                `json:"server_support,omitempty"`
+	SchemaCharset     string                `json:"schema_charset,omitempty"`
 	DatabasePath      string                `json:"database_path"`
 	DatabaseSizeBytes int64                 `json:"database_size_bytes"`
 	WALSizeBytes      int64                 `json:"wal_size_bytes,omitempty"`
@@ -306,7 +308,11 @@ type MigrationStateInfo struct {
 	MigratedRecords  int64   `json:"migrated_records"`
 	ErrorMessage     string  `json:"error_message,omitempty"`
 	RelatedDataError string  `json:"related_data_error,omitempty"`
-	DirtyRecordCount int64   `json:"dirty_record_count,omitempty"`
+	// AuxiliaryDataStatus and AuxiliaryDataError are the recorded auxiliary data
+	// outcome; the status is absent when unknown.
+	AuxiliaryDataStatus string `json:"auxiliary_data_status,omitempty"`
+	AuxiliaryDataError  string `json:"auxiliary_data_error,omitempty"`
+	DirtyRecordCount    int64  `json:"dirty_record_count,omitempty"`
 }
 
 // DeploymentInfo contains deployment context for troubleshooting path mismatches

@@ -18,6 +18,7 @@ import (
 	"github.com/tphakala/birdnet-go/internal/mqtt"
 	"github.com/tphakala/birdnet-go/internal/notification"
 	"github.com/tphakala/birdnet-go/internal/privacy"
+	"github.com/tphakala/birdnet-go/internal/wallclock"
 )
 
 // NoteWithBirdImage wraps a Note with bird image data for MQTT publishing.
@@ -116,7 +117,7 @@ func (a *BirdWeatherAction) Execute(_ context.Context, data any) error {
 	pcmData := a.pcmData
 
 	// Try to publish with appropriate error handling
-	if err := client.Publish(&note, pcmData); err != nil {
+	if err := client.Publish(&note, a.Result.Timestamp, pcmData); err != nil {
 		// Check if this is a CategoryNotFound error (e.g., species not recognized by Birdweather)
 		// These are expected for non-bird species and should not be logged at error level
 		if errors.IsNotFound(err) {
@@ -237,8 +238,9 @@ func (a *MqttAction) Execute(ctx context.Context, data any) error {
 	// The Publish() method returns a clear error if the client is disconnected.
 
 	// Check event frequency (supports scientific name lookup). Decided once per
-	// detection: queue retries of this action reuse the first verdict.
-	if !a.rateLimit.allow(func() bool {
+	// detection: queue retries of this action reuse the first verdict. Inside the
+	// database composite the database step has already decided.
+	if !a.gatedByDatabase && !a.rateLimit.allow(func() bool {
 		return a.EventTracker.TrackEventWithNames(a.Result.Species.CommonName, a.Result.Species.ScientificName, MQTTPublish)
 	}) {
 		return nil
@@ -529,7 +531,7 @@ func (a *UpdateRangeFilterAction) Execute(ctx context.Context, data any) error {
 	defer a.mu.Unlock()
 
 	// Get current local calendar date for the range filter calculation
-	today := conf.LocalNoon(time.Now())
+	today := wallclock.Noon(time.Now())
 
 	// Update location based species list
 	speciesScores, err := a.Bn.GetProbableSpecies(today, 0.0)
@@ -589,8 +591,9 @@ func (a *SSEAction) Execute(_ context.Context, data any) error {
 		return nil // Silently skip if no broadcaster is configured
 	}
 
-	// Check event frequency (supports scientific name lookup)
-	if !a.EventTracker.TrackEventWithNames(a.Result.Species.CommonName, a.Result.Species.ScientificName, SSEBroadcast) {
+	// Check event frequency (supports scientific name lookup). Inside the database
+	// composite the database step has already decided.
+	if !a.gatedByDatabase && !a.EventTracker.TrackEventWithNames(a.Result.Species.CommonName, a.Result.Species.ScientificName, SSEBroadcast) {
 		return nil
 	}
 

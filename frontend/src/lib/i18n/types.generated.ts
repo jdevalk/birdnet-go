@@ -397,6 +397,8 @@ export type TranslationKey =
   | 'notifications.content.migration.legacyNeedsAttentionMessage'
   | 'notifications.content.migration.legacyRestartRequiredTitle'
   | 'notifications.content.migration.legacyRestartRequiredMessage'
+  | 'notifications.content.database.serverAttentionTitle'
+  | 'notifications.content.database.serverAttentionMessage'
   | 'notifications.content.cleanup.completeTitle'
   | 'notifications.content.cleanup.completeMessage' // params: space
   | 'notifications.content.cleanup.failedTitle'
@@ -1352,6 +1354,8 @@ export type TranslationKey =
   | 'system.database.migration.prerequisites.checks.disk_space.name'
   | 'system.database.migration.prerequisites.checks.legacy_accessible.name'
   | 'system.database.migration.prerequisites.checks.sqlite_integrity.name'
+  | 'system.database.migration.prerequisites.checks.mysql_server_version.name'
+  | 'system.database.migration.prerequisites.checks.mysql_charset.name'
   | 'system.database.migration.prerequisites.checks.mysql_table_health.name'
   | 'system.database.migration.prerequisites.checks.write_permission.name'
   | 'system.database.migration.prerequisites.checks.mysql_permissions.name'

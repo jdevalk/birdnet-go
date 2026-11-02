@@ -77,6 +77,10 @@ const (
 	MsgMigrationLegacyRestartRequiredTitle   = "notifications.content.migration.legacyRestartRequiredTitle"
 	MsgMigrationLegacyRestartRequiredMessage = "notifications.content.migration.legacyRestartRequiredMessage"
 
+	// Database server notice (unsupported release or non-utf8mb4 character set)
+	MsgDatabaseServerAttentionTitle   = "notifications.content.database.serverAttentionTitle"
+	MsgDatabaseServerAttentionMessage = "notifications.content.database.serverAttentionMessage"
+
 	// Legacy database cleanup notifications
 	MsgCleanupCompleteTitle   = "notifications.content.cleanup.completeTitle"
 	MsgCleanupCompleteMessage = "notifications.content.cleanup.completeMessage"
@@ -110,6 +114,10 @@ const (
 
 	// Insights errors
 	MsgErrInsightsV2Required = "errors.insights.v2Required"
+
+	// Privacy filter errors. No locale entry exists yet because no UI calls the
+	// privacy filter endpoints.
+	MsgErrPrivacyFilterV2Required = "errors.privacyFilter.v2Required"
 
 	// Detection errors
 	MsgErrDetectionInvalidDate = "errors.detection.invalidDate"

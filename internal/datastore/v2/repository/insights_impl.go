@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/datastore/v2/entities"
+	"github.com/tphakala/birdnet-go/internal/wallclock"
 	"gorm.io/gorm"
 )
 
@@ -53,6 +54,14 @@ func (r *insightsRepository) modelContributionsTable() string {
 	return tableDetectionModelContributions
 }
 
+// hitContributionsTable is the contribution table restricted to rows with a hit.
+// A row with hit_count 0 records a model that was active on the source without a
+// hit; the contribution statistics select from this relation, so they count hits
+// only and a new query gets the filter by construction.
+func (r *insightsRepository) hitContributionsTable() string {
+	return "(SELECT * FROM " + r.modelContributionsTable() + " WHERE hit_count > 0)"
+}
+
 func (r *insightsRepository) modelsTable() string {
 	if r.useV2Prefix {
 		return tableV2AIModels
@@ -60,40 +69,20 @@ func (r *insightsRepository) modelsTable() string {
 	return tableAIModels
 }
 
-// SQL expression helpers, same offset-arithmetic pattern as detectionRepository.hourFromUnixExpr.
-// offsetSeconds is the configured timezone's UTC offset; it is added to the epoch before the
-// date/hour/year is extracted, so the result buckets by wall-clock value in that zone and is
-// independent of the database session / OS-local timezone (unlike the older 'localtime' /
-// FROM_UNIXTIME forms). detected_at is always positive and offsets are bounded, so the
-// arithmetic stays non-negative even for west-of-UTC (negative) offsets.
-
-// dateFromUnixExpr returns a SQL expression for the wall-clock calendar date (YYYY-MM-DD).
-// SQLite: date(column + offset, 'unixepoch')
-// MySQL:  DATE_ADD('1970-01-01', INTERVAL (column + offset) DIV 86400 DAY)
-//
-// The MySQL form computes the civil date arithmetically (DATE_ADD on a literal date with an
-// integer day count) so it does not depend on the session time_zone; DATE(FROM_UNIXTIME(...))
-// would apply the session zone on top of the offset and double-count. Integer DIV avoids any
-// floating-point rounding at exact day boundaries.
-func (r *insightsRepository) dateFromUnixExpr(column string, offsetSeconds int) string {
-	if r.isMySQL {
-		return fmt.Sprintf("DATE_ADD('1970-01-01', INTERVAL (%s + %d) DIV 86400 DAY)", column, offsetSeconds)
+// yearRangesSpan returns the smallest Unix-seconds span that contains every range.
+func yearRangesSpan(ranges []TimeRange) (start, end int64) {
+	start, end = ranges[0].Start, ranges[0].End
+	for _, tr := range ranges[1:] {
+		start = min(start, tr.Start)
+		end = max(end, tr.End)
 	}
-	return fmt.Sprintf("date(%s + %d, 'unixepoch')", column, offsetSeconds)
+	return start, end
 }
 
-func (r *insightsRepository) hourFromUnixExpr(column string, offsetSeconds int) string {
-	if r.isMySQL {
-		return fmt.Sprintf("FLOOR((%s + %d) / 3600) %% 24", column, offsetSeconds)
-	}
-	return fmt.Sprintf("CAST((%s + %d) / 3600 AS INTEGER) %% 24", column, offsetSeconds)
-}
-
-func (r *insightsRepository) yearFromUnixExpr(column string, offsetSeconds int) string {
-	if r.isMySQL {
-		return fmt.Sprintf("YEAR(DATE_ADD('1970-01-01', INTERVAL (%s + %d) DIV 86400 DAY))", column, offsetSeconds)
-	}
-	return fmt.Sprintf("CAST(strftime('%%Y', %s + %d, 'unixepoch') AS INTEGER)", column, offsetSeconds)
+// dateOneYearBefore returns the same month and day one year earlier; 29 February becomes
+// 1 March once the date is resolved, as time.Date normalises it (wallclock.DayBounds does).
+func dateOneYearBefore(d wallclock.Date) wallclock.Date {
+	return wallclock.Date{Year: d.Year - 1, Month: d.Month, Day: d.Day}
 }
 
 // falsePositiveExclusion returns the standard LEFT JOIN + WHERE clause
@@ -106,7 +95,7 @@ func (r *insightsRepository) falsePositiveExclusion(detAlias string) (joinClause
 	return joinClause, whereClause
 }
 
-func (r *insightsRepository) GetExpectedSpeciesToday(ctx context.Context, yearRanges []TimeRange, tzOffsetSeconds int, modelID *uint) ([]ExpectedSpecies, error) {
+func (r *insightsRepository) GetExpectedSpeciesToday(ctx context.Context, yearRanges []TimeRange, loc *time.Location, modelID *uint) ([]ExpectedSpecies, error) {
 	if len(yearRanges) == 0 {
 		return nil, nil
 	}
@@ -114,8 +103,14 @@ func (r *insightsRepository) GetExpectedSpeciesToday(ctx context.Context, yearRa
 	det := r.detectionsTable()
 	lab := r.labelsTable()
 	fpJoin, fpWhere := r.falsePositiveExclusion("d")
-	dateExpr := r.dateFromUnixExpr("d.detected_at", tzOffsetSeconds)
-	yearExpr := r.yearFromUnixExpr("d.detected_at", tzOffsetSeconds)
+
+	// The ranges are disjoint stretches of a few days, but one DST change inside the covered
+	// span is enough to give rows different offsets, so the buckets follow each row's own.
+	spanStart, spanEnd := yearRangesSpan(yearRanges)
+	now := time.Now()
+	from, to := wallclock.Span(spanStart, spanEnd, now)
+	dateExpr := WallClockDateExpr("d.detected_at", loc, from, to, r.isMySQL)
+	yearExpr := wallClockYearSQL("d.detected_at", perRowOffsetSQL("d.detected_at", loc, spanStart, spanEnd, now), r.isMySQL)
 
 	query := r.db.WithContext(ctx).
 		Table(fmt.Sprintf("%s d", det)).
@@ -128,7 +123,7 @@ func (r *insightsRepository) GetExpectedSpeciesToday(ctx context.Context, yearRa
 	// Add year range conditions as OR clauses
 	orScope := r.db.Where("1 = 0")
 	for _, tr := range yearRanges {
-		orScope = orScope.Or("d.detected_at BETWEEN ? AND ?", tr.Start, tr.End)
+		orScope = orScope.Or("d.detected_at >= ? AND d.detected_at < ?", tr.Start, tr.End)
 	}
 	query = query.Where(orScope)
 
@@ -173,15 +168,56 @@ func (r *insightsRepository) GetPhantomSpecies(ctx context.Context, since int64,
 	return results, nil
 }
 
-func (r *insightsRepository) GetDawnChorusRaw(ctx context.Context, since int64, startHour, endHour, tzOffsetSeconds int, modelID *uint) ([]DawnChorusRawEntry, error) {
+// dawnChorusKey identifies one merged dawn chorus row: a species on a local calendar date.
+type dawnChorusKey struct {
+	scientificName string
+	date           string
+}
+
+func (r *insightsRepository) GetDawnChorusRaw(ctx context.Context, since, until int64, startHour, endHour int, loc *time.Location, modelID *uint) ([]DawnChorusRawEntry, error) {
+	// The enumeration is bounded by wallclock.Span whatever the caller passes, so the number of
+	// queries cannot grow with the span; the first and last segment are stretched to since and
+	// until, so rows outside the bounded span use the offset of the nearest segment.
+	segments := wallclock.CoveringSegments(loc, since, until, time.Now())
+	if len(segments) == 0 {
+		// until <= since: CoveringSegments returns none, but the contract keeps every detection
+		// from since on, so use one open segment at the offset in effect at since.
+		segments = []wallclock.Segment{{Start: since, End: since, OffsetSeconds: wallclock.OffsetAt(loc, time.Unix(since, 0))}}
+	}
+
+	merged := make([]DawnChorusRawEntry, 0)
+	index := make(map[dawnChorusKey]int)
+	for i, seg := range segments {
+		// The last segment is open-ended so detections stamped after until are still counted.
+		rows, err := r.dawnChorusSegmentRows(ctx, seg, i == len(segments)-1, startHour, endHour, modelID)
+		if err != nil {
+			return nil, err
+		}
+		for _, row := range rows {
+			key := dawnChorusKey{scientificName: row.ScientificName, date: row.Date}
+			if at, ok := index[key]; ok {
+				// A local date can straddle an offset change, so the same species and
+				// date can come back from two segments: keep the earliest.
+				merged[at].EarliestAt = min(merged[at].EarliestAt, row.EarliestAt)
+				continue
+			}
+			index[key] = len(merged)
+			merged = append(merged, row)
+		}
+	}
+	return merged, nil
+}
+
+// dawnChorusSegmentRows runs the dawn chorus query over one zone segment. The segment's
+// constant UTC offset is applied to both the hour filter and the date grouping, so they
+// agree on every row. The upper bound seg.End is skipped when last is true.
+func (r *insightsRepository) dawnChorusSegmentRows(ctx context.Context, seg wallclock.Segment, last bool, startHour, endHour int, modelID *uint) ([]DawnChorusRawEntry, error) {
 	det := r.detectionsTable()
 	lab := r.labelsTable()
 	fpJoin, fpWhere := r.falsePositiveExclusion("d")
-	// Hour filter and date grouping MUST share the same offset to keep the query internally
-	// consistent (otherwise a near-midnight detection could be hour-filtered in one zone and
-	// date-grouped in another).
-	hourExpr := r.hourFromUnixExpr("d.detected_at", tzOffsetSeconds)
-	dateExpr := r.dateFromUnixExpr("d.detected_at", tzOffsetSeconds)
+	offset := segmentOffsetSQL(seg)
+	hourExpr := wallClockHourSQL("d.detected_at", offset, r.isMySQL)
+	dateExpr := wallClockDateSQL("d.detected_at", offset, r.isMySQL)
 
 	query := r.db.WithContext(ctx).
 		Table(fmt.Sprintf("%s d", det)).
@@ -189,10 +225,13 @@ func (r *insightsRepository) GetDawnChorusRaw(ctx context.Context, since int64, 
 			lab, dateExpr)).
 		Joins(fmt.Sprintf("JOIN %s ON %s.id = d.label_id", lab, lab)).
 		Joins(fpJoin).
-		Where("d.detected_at >= ?", since).
+		Where("d.detected_at >= ?", seg.Start).
 		Where(fpWhere).
 		Where(fmt.Sprintf("%s >= ? AND %s < ?", hourExpr, hourExpr), startHour, endHour)
 
+	if !last {
+		query = query.Where("d.detected_at < ?", seg.End)
+	}
 	if modelID != nil {
 		query = query.Where("d.model_id = ?", *modelID)
 	}
@@ -260,10 +299,20 @@ func (r *insightsRepository) GetGoneQuiet(ctx context.Context, recentSince int64
 	return results, nil
 }
 
-func (r *insightsRepository) GetDashboardKPIs(ctx context.Context, todaySince int64, tzOffsetSeconds int, modelID *uint) (*DashboardKPIs, error) {
+func (r *insightsRepository) GetDashboardKPIs(ctx context.Context, todaySince int64, loc *time.Location, modelID *uint) (*DashboardKPIs, error) {
 	det := r.detectionsTable()
 	fpJoin, fpWhere := r.falsePositiveExclusion("d")
-	dateExpr := r.dateFromUnixExpr("d.detected_at", tzOffsetSeconds)
+
+	// Best day and recent dates bucket by each row's own offset over the year before today. Older
+	// rows use the offset at the start of that year; they are outside the best-day window and past
+	// the recent dates the streak reads.
+	if loc == nil {
+		loc = time.UTC
+	}
+	oneYearAgo, _ := wallclock.DayBounds(dateOneYearBefore(wallclock.DateOf(time.Unix(todaySince, 0).In(loc))), loc)
+	now := time.Now()
+	from, to := wallclock.Span(oneYearAgo.Unix(), now.Unix(), now)
+	dateExpr := WallClockDateExpr("d.detected_at", loc, from, to, r.isMySQL)
 
 	kpis := &DashboardKPIs{}
 
@@ -292,13 +341,12 @@ func (r *insightsRepository) GetDashboardKPIs(ctx context.Context, todaySince in
 	}
 
 	// 3. Best day (scoped to last year for performance)
-	oneYearAgo := time.Unix(todaySince, 0).AddDate(-1, 0, 0).Unix()
 	var bestDay struct {
 		Date  string
 		Count int64
 	}
 	if err := baseQuery().
-		Where("d.detected_at >= ?", oneYearAgo).
+		Where("d.detected_at >= ?", oneYearAgo.Unix()).
 		Select(fmt.Sprintf("%s as date, COUNT(*) as count", dateExpr)).
 		Group("date").Order("count DESC").Limit(1).
 		Scan(&bestDay).Error; err != nil {
@@ -384,11 +432,12 @@ func (r *insightsRepository) GetModelContributionStats(ctx context.Context, star
 	return result, nil
 }
 
-// queryModelContributionRows runs the per-model aggregate. The derived table pd
-// counts the contributing models per detection over the same range, which gives
-// the sole-contributor count without a subquery inside an aggregate.
+// queryModelContributionRows runs the per-model aggregate over hit rows. The
+// derived table pd counts the models with a hit per detection over the same
+// range, which gives the sole-contributor count without a subquery inside an
+// aggregate.
 func (r *insightsRepository) queryModelContributionRows(tx *gorm.DB, start, end int64) ([]modelContributionRow, error) {
-	contrib := r.modelContributionsTable()
+	contrib := r.hitContributionsTable()
 	query := fmt.Sprintf(`
 SELECT c.model_id AS model_id, m.name AS name, m.version AS version, m.variant AS variant, m.model_type AS model_type,
   COUNT(*) AS detection_count,
@@ -428,8 +477,9 @@ ORDER BY detection_count DESC, c.model_id ASC`,
 	return rows, nil
 }
 
-// queryModelAgreements counts the detections each model pair shares. The join
-// condition c2.model_id > c1.model_id yields each pair once with model_a < model_b.
+// queryModelAgreements counts the detections in which both models of a pair have
+// a hit. The join condition c2.model_id > c1.model_id yields each pair once with
+// model_a < model_b.
 func (r *insightsRepository) queryModelAgreements(tx *gorm.DB, start, end int64) ([]ModelAgreement, error) {
 	query := fmt.Sprintf(`
 SELECT c1.model_id AS model_a_id, c2.model_id AS model_b_id, COUNT(*) AS shared_detections
@@ -439,7 +489,7 @@ JOIN %[2]s d ON d.id = c1.detection_id
 WHERE d.detected_at >= ? AND d.detected_at < ?
 GROUP BY c1.model_id, c2.model_id
 ORDER BY shared_detections DESC, model_a_id ASC, model_b_id ASC`,
-		r.modelContributionsTable(), r.detectionsTable())
+		r.hitContributionsTable(), r.detectionsTable())
 
 	var agreements []ModelAgreement
 	if err := tx.Raw(query, start, end).Scan(&agreements).Error; err != nil {
@@ -449,13 +499,13 @@ ORDER BY shared_detections DESC, model_a_id ASC, model_b_id ASC`,
 }
 
 // queryContributionTotals counts the detections in range and those with at least
-// one contribution row.
+// one hit row. The LEFT JOIN keeps detections without one in total_detections.
 func (r *insightsRepository) queryContributionTotals(tx *gorm.DB, start, end int64) (modelContributionTotalsRow, error) {
 	query := fmt.Sprintf(`
 SELECT COUNT(DISTINCT d.id) AS total_detections, COUNT(DISTINCT c.detection_id) AS detections_with_contributions
 FROM %s d LEFT JOIN %s c ON c.detection_id = d.id
 WHERE d.detected_at >= ? AND d.detected_at < ?`,
-		r.detectionsTable(), r.modelContributionsTable())
+		r.detectionsTable(), r.hitContributionsTable())
 
 	var totals modelContributionTotalsRow
 	if err := tx.Raw(query, start, end).Scan(&totals).Error; err != nil {

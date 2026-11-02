@@ -460,6 +460,10 @@
         "legacyRestartRequiredTitle": "Restartējiet, lai pabeigtu datubāzes migrāciju",
         "legacyRestartRequiredMessage": "Migrācija ir pabeigta. Restartējiet BirdNET-Go, lai pārslēgtos uz jauno datubāzi. Ja šis ziņojums paliek arī pēc restartēšanas, pārbaudiet žurnālā datubāzes kļūdas."
       },
+      "database": {
+        "serverAttentionTitle": "Datubāzes serverim nepieciešama uzmanība",
+        "serverAttentionMessage": "MySQL vai MariaDB servera versija netiek atbalstīta, vai arī datubāze neizmanto rakstzīmju kopu utf8mb4. Sīkāku informāciju skatiet sadaļā Sistēma > Sistēmas veselība."
+      },
       "cleanup": {
         "completeTitle": "Mantotās datubāzes tīrīšana pabeigta",
         "completeMessage": "Atbrīvoti {space} diska vietas.",
@@ -472,7 +476,7 @@
       },
       "ort": {
         "unavailableTitle": "ONNX Runtime nav pieejams",
-        "unavailableMessage": "ONNX Runtime {requiredVersion} ir nepieciešams modelim {modelName}, bet netika atrasts. Skatiet instalēšanas rokasgrāmatu: {installGuideURL}"
+        "unavailableMessage": "ONNX Runtime {requiredVersion} vai jaunāka versija ir nepieciešama modelim {modelName}, bet netika atrasta. Skatiet instalēšanas rokasgrāmatu: {installGuideURL}"
       },
       "region": {
         "staleTitle": "Modeļa reģions var būt novecojis",
@@ -1747,6 +1751,12 @@
             },
             "sqlite_integrity": {
               "name": "Datubāzes integritāte"
+            },
+            "mysql_server_version": {
+              "name": "Datubāzes servera versija"
+            },
+            "mysql_charset": {
+              "name": "Datubāzes rakstzīmju kopa"
             },
             "mysql_table_health": {
               "name": "Tabulu veselība"

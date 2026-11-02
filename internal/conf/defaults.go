@@ -84,6 +84,7 @@ func setDefaultConfig() {
 	viper.SetDefault("birdnet.labelpath", "")
 	viper.SetDefault("birdnet.modelregion", ModelRegionAuto)
 	viper.SetDefault("birdnet.usexnnpack", true)
+	viper.SetDefault("birdnet.alternateminconfidence", DefaultAlternateMinConfidence)
 	viper.SetDefault("taxonomysynonyms", map[string]string{})
 
 	// Range filter configuration
@@ -314,6 +315,14 @@ func setDefaultConfig() {
 	viper.SetDefault("realtime.dogbarkfilter.remember", 5)
 	viper.SetDefault("realtime.dogbarkfilter.confidence", 0.1)
 	viper.SetDefault("realtime.dogbarkfilter.species", []string{})
+
+	// Model consensus filter configuration
+	viper.SetDefault("realtime.modelconsensus.allspecies", false)
+	viper.SetDefault("realtime.modelconsensus.listedspecies", false)
+	viper.SetDefault("realtime.modelconsensus.species", []string{})
+	viper.SetDefault("realtime.modelconsensus.minmodels", DefaultModelConsensusMinModels)
+	viper.SetDefault("realtime.modelconsensus.alleligible", false)
+	viper.SetDefault("realtime.modelconsensus.debug", false)
 
 	// Telemetry configuration
 	viper.SetDefault("realtime.telemetry.enabled", false)

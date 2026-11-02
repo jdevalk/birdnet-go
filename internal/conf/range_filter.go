@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"github.com/tphakala/birdnet-go/internal/errors"
-	"github.com/tphakala/birdnet-go/internal/labels/nonbird"
+	"github.com/tphakala/birdnet-go/internal/labels/soundevent"
 	"github.com/tphakala/birdnet-go/internal/logger"
 	"github.com/tphakala/birdnet-go/internal/openfauna"
+	"github.com/tphakala/birdnet-go/internal/wallclock"
 )
 
 // canonicalSci extracts the scientific-name portion of a species label
@@ -25,7 +26,7 @@ import (
 func canonicalSci(label string) string {
 	// Mirror detection.ExtractScientificName's sanitization (trim, strip CR, then
 	// split on the first underscore, with a full Perch multi-word sound class kept whole
-	// via nonbird.MultiWordLabelNames) so this key matches the one the range-filter
+	// via soundevent.MultiWordLabelNames) so this key matches the one the range-filter
 	// species mapping builds for the same label, including labels that arrive with
 	// trailing whitespace or CRLF line endings. The logic is duplicated rather than
 	// shared because internal/detection imports internal/conf, so conf importing
@@ -33,7 +34,7 @@ func canonicalSci(label string) string {
 	label = strings.TrimSpace(label)
 	label = strings.ReplaceAll(label, "\r", "")
 	sci := label
-	if id, _, ok := nonbird.MultiWordLabelNames(label); ok {
+	if id, _, ok := soundevent.MultiWordLabelNames(label); ok {
 		sci = id
 	} else if idx := strings.IndexByte(label, '_'); idx >= 0 {
 		sci = label[:idx]
@@ -96,17 +97,6 @@ func (s *Settings) IsSpeciesIncluded(result string) bool {
 	return false
 }
 
-// LocalNoon returns 12:00:00 on the calendar day of t, evaluated in t's own time
-// zone. Range-filter date logic uses it to anchor "today" on the local calendar
-// day: time.Time.Truncate operates on absolute (UTC) time, so truncating to a 24h
-// boundary rounds to UTC midnight and, near the local day boundary on hosts with a
-// non-zero UTC offset, yields the wrong calendar day for the geomodel week lookup
-// (and rolls the daily-update marker over at UTC rather than local midnight). Using
-// noon rather than midnight also sidesteps zones whose DST transition is at 00:00.
-func LocalNoon(t time.Time) time.Time {
-	return time.Date(t.Year(), t.Month(), t.Day(), 12, 0, 0, 0, t.Location())
-}
-
 // ShouldUpdateRangeFilterToday atomically checks whether the range filter
 // should be updated today and, if so, publishes a new snapshot with
 // LastUpdated set to today. Only the first caller on a given day gets true;
@@ -122,7 +112,7 @@ func LocalNoon(t time.Time) time.Time {
 // repeated against the current snapshot before stamping, so that exactly one of
 // several racing callers publishes and gets true.
 func ShouldUpdateRangeFilterToday() bool {
-	today := LocalNoon(time.Now())
+	today := wallclock.Noon(time.Now())
 	if !rangeFilterStale(GetSettings(), today) {
 		return false
 	}
@@ -163,7 +153,7 @@ func rangeFilterStale(s *Settings, today time.Time) bool {
 	if s == nil {
 		return false
 	}
-	return LocalNoon(s.BirdNET.RangeFilter.LastUpdated).Before(today)
+	return wallclock.Noon(s.BirdNET.RangeFilter.LastUpdated).Before(today)
 }
 
 // GetLastRangeFilterUpdate returns the last time the range filter was updated

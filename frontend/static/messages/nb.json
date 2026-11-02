@@ -460,6 +460,10 @@
         "legacyRestartRequiredTitle": "Start på nytt for å fullføre databasemigreringen",
         "legacyRestartRequiredMessage": "Migreringen er fullført. Start BirdNET-Go på nytt for å bytte til den nye databasen. Hvis denne meldingen blir stående etter omstart, sjekk loggen for databasefeil."
       },
+      "database": {
+        "serverAttentionTitle": "Databaseserveren trenger oppmerksomhet",
+        "serverAttentionMessage": "MySQL- eller MariaDB-serveren er ikke en støttet versjon, eller databasen bruker ikke tegnsettet utf8mb4. Åpne System > Helse for detaljer."
+      },
       "cleanup": {
         "completeTitle": "Opprydding av eldre database fullført",
         "completeMessage": "{space} diskplass frigjort.",
@@ -472,7 +476,7 @@
       },
       "ort": {
         "unavailableTitle": "ONNX Runtime ikke tilgjengelig",
-        "unavailableMessage": "ONNX Runtime {requiredVersion} kreves for {modelName}, men ble ikke funnet. Se installasjonsveiledningen: {installGuideURL}"
+        "unavailableMessage": "ONNX Runtime {requiredVersion} eller nyere kreves for {modelName}, men ble ikke funnet. Se installasjonsveiledningen: {installGuideURL}"
       },
       "region": {
         "staleTitle": "Modellregionen kan være utdatert",
@@ -1747,6 +1751,12 @@
             },
             "sqlite_integrity": {
               "name": "Databaseintegritet"
+            },
+            "mysql_server_version": {
+              "name": "Databaseserverversjon"
+            },
+            "mysql_charset": {
+              "name": "Databasens tegnsett"
             },
             "mysql_table_health": {
               "name": "Tabellhelse"

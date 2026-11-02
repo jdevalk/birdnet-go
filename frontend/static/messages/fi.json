@@ -460,6 +460,10 @@
         "legacyRestartRequiredTitle": "Käynnistä uudelleen tietokannan siirron viimeistelemiseksi",
         "legacyRestartRequiredMessage": "Siirto on valmis. Käynnistä BirdNET-Go uudelleen siirtyäksesi uuteen tietokantaan. Jos tämä viesti pysyy uudelleenkäynnistyksen jälkeen, tarkista lokista tietokantavirheet."
       },
+      "database": {
+        "serverAttentionTitle": "Tietokantapalvelin vaatii huomiota",
+        "serverAttentionMessage": "MySQL- tai MariaDB-palvelimen versio ei ole tuettu, tai tietokanta ei käytä utf8mb4-merkistöä. Katso lisätiedot kohdasta Järjestelmä > Tila."
+      },
       "cleanup": {
         "completeTitle": "Vanhan tietokannan siivous valmis",
         "completeMessage": "{space} levytilaa vapautettu.",
@@ -472,7 +476,7 @@
       },
       "ort": {
         "unavailableTitle": "ONNX Runtime ei ole käytettävissä",
-        "unavailableMessage": "ONNX Runtime {requiredVersion} vaaditaan mallille {modelName}, mutta sitä ei löytynyt. Katso asennusohje: {installGuideURL}"
+        "unavailableMessage": "ONNX Runtime {requiredVersion} tai uudempi vaaditaan mallille {modelName}, mutta sitä ei löytynyt. Katso asennusohje: {installGuideURL}"
       },
       "region": {
         "staleTitle": "Mallialue saattaa olla vanhentunut",
@@ -1747,6 +1751,12 @@
             },
             "sqlite_integrity": {
               "name": "Tietokannan eheys"
+            },
+            "mysql_server_version": {
+              "name": "Tietokantapalvelimen versio"
+            },
+            "mysql_charset": {
+              "name": "Tietokannan merkistö"
             },
             "mysql_table_health": {
               "name": "Taulujen kunto"
