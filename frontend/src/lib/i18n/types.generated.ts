@@ -1211,6 +1211,8 @@ export type TranslationKey =
   | 'system.database.backup.history.creating'
   | 'system.database.backup.history.createBackup'
   | 'system.database.backup.history.noBackups'
+  | 'system.database.backup.history.loadFailed'
+  | 'system.database.backup.history.createFailed'
   | 'system.database.backup.history.download'
   | 'system.database.backup.history.failed'
   | 'system.database.backup.history.columns.date'
@@ -1230,6 +1232,8 @@ export type TranslationKey =
   | 'system.database.migration.completedNote'
   | 'system.database.migration.starting'
   | 'system.database.migration.status.idle'
+  | 'system.database.migration.status.checking'
+  | 'system.database.migration.status.notReady'
   | 'system.database.migration.status.initializing'
   | 'system.database.migration.status.dual_write'
   | 'system.database.migration.status.migrating'
@@ -1259,6 +1263,8 @@ export type TranslationKey =
   | 'system.database.migration.progress.recordsLabel'
   | 'system.database.migration.progress.sizeLabel'
   | 'system.database.migration.progress.prerequisitesNotMet'
+  | 'system.database.migration.progress.prerequisitesUnavailable'
+  | 'system.database.migration.progress.prerequisitesFailedList' // params: checks
   | 'system.database.migration.progress.validatingTitle'
   | 'system.database.migration.progress.validatingBody' // params: count
   | 'system.database.migration.progress.dirtyRecordsCatchup' // params: count
@@ -1338,6 +1344,9 @@ export type TranslationKey =
   | 'system.database.migration.prerequisites.warningsCount' // params: count
   | 'system.database.migration.prerequisites.running'
   | 'system.database.migration.prerequisites.checkingStep' // params: current, total
+  | 'system.database.migration.prerequisites.currentCheck' // params: name, seconds
+  | 'system.database.migration.prerequisites.slowHint'
+  | 'system.database.migration.prerequisites.runFailed' // params: error
   | 'system.database.migration.prerequisites.passedCount' // params: passed, total
   | 'system.database.migration.prerequisites.criticalCount' // params: count
   | 'system.database.migration.prerequisites.warningCount' // params: count
@@ -3925,7 +3934,8 @@ export type TranslationKey =
   | 'errors.backup.unsupportedType'
   | 'errors.backup.v2NotInitialized'
   | 'errors.migration.notConfigured'
-  | 'errors.migration.preFlightFailed'
+  | 'errors.migration.preFlightFailed' // params: check
+  | 'errors.migration.prerequisitesNotReady'
   | 'errors.migration.invalidBody'
   | 'errors.migration.recordCountFailed'
   | 'errors.migration.startFailed'
@@ -4658,6 +4668,7 @@ export type TranslationParams = {
   'system.database.migration.progress.dirtyIds': { count: string | number };
   'system.database.migration.progress.completedBody': { count: string | number };
   'system.database.migration.progress.migrateInfo': { count: string | number };
+  'system.database.migration.progress.prerequisitesFailedList': { checks: string | number };
   'system.database.migration.progress.validatingBody': { count: string | number };
   'system.database.migration.progress.dirtyRecordsCatchup': { count: string | number };
   'system.database.migration.progress.migratingPhase': { phase: string | number };
@@ -4679,6 +4690,11 @@ export type TranslationParams = {
     current: string | number;
     total: string | number;
   };
+  'system.database.migration.prerequisites.currentCheck': {
+    name: string | number;
+    seconds: string | number;
+  };
+  'system.database.migration.prerequisites.runFailed': { error: string | number };
   'system.database.migration.prerequisites.passedCount': {
     passed: string | number;
     total: string | number;
@@ -4938,6 +4954,7 @@ export type TranslationParams = {
   'quietHours.indicator.tooltip': { count: string | number };
   'errors.detection.invalidDate': { paramName: string | number };
   'errors.backup.insufficientSpace': { needed: string | number; available: string | number };
+  'errors.migration.preFlightFailed': { check: string | number };
   'errors.streams.test.unsupportedScheme': { scheme: string | number };
   'wizard.progress': { current: string | number; total: string | number };
   'wizard.whatsNew.title': { version: string | number };

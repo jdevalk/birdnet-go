@@ -32,6 +32,8 @@ func (c *Handler) RegisterRoutes(g *echo.Group) {
         Store: middleware.NewRateLimiterMemoryStoreWithConfig(
             middleware.RateLimiterMemoryStoreConfig{Rate: rate.Limit(1), Burst: 5},
         ),
+        // One bucket per client (per /64 for IPv6)
+        IdentifierExtractor: apicore.RateLimitKey,
     }
     g.GET("/stream", c.StreamHandler, middleware.RateLimiterWithConfig(rateLimiterConfig))
 }
@@ -136,7 +138,7 @@ even if it was detected earlier on another source).
 
 | Method | Route                         | Handler               | Auth | Description                            |
 | ------ | ----------------------------- | --------------------- | ---- | -------------------------------------- |
-| POST   | `/control/restart`            | `RestartAnalysis`     | ✅   | Restart analysis engine                |
+| POST   | `/control/restart`            | `RestartAnalysis`     | ✅   | Restart audio capture and analysis     |
 | POST   | `/control/reload`             | `ReloadModel`         | ✅   | Reload BirdNET model                   |
 | POST   | `/control/rebuild-filter`     | `RebuildFilter`       | ✅   | Rebuild range filter                   |
 | POST   | `/control/restart-server`     | `RestartServer`       | ✅   | Restart the server binary              |
@@ -840,6 +842,22 @@ Requires enhanced (v2) database. Returns 409 Conflict with `error_key` `errors.p
 | GET    | `/system/diagnostics/report/:id` | `GetDiagnosticsReport` | ✅   | Retrieve completed report   |
 | GET    | `/system/diagnostics/errors`     | `GetRecentErrors`      | ✅   | Recent error log entries    |
 
+### Database migration (`imports/migration.go`, `imports/prerequisites.go`)
+
+Routes live under `/system/database/migration`. The prerequisite checks run as one background job per process; the client starts it with POST and polls GET.
+
+| Method | Route                | Handler            | Auth | Description                                                                               |
+| ------ | -------------------- | ------------------ | ---- | ----------------------------------------------------------------------------------------- |
+| GET    | `/prerequisites`     | `GetPrerequisites` | ✅   | Snapshot of the prerequisites run (idle, running, completed or failed); never starts work |
+| POST   | `/prerequisites/run` | `RunPrerequisites` | ✅   | Start the run, or join the one in progress; optional body `{"force": bool}`               |
+| POST   | `/start`             | `StartMigration`   | ✅   | Start the migration; needs a passing prerequisites run younger than 30 minutes            |
+
+**Prerequisites snapshot** - Both routes return the same JSON object: `status` (`idle`, `running`, `completed`, `failed`), `run_id` (increases with every run in this process), `started_at`, `checked_at` (completion time of a completed run), `checks`, `all_passed`, `can_start_migration`, `critical_failures`, `warnings`, `error` (why a `failed` run did not finish) and, only while `running`, `progress` with `completed_steps`, `total_steps`, `current_check_id`, `current_check_name` and `current_check_elapsed_ms`. While a run is in progress `checks` holds the checks finished so far and `all_passed` and `can_start_migration` are false. `failed` means the run itself did not finish (time limit, shutdown, internal error); failing checks still give `completed`.
+
+**POST /api/v2/system/database/migration/prerequisites/run** - Joins the run in progress whatever `force` says. Without `force`, a completed passing result younger than 30 minutes for the same database settings is returned as is; `force` or a failing, older or differently configured result starts a new run. A malformed body returns 400 with `errors.migration.invalidBody`.
+
+**POST /api/v2/system/database/migration/start** - Needs a completed prerequisites run that passed, is younger than 30 minutes and ran against the current database settings. The slow checks (legacy database read, integrity or table health, MySQL permissions, record count) come from that run; the cheap ones (migration state, disk space, write permission, server version, character set) run again inside a 20 second limit. Without a usable run (none, in progress, older than 30 minutes, or for other database settings) it returns 409 with `errors.migration.prerequisitesNotReady`; when the usable stored run or the re-run checks have a failed critical check it returns 400 with `errors.migration.preFlightFailed` and the check name in `error_params.check` (a stored run that failed without a named check returns 409); when the start's own work (the re-run checks, or the record count when no total is known) outlasts the 20 second limit it returns 504 with `errors.migration.startFailed`. If the client has gone away, nothing is started; if the server is stopping, it returns 503 with `errors.migration.startFailed` and nothing is started. A successful start discards the stored run.
+
 ### Import (`imports/import.go`)
 
 | Method | Route                          | Handler                | Auth | Description                                                             |
@@ -976,10 +994,12 @@ All API errors follow this structure:
 
 SSE endpoints are rate limited to prevent abuse:
 
-- Detection streams: 10 requests/minute per IP
-- Sound level streams: 10 requests/minute per IP
-- Stream health streams: 5 requests/minute per IP (authenticated, settings page)
-- Notification streams: 10 requests/minute per IP, burst of 15 (public, used by dashboard NotificationBell)
+- Detection and sound level streams: 10 requests/minute per client, burst of 10, shared by both streams
+- Stream health streams: 5 requests/minute per client (authenticated, settings page)
+- Metrics stream: 10 requests/minute per client, burst of 10 (authenticated)
+- Notification streams: 10 requests/minute per client, burst of 15 (public, used by dashboard NotificationBell)
+
+A client is identified by its address, and IPv6 clients are counted per /64.
 
 ## Server-Sent Events (SSE)
 
@@ -995,7 +1015,7 @@ The `/notifications/stream` endpoint provides both notifications and toast messa
 - `heartbeat` - Keep-alive signal
 - `notification_deleted` - A notification was deleted on the server (a cleared or replaced persistent notice, or a delete from another tab); payload `{"id": "..."}`. Guests receive it only for detection notifications.
 
-**Authentication:** Public read-only SSE, rate-limited (10 connections per minute per IP, burst of 15). Guests receive bird-detection events only; operational/admin notifications and toast messages are suppressed for unauthenticated subscribers so that integration errors and system warnings are never exposed anonymously. Authenticated subscribers receive the full stream.
+**Authentication:** Public read-only SSE, rate-limited (10 connections per minute per client, burst of 15). Guests receive bird-detection events only; operational/admin notifications and toast messages are suppressed for unauthenticated subscribers so that integration errors and system warnings are never exposed anonymously. Authenticated subscribers receive the full stream.
 
 **Toast Event Format:**
 
@@ -1178,7 +1198,7 @@ The API reports these error types (from PR #1380):
 #### GET /api/v2/streams/health/stream
 
 **Authentication:** Required
-**Rate Limit:** 5 connections per minute per IP
+**Rate Limit:** 5 connections per minute per client
 **Connection Duration:** Maximum 30 minutes
 
 Establishes a Server-Sent Events (SSE) connection that pushes real-time updates when stream health changes. This is more efficient than polling for monitoring dashboards that need immediate notification of stream issues.
