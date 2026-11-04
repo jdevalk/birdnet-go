@@ -786,15 +786,6 @@ func (p *Processor) startDetectionProcessor() {
 //
 //nolint:gocritic // hugeParam: Pass by value is intentional - avoids pointer dereferencing in hot path
 func (p *Processor) processDetections(item classifier.Results) {
-	// Add structured logging for detection pipeline entry
-	GetLogger().Debug("Processing detections from queue",
-		logger.String("source", p.getDisplayNameForSource(item.Source.ID)),
-		logger.String("model_id", item.ModelID),
-		logger.Time("start_time", item.StartTime),
-		logger.Int("results_count", len(item.Results)),
-		logger.Int64("elapsed_time_ms", item.ElapsedTime.Milliseconds()),
-		logger.String("operation", "process_detections_entry"))
-
 	// Capture a settings snapshot once so every decision in this cycle
 	// uses a consistent, hot-reloadable view of the configuration.
 	settings := p.currentSettings()
@@ -842,7 +833,7 @@ func (p *Processor) processDetections(item classifier.Results) {
 			}
 		}
 		threshold := modelGlobalConfidenceThreshold(settings, item.ModelID)
-		p.pipelineStats.RecordInference(item.Source.ID, item.ModelID, len(item.Results), len(detectionResults), maxConf, threshold)
+		p.pipelineStats.RecordInference(item.Source.ID, item.ModelID, len(item.Results), len(detectionResults), maxConf, threshold, item.Inference)
 	}
 
 	// Every result of this chunk shares one window, so one hit stamp serves them all.
@@ -2229,7 +2220,7 @@ func (p *Processor) pendingDetectionsFlusher() {
 				pendingCount, flushedCount := p.flushPendingDetections()
 
 				if pendingCount > 0 || flushedCount > 0 {
-					GetLogger().Debug("Pending detections flusher cycle",
+					GetLogger().Trace("Pending detections flusher cycle",
 						logger.Int("pending_count", pendingCount),
 						logger.Int("flushable_count", flushedCount),
 						logger.String("operation", "pending_flusher_cycle"))
@@ -3082,12 +3073,10 @@ func (p *Processor) ShutdownWithContext(ctx context.Context) error {
 // logDetectionResults logs detection processing results using the LogDeduplicator
 // to prevent repetitive logging while maintaining observability.
 //
-// Strategy (BG-18):
-//   - INFO level: Only when filtered_detections_count > 0 (actual detections)
-//   - DEBUG level: Zero-detection cycles (for troubleshooting without log spam)
-//
-// This prevents ~40,000+ identical "filtered_detections_count:0" logs per day
-// while still allowing debug-mode visibility into the detection pipeline.
+// With deduplication enabled, only changes and periodic heartbeats are logged,
+// at DEBUG level. With deduplication disabled every analysis window is logged,
+// at TRACE level, so it stays out of debug logs; the raw and filtered sums per
+// reporting interval are in the "pipeline stats" INFO line.
 func (p *Processor) logDetectionResults(source string, rawCount, filteredCount int) {
 	p.logDedupMu.RLock()
 	dedup := p.logDedup
@@ -3097,18 +3086,24 @@ func (p *Processor) logDetectionResults(source string, rawCount, filteredCount i
 	}
 
 	shouldLog, reason := dedup.ShouldLog(source, rawCount, filteredCount)
-
-	if shouldLog {
-		// Log all processing results at DEBUG level to avoid flooding console.
-		// Actual detections are logged at INFO when they become pending/confirmed
-		// detections (see "Created new pending detection" log message).
-		GetLogger().Debug("Detection processing results",
-			logger.String("source", p.getDisplayNameForSource(source)),
-			logger.Int("raw_results_count", rawCount),
-			logger.Int("filtered_detections_count", filteredCount),
-			logger.String("log_reason", reason),
-			logger.String("operation", "process_detections_summary"))
+	if !shouldLog {
+		return
 	}
+
+	// Actual detections are logged at INFO when they become pending/confirmed
+	// detections (see "Created new pending detection" log message).
+	fields := []logger.Field{
+		logger.String("source", p.getDisplayNameForSource(source)),
+		logger.Int("raw_results_count", rawCount),
+		logger.Int("filtered_detections_count", filteredCount),
+		logger.String("log_reason", reason),
+		logger.String("operation", "process_detections_summary"),
+	}
+	if reason == logReasonDedupDisabled {
+		GetLogger().Trace("Detection processing results", fields...)
+		return
+	}
+	GetLogger().Debug("Detection processing results", fields...)
 }
 
 // generateCorrelationID creates a unique, human-readable identifier for detection tracking
