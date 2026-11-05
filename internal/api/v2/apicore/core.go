@@ -25,6 +25,7 @@ import (
 	"github.com/tphakala/birdnet-go/internal/logger"
 	"github.com/tphakala/birdnet-go/internal/observability"
 	"github.com/tphakala/birdnet-go/internal/securefs"
+	"github.com/tphakala/birdnet-go/internal/security/proxytrust"
 	"github.com/tphakala/birdnet-go/internal/suncalc"
 )
 
@@ -98,6 +99,10 @@ type Core struct {
 	// SSEManager manages Server-Sent Events connections.
 	SSEManager *SSEManager
 
+	// proxyTrust caches the checker built from Security.TrustedProxies, rebuilt
+	// only when the list changes. Read it through ProxyChecker.
+	proxyTrust proxytrust.Cache
+
 	// V2Manager provides access to the v2 normalized database for stats and backup.
 	V2Manager datastoreV2.Manager
 
@@ -129,6 +134,15 @@ type Core struct {
 	// PrivateMode auth gate. Injected by the facade so the exempt allow-list stays
 	// colocated with the domain route-path constants and registrations.
 	privateModeExempt func(method, path string) bool
+}
+
+// ProxyChecker returns the trusted-proxy checker for this controller's current
+// Security.TrustedProxies list. The list is read from the live settings on every
+// call and the checker is rebuilt only when it changes, so a settings save takes
+// effect on the next request. The rate limiters and the connection check share
+// this one cache.
+func (c *Core) ProxyChecker() *proxytrust.Checker {
+	return c.proxyTrust.ResolveSettings(c.ControllerSettings())
 }
 
 // NewCore builds the shared API v2 substrate. It resolves the media export root,
@@ -182,18 +196,19 @@ func NewCore(e *echo.Echo, ds datastore.Interface, settings *conf.Settings,
 	// field doc and the settings update handlers.
 	c.Settings.Store(settings)
 
-	// Configure the trusted-proxy-gated IP and scheme extractors. Forwarded
-	// client-IP headers (CF-Connecting-IP, X-Forwarded-For, X-Real-IP) and
-	// forwarded scheme headers (X-Forwarded-Proto and siblings) are honored only
-	// when the connection peer is a trusted proxy (loopback/link-local/private by
-	// default, plus Security.TrustedProxies); otherwise the real peer address and
-	// connection scheme are used. The scheme extractor is needed because Echo
-	// v4.16 otherwise trusts scheme headers from loopback/link-local/private
-	// peers only, so a proxy on a public or CGNAT address would lose HSTS. Both
-	// read this controller's own settings snapshot per request (published above
-	// and on every save), so they honor the controller's TrustedProxies and
-	// hot-reload without a restart.
-	e.IPExtractor = newTrustedProxyIPExtractor(c.ControllerSettings)
+	// Configure the trusted-proxy-gated IP and scheme extractors. The IP extractor
+	// reports the client the rate limiters resolve: forwarded client-IP headers
+	// (CF-Connecting-IP, X-Forwarded-For, X-Real-IP) are recorded only when a
+	// trusted peer (loopback/link-local/private by default, plus
+	// Security.TrustedProxies) sends consistent headers or a configured proxy
+	// verifies them; otherwise the real peer address is used. Forwarded scheme headers (X-Forwarded-Proto and
+	// siblings) are honored only when the connection peer is a trusted proxy. The
+	// scheme extractor is needed because Echo v4.16 otherwise trusts scheme
+	// headers from loopback/link-local/private peers only, so a proxy on a public
+	// or CGNAT address would lose HSTS. Both read this controller's own settings
+	// snapshot per request (published above and on every save), so they honor the
+	// controller's TrustedProxies and hot-reload without a restart.
+	e.IPExtractor = c.attributionIP
 	e.SchemeExtractor = newTrustedProxySchemeExtractor(c.ControllerSettings)
 	GetLogger().Info("Configured trusted-proxy-gated IP and scheme extractors (forwarded client IP and scheme honored only from trusted proxies)")
 

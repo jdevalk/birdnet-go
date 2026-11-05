@@ -1667,7 +1667,31 @@ type Security struct {
 	// holds clients: a client inside a listed range is trusted as a proxy, so its
 	// own forwarded headers can name any address. Have the proxy append X-Forwarded-For or overwrite
 	// X-Real-IP; the client-IP headers it forwards must all name the same client,
-	// and a Forwarded header is not accepted. Hot-reloadable.
+	// and a Forwarded header is not accepted. The API rate limiters follow the
+	// same rule: listing a proxy by its own address gives each verified client its
+	// own limits, while all requests of a listed proxy whose headers do not verify
+	// share one bucket. On the login and import elevation routes, which also
+	// limit the connection peer as a whole, a proxy listed by its own address (a
+	// bare IP, a /32 or a /128, not inside a wider listed range) is exempt from
+	// that shared peer limit for the clients it verifies, unless a Cloudflare edge
+	// address is in the request's chain; the clients a listed range or a listed
+	// proxy behind a Cloudflare edge verifies, and the visitors an unlisted proxy
+	// names, keep it. A request that arrives directly has no shared peer limit
+	// and keeps its own per-address count. A proxy behind Cloudflare whose
+	// headers name a Cloudflare edge hop verifies only when the "cloudflare"
+	// preset is listed as well. An unlisted proxy on a loopback, link-local or
+	// private address gets per-client limits only while the headers it forwards
+	// agree on one client; a host that can reach that proxy directly can still
+	// name any of its clients, and an unlisted local host can name any client
+	// under its own address. An unlisted proxy on a public or 100.64.0.0/10
+	// (CGNAT, Tailscale IPv4) address is treated as the client and its headers
+	// are ignored, so list it.
+	// The client address that logs and the tunnel label record comes from the same
+	// resolution as the rate limiters. Forwarded headers that disagree, or that a
+	// listed proxy cannot verify, are not recorded: the peer's own address is
+	// logged instead. A client that an unlisted loopback, link-local or private
+	// host names consistently is recorded as named, so such a host can choose the
+	// address that appears in logs. Hot-reloadable.
 	TrustedProxies []string     `yaml:"trustedproxies" json:"trustedProxies"`
 	PublicAccess   PublicAccess `yaml:"publicaccess" json:"publicAccess"` // features accessible without authentication
 

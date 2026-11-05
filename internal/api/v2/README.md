@@ -29,11 +29,11 @@ func (c *Handler) RegisterRoutes(g *echo.Group) {
     // Rate-limited endpoints (typically for streams)
     rateLimiterConfig := middleware.RateLimiterConfig{
         Skipper: middleware.DefaultSkipper,
-        Store: middleware.NewRateLimiterMemoryStoreWithConfig(
+        Store: apicore.NewRateLimiterStore(
             middleware.RateLimiterMemoryStoreConfig{Rate: rate.Limit(1), Burst: 5},
         ),
         // One bucket per client (per /64 for IPv6)
-        IdentifierExtractor: apicore.RateLimitKey,
+        IdentifierExtractor: c.RateLimitKey,
     }
     g.GET("/stream", c.StreamHandler, middleware.RateLimiterWithConfig(rateLimiterConfig))
 }
@@ -187,6 +187,8 @@ even if it was detected earlier on another source).
 | POST   | `/integrations/birdweather/test`             | `TestBirdWeatherConnection`     | ✅   | Test BirdWeather connection                    |
 | POST   | `/integrations/weather/test`                 | `TestWeatherConnection`         | ✅   | Test weather provider connection               |
 | POST   | `/integrations/ebird/test`                   | `TestEBirdConnection`           | ✅   | Test eBird API connectivity and authentication |
+
+The MQTT and BirdWeather test endpoints stream one JSON object per line: the stage results in the order they occur, then a final `{"state":"completed","elapsed_time_ms":N}` line when the test finishes before its timeout and the client is still connected. No completed line is written after a timeout or a client disconnect.
 
 ### Media (`media/media.go`)
 
@@ -490,7 +492,7 @@ Both verbs report identically under the `skippedFields` response key: it lists o
 
 - Real-time audio level data for UI audio indicators (0-100 with clipping detection)
 - Automatic source anonymization for unauthenticated clients
-- Connection limiting: up to 5 concurrent connections per client IP (allows multiple browser tabs)
+- Connection limiting: up to 5 concurrent connections per client (one IPv4 address or one IPv6 /64; allows multiple browser tabs)
 - Maximum connection duration: 30 minutes
 - Heartbeat interval: 10 seconds
 
@@ -999,7 +1001,7 @@ SSE endpoints are rate limited to prevent abuse:
 - Metrics stream: 10 requests/minute per client, burst of 10 (authenticated)
 - Notification streams: 10 requests/minute per client, burst of 15 (public, used by dashboard NotificationBell)
 
-A client is identified by its address, and IPv6 clients are counted per /64.
+A client is identified by its address, and IPv6 clients are counted per /64. Behind a reverse proxy the address is the one the proxy reported, and only when it can be believed. A proxy listed in `security.trustedproxies` is believed when its forwarded headers agree on one client. A proxy that is not listed (a loopback, link-local or private peer) is believed only for the visitors it names in headers that agree. Each such visitor gets its own count, kept under that proxy's address, so a header cannot name a count that belongs to a direct client or to another proxy's visitor. A host that can reach the proxy directly can still name any visitor of that proxy, and an unlisted local host can name any visitor under its own address; those counts are bounded by the store caps and, for login and import elevation, by the per-peer limit (ten clients' worth of attempts for the connection peer as a whole). That per-peer limit does not apply to a request that arrives directly (no client-IP header, or a peer whose headers are ignored), which is counted against its own address alone, nor to a request that a proxy listed in `security.trustedproxies` by its own address (a bare IP, a /32 or a /128, not a range) verified without a Cloudflare edge hop in the chain; listing such a proxy therefore stops its visitors from locking each other out. A client verified by a listed range, a client verified by a listed proxy behind a Cloudflare edge hop, and a visitor an unlisted proxy names keep the per-peer limit. Listing the proxy in `security.trustedproxies` (and the `cloudflare` preset when Cloudflare edge addresses sit in front of it) gives counts that a header cannot choose, provided the proxy's headers verify; the Reverse proxy card on the Security settings page shows whether they do. Requests whose headers do not agree (for example a forged `CF-Connecting-IP` next to the address the proxy appended to `X-Forwarded-For`) all share one count per proxy. A peer that is neither listed nor local is the client, and its forwarded headers are ignored.
 
 ## Server-Sent Events (SSE)
 
