@@ -54,6 +54,15 @@ type ExportSettings struct {
 	PreCapture     int                   `yaml:"precapture" json:"preCapture" mapstructure:"preCapture"`             // pre-capture in seconds
 	Gain           float64               `yaml:"gain" json:"gain" mapstructure:"gain"`                               // gain in dB for audio capture
 	Normalization  NormalizationSettings `yaml:"normalization" json:"normalization" mapstructure:"normalization"`    // audio normalization settings (EBU R128)
+	Denoise        DenoiseSettings       `yaml:"denoise" json:"denoise" mapstructure:"denoise"`                      // denoise the captured audio before it is saved
+}
+
+// DenoiseSettings is a denoise on/off switch with a strength preset. The tags
+// carry no omitempty on purpose: an Off value must stay visible in the settings
+// API so a client never reads a missing object as a different state.
+type DenoiseSettings struct {
+	Enabled  bool   `yaml:"enabled" json:"enabled" mapstructure:"enabled"`    // true to apply the denoise
+	Strength string `yaml:"strength" json:"strength" mapstructure:"strength"` // preset name, see the DenoisePreset constants
 }
 
 // NormalizationSettings contains audio normalization configuration based on EBU R128 standard.
@@ -179,6 +188,7 @@ type Dashboard struct {
 	Layout           DashboardLayout      `yaml:"layout" json:"layout"`                                 // configurable dashboard element layout
 	DefaultAudioGain float64              `yaml:"defaultaudiogain" json:"defaultAudioGain"`             // Default playback gain in dB (0-24)
 	LiveSpectrogram  bool                 `yaml:"livespectrogram" json:"liveSpectrogram"`               // auto-start live spectrogram on dashboard
+	PlaybackDenoise  DenoiseSettings      `yaml:"playbackdenoise" json:"playbackDenoise"`               // denoise clips when they are played or downloaded; stored clips stay unchanged
 }
 
 // DashboardLayout defines the ordered list of elements displayed on the dashboard.
@@ -1360,8 +1370,14 @@ const (
 )
 
 // OpenVINO device preferences for BirdNET.OpenVINODevice. "auto" picks the GPU
-// (Intel iGPU) when present for eligible models, else the f16 CPU path; "cpu"
-// and "gpu" force a device. An empty string is treated as "auto".
+// (Intel iGPU) when present for eligible models. On arm64 the auto backend keeps
+// models on ONNX Runtime unless birdnet.backend is openvino (or, for BirdNET
+// v2.4, ONNX Runtime is unavailable), and then uses the CPU device on an
+// ARMv8.2+ CPU with native f16 (the precision is per model; see
+// classifier.openVINOPrecisionFor); "cpu" and "gpu" force a device, and "cpu" is
+// also an opt-in to the OpenVINO CPU on arm64 under the auto backend (INT8 or
+// unrecognized weights additionally need birdnet.backend openvino). An empty
+// string is treated as "auto".
 const (
 	OVDeviceAuto = "auto"
 	OVDeviceCPU  = "cpu"
@@ -1431,7 +1447,7 @@ type BatConfig struct {
 }
 
 // UltrasonicFilterConfig controls the post-detection ultrasonic validation filter for bat detections.
-// The filter measures temporal variability of ultrasonic energy (US frame CV) in the source audio.
+// The filter measures temporal variability of ultrasonic energy (US frame CV) in the audio window it is given, at the model's analysis rate.
 // Real bat echolocation produces bursts of ultrasonic energy (high CV), while false positives
 // from audible-range sounds show flat ultrasonic energy at the noise floor (low CV).
 type UltrasonicFilterConfig struct {
@@ -1488,6 +1504,21 @@ func (c UltrasonicFilterConfig) validateSplit() error {
 			Build()
 	}
 	return nil
+}
+
+// BSGBatConfig holds configuration for the BSG-BAT bat classifier. The schedule,
+// false positive filter and ultrasonic filter are shared with the bat section
+// (BatConfig); only the model files, the confidence threshold and the analysis
+// step are its own.
+type BSGBatConfig struct {
+	ModelPath string  `yaml:"modelpath,omitempty" json:"modelPath,omitempty"` // path to BSG-BAT ONNX model file
+	LabelPath string  `yaml:"labelpath,omitempty" json:"labelPath,omitempty"` // path to BSG-BAT label file
+	Threshold float64 `yaml:"threshold" json:"threshold"`                     // confidence threshold for BSG-BAT detections
+	// StepFrames is the analysis step between successive BSG-BAT windows, in mel
+	// frames of 768 samples (2 ms at 384 kHz). Accepted values are 100 to 512; 0
+	// uses the default of 250. The bat false positive filter count follows it as
+	// ceil(6 / step seconds * level fraction). A change restarts audio capture.
+	StepFrames int `yaml:"stepframes" json:"stepFrames"`
 }
 
 // BSGConfig holds configuration for BSG regional bird models.
@@ -2016,6 +2047,7 @@ type Settings struct {
 	Perch     PerchConfig     `yaml:"perch" json:"perch"`         // Perch v2 model configuration
 	BirdNETV3 BirdNETV3Config `yaml:"birdnetv3" json:"birdnetv3"` // BirdNET v3.0 acoustic classifier configuration
 	Bat       BatConfig       `yaml:"bat" json:"bat"`             // Bat detection configuration
+	BSGBat    BSGBatConfig    `yaml:"bsgbat" json:"bsgbat"`       // BSG-BAT bat classifier configuration
 	BSG       BSGConfig       `yaml:"bsg" json:"bsg"`             // BSG regional bird model configuration
 	Models    ModelsConfig    `yaml:"models" json:"models"`       // Global model enablement and management
 
@@ -2068,6 +2100,21 @@ type Settings struct {
 	// stamped by UpdateSettings and CompareAndStoreSettings and is zero for a
 	// snapshot published by Load or StoreSettings. Read it through Revision.
 	revision uint64
+}
+
+// EffectivePlaybackDenoise returns the denoise preset the UI applies to clip
+// playback and downloads by default, or "" when none applies. The playback
+// default is off while export-stage denoise is on: the saved clips are already
+// denoised, and denoising them again when played would do it twice.
+func (s *Settings) EffectivePlaybackDenoise() string {
+	if s.Realtime.Audio.Export.Denoise.Enabled {
+		return ""
+	}
+	playback := s.Realtime.Dashboard.PlaybackDenoise
+	if !playback.Enabled || !IsValidDenoisePresetName(playback.Strength) {
+		return ""
+	}
+	return playback.Strength
 }
 
 // Revision identifies the client-writable state of this snapshot within one
