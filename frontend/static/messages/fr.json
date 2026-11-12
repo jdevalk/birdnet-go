@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Informations système",
-      "os": "Système d'exploitation",
-      "hostname": "Nom d'hôte",
-      "uptime": "Temps de fonctionnement",
-      "cpus": "CPUs",
-      "model": "Modèle système",
-      "timezone": "Fuseau horaire",
-      "temperature": "Température du processeur",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Données de température non disponibles",
       "cpuCores": "Cœurs CPU",
@@ -1248,15 +1241,7 @@
         "process": "Processus"
       },
       "showAll": "Afficher tous les processus",
-      "showBirdnetOnly": "Afficher BirdNET uniquement",
-      "table": {
-        "process": "Processus",
-        "status": "Statut",
-        "cpu": "CPU",
-        "memory": "Mémoire",
-        "uptime": "Temps de fonctionnement",
-        "showAllProcesses": "Afficher tous les processus"
-      }
+      "showBirdnetOnly": "Afficher BirdNET uniquement"
     },
     "errors": {
       "systemInfo": "Échec du chargement des informations système : {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Contrôle du filtre",
       "highPassFilter": "Contrôle du filtre passe-haut : {freq} Hz",
       "seekProgress": "Progression de la lecture audio : {current} / {total} secondes",
+      "seek": "Position de lecture",
+      "seekValueText": "{current} sur {total}",
       "playbackSpeed": "Vitesse de lecture",
       "speed": "Vitesse",
-      "loop": "Basculer la boucle",
+      "loop": "Boucle",
       "player": "Lecteur audio",
       "autoplayBlocked": "Cliquez pour lire (lecture automatique bloquée)",
       "hlsLoadFailed": "Impossible de charger le lecteur audio, veuillez recharger la page et réessayer",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Écarter les détections improbables",
+        "helpText": "Lorsqu'activé, les détections de chauves-souris que la validation post-détection marque comme improbables sont écartées : elles ne sont pas enregistrées, n'ont ni clip audio ni notification et ne peuvent pas être récupérées. Lorsque désactivé (par défaut), elles sont enregistrées et marquées comme improbables. Les détections déjà enregistrées ne sont pas modifiées."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",

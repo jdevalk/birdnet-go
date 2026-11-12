@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Järjestelmätiedot",
-      "os": "Käyttöjärjestelmä",
-      "hostname": "Isäntänimi",
-      "uptime": "Käynnissäoloaika",
-      "cpus": "Prosessorit",
-      "model": "Järjestelmämalli",
-      "timezone": "Aikavyöhyke",
-      "temperature": "Prosessorin lämpötila",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Lämpötilatiedot eivät ole saatavilla",
       "cpuCores": "CPU-ytimet",
@@ -1248,15 +1241,7 @@
         "process": "Prosessi"
       },
       "showAll": "Näytä kaikki prosessit",
-      "showBirdnetOnly": "Näytä vain BirdNET",
-      "table": {
-        "process": "Prosessi",
-        "status": "Tila",
-        "cpu": "CPU",
-        "memory": "Muisti",
-        "uptime": "Käyntiaika",
-        "showAllProcesses": "Näytä kaikki prosessit"
-      }
+      "showBirdnetOnly": "Näytä vain BirdNET"
     },
     "errors": {
       "systemInfo": "Järjestelmätietojen lataus epäonnistui: {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Suodattimen hallinta",
       "highPassFilter": "Ylipäästösuodattimen hallinta: {freq} Hz",
       "seekProgress": "Äänen eteneminen: {current} / {total} sekuntia",
+      "seek": "Toistokohta",
+      "seekValueText": "{current} / {total}",
       "playbackSpeed": "Toistonopeus",
       "speed": "Nopeus",
-      "loop": "Vaihda silmukka",
+      "loop": "Silmukka",
       "player": "Äänisoitin",
       "autoplayBlocked": "Klikkaa toistaaksesi (automaattinen toisto estetty)",
       "hlsLoadFailed": "Äänisoittimen lataaminen epäonnistui, lataa sivu uudelleen ja yritä uudestaan",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Hylkää epätodennäköiset tunnistukset",
+        "helpText": "Kun käytössä, lepakkotunnistukset, jotka tunnistuksen jälkitarkistus merkitsee epätodennäköisiksi, hylätään: niitä ei tallenneta, niille ei synny äänileikettä eikä ilmoitusta, eikä niitä voi palauttaa. Kun pois käytöstä (oletus), ne tallennetaan ja merkitään epätodennäköisiksi. Jo tallennettuja tunnistuksia ei muuteta."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",

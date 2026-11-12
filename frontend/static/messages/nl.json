@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Systeem informatie",
-      "os": "Besturingssysteem",
-      "hostname": "Computernaam",
-      "uptime": "Werktijd",
-      "cpus": "Processor kernen",
-      "model": "Systeem model",
-      "timezone": "Tijdzone",
-      "temperature": "Processor temperatuur",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Temperatuur informatie niet beschikbaar",
       "cpuCores": "CPU-kernen",
@@ -1248,15 +1241,7 @@
         "process": "Proces"
       },
       "showAll": "Toon alle processen",
-      "showBirdnetOnly": "Toon alleen BirdNET",
-      "table": {
-        "process": "Proces",
-        "status": "Status",
-        "cpu": "CPU",
-        "memory": "Geheugen",
-        "uptime": "Uptime",
-        "showAllProcesses": "Toon alle processen"
-      }
+      "showBirdnetOnly": "Toon alleen BirdNET"
     },
     "errors": {
       "systemInfo": "Systeem informatie inlezen mislukt: {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Filter bediening",
       "highPassFilter": "Hoog-doorlaat filter: {freq} Hz",
       "seekProgress": "Voortgang verder spoelen: {current} / {total} seconden",
+      "seek": "Afspeelpositie",
+      "seekValueText": "{current} van {total}",
       "playbackSpeed": "Afspeelsnelheid",
       "speed": "Snelheid",
-      "loop": "Herhaling aan/uit",
+      "loop": "Herhaling",
       "player": "Audiospeler",
       "autoplayBlocked": "Klik om af te spelen (autoplay geblokkeerd)",
       "hlsLoadFailed": "De audiospeler kon niet worden geladen, laad de pagina opnieuw en probeer het nogmaals",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Onwaarschijnlijke detecties verwerpen",
+        "helpText": "Indien ingeschakeld worden vleermuisdetecties die de validatie na detectie als onwaarschijnlijk markeert, verworpen: ze worden niet opgeslagen, krijgen geen audioclip of melding en kunnen niet worden hersteld. Indien uitgeschakeld (standaard) worden ze opgeslagen en als onwaarschijnlijk gemarkeerd. Al opgeslagen detecties worden niet gewijzigd."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",

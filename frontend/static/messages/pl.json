@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Informacje Systemowe",
-      "os": "System Operacyjny",
-      "hostname": "Nazwa Hosta",
-      "uptime": "Czas Pracy",
-      "cpus": "Procesory",
-      "model": "Model Systemu",
-      "timezone": "Strefa Czasowa",
-      "temperature": "Temperatura CPU",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Dane temperatury niedostępne",
       "cpuCores": "Rdzenie CPU",
@@ -1248,15 +1241,7 @@
         "process": "Proces"
       },
       "showAll": "Pokaż Wszystkie Procesy",
-      "showBirdnetOnly": "Pokaż Tylko BirdNET",
-      "table": {
-        "process": "Proces",
-        "status": "Status",
-        "cpu": "CPU",
-        "memory": "Pamięć",
-        "uptime": "Czas działania",
-        "showAllProcesses": "Pokaż wszystkie procesy"
-      }
+      "showBirdnetOnly": "Pokaż Tylko BirdNET"
     },
     "errors": {
       "systemInfo": "Nie udało się załadować informacji systemowych: {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Kontrola filtra",
       "highPassFilter": "Kontrola filtra górnoprzepustowego: {freq} Hz",
       "seekProgress": "Szukaj postępu audio: {current} / {total} sekund",
+      "seek": "Pozycja odtwarzania",
+      "seekValueText": "{current} z {total}",
       "playbackSpeed": "Prędkość odtwarzania",
       "speed": "Prędkość",
-      "loop": "Przełącz pętlę",
+      "loop": "Pętla",
       "player": "Odtwarzacz audio",
       "autoplayBlocked": "Kliknij, aby odtworzyć (autoodtwarzanie zablokowane)",
       "hlsLoadFailed": "Nie udało się załadować odtwarzacza audio, odśwież stronę i spróbuj ponownie",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Odrzucaj mało prawdopodobne wykrycia",
+        "helpText": "Po włączeniu wykrycia nietoperzy, które walidacja po wykryciu oznacza jako mało prawdopodobne, są odrzucane: nie są zapisywane, nie powstaje dla nich klip audio ani powiadomienie i nie można ich odzyskać. Po wyłączeniu (domyślnie) są zapisywane i oznaczane jako mało prawdopodobne. Wykrycia już zapisane nie są zmieniane."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",

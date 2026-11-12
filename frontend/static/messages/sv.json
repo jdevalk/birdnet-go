@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Systeminformation",
-      "os": "Operativsystem",
-      "hostname": "Värdnamn",
-      "uptime": "Drifttid",
-      "cpus": "Processorer",
-      "model": "Systemmodell",
-      "timezone": "Tidszon",
-      "temperature": "CPU-temperatur",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Temperaturdata ej tillgänglig",
       "cpuCores": "CPU-kärnor",
@@ -1248,15 +1241,7 @@
         "process": "Process"
       },
       "showAll": "Visa alla processer",
-      "showBirdnetOnly": "Visa endast BirdNET",
-      "table": {
-        "process": "Process",
-        "status": "Status",
-        "cpu": "CPU",
-        "memory": "Minne",
-        "uptime": "Drifttid",
-        "showAllProcesses": "Visa alla processer"
-      }
+      "showBirdnetOnly": "Visa endast BirdNET"
     },
     "errors": {
       "systemInfo": "Kunde inte ladda systeminformation: {error}",
@@ -5126,9 +5111,11 @@
       "filterControl": "Filterkontroll",
       "highPassFilter": "Högpassfilter: {freq} Hz",
       "seekProgress": "Sök i ljudet: {current} / {total} sekunder",
+      "seek": "Uppspelningsposition",
+      "seekValueText": "{current} av {total}",
       "playbackSpeed": "Uppspelningshastighet",
       "speed": "Hastighet",
-      "loop": "Växla upprepning",
+      "loop": "Upprepning",
       "player": "Ljudspelare",
       "autoplayBlocked": "Klicka för att spela (autouppspelning blockerad)",
       "hlsLoadFailed": "Det gick inte att läsa in ljudspelaren, ladda om sidan och försök igen",
@@ -5648,6 +5635,10 @@
       "batUltrasonicFilter": {
         "label": "Validering efter detektion",
         "helpText": "När aktiverat valideras fladdermusdetektioner genom att analysera ultraljudsenergi i källljudet. Detektioner utan ekolokationsegenskaper markeras som osannolika."
+      },
+      "batDiscardUnlikely": {
+        "label": "Kassera osannolika detektioner",
+        "helpText": "När aktiverat kasseras fladdermusdetektioner som valideringen efter detektion markerar som osannolika: de sparas inte, får inget ljudklipp eller någon avisering och kan inte återskapas. När inaktiverat (standard) sparas de och markeras som osannolika. Detektioner som redan är sparade ändras inte."
       },
       "batFalsePositiveFilter": {
         "label": "Fladdermus falskt-positiv filter",

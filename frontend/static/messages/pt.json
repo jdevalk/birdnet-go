@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Informações do sistema",
-      "os": "Sistema operacional",
-      "hostname": "Nome do host",
-      "uptime": "Tempo de atividade",
-      "cpus": "Processadores",
-      "model": "Modelo do sistema",
-      "timezone": "Fuso horário",
-      "temperature": "Temperatura do CPU",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Dados de temperatura não disponíveis",
       "cpuCores": "Núcleos de CPU",
@@ -1248,15 +1241,7 @@
         "process": "Processo"
       },
       "showAll": "Mostrar todos os processos",
-      "showBirdnetOnly": "Mostrar apenas BirdNET",
-      "table": {
-        "process": "Processo",
-        "status": "Estado",
-        "cpu": "CPU",
-        "memory": "Memória",
-        "uptime": "Tempo ativo",
-        "showAllProcesses": "Mostrar todos os processos"
-      }
+      "showBirdnetOnly": "Mostrar apenas BirdNET"
     },
     "errors": {
       "systemInfo": "Falha ao carregar informações do sistema: {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Controle de filtro",
       "highPassFilter": "Controle de filtro passa-alta: {freq} Hz",
       "seekProgress": "Progresso de busca de áudio: {current} / {total} segundos",
+      "seek": "Posição de reprodução",
+      "seekValueText": "{current} de {total}",
       "playbackSpeed": "Velocidade de reprodução",
       "speed": "Velocidade",
-      "loop": "Alternar repetição",
+      "loop": "Repetição",
       "player": "Reprodutor de áudio",
       "autoplayBlocked": "Clique para reproduzir (reprodução automática bloqueada)",
       "hlsLoadFailed": "Não foi possível carregar o reprodutor de áudio, recarregue a página e tente novamente",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Descartar deteções improváveis",
+        "helpText": "Quando ativado, as deteções de morcegos que a validação pós-deteção marca como improváveis são descartadas: não são guardadas, não geram clipe de áudio nem notificação e não podem ser recuperadas. Quando desativado (predefinição), são guardadas e marcadas como improváveis. As deteções já guardadas não são alteradas."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",

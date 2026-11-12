@@ -1202,13 +1202,6 @@
     },
     "systemInfo": {
       "title": "Systeminformationen",
-      "os": "Betriebssystem",
-      "hostname": "Hostname",
-      "uptime": "Betriebszeit",
-      "cpus": "Prozessoren",
-      "model": "Systemmodell",
-      "timezone": "Zeitzone",
-      "temperature": "CPU-Temperatur",
       "temperatureValue": "{temp}°C",
       "temperatureUnavailable": "Temperaturdaten nicht verfügbar",
       "cpuCores": "CPU-Kerne",
@@ -1248,15 +1241,7 @@
         "process": "Prozess"
       },
       "showAll": "Alle Prozesse anzeigen",
-      "showBirdnetOnly": "Nur BirdNET anzeigen",
-      "table": {
-        "process": "Prozess",
-        "status": "Status",
-        "cpu": "CPU",
-        "memory": "Speicher",
-        "uptime": "Laufzeit",
-        "showAllProcesses": "Alle Prozesse anzeigen"
-      }
+      "showBirdnetOnly": "Nur BirdNET anzeigen"
     },
     "errors": {
       "systemInfo": "Fehler beim Laden der Systeminformationen: {error}",
@@ -5125,9 +5110,11 @@
       "filterControl": "Filtersteuerung",
       "highPassFilter": "Hochpassfilter-Steuerung: {freq} Hz",
       "seekProgress": "Audio-Fortschritt: {current} / {total} Sekunden",
+      "seek": "Wiedergabeposition",
+      "seekValueText": "{current} von {total}",
       "playbackSpeed": "Wiedergabegeschwindigkeit",
       "speed": "Tempo",
-      "loop": "Wiederholung umschalten",
+      "loop": "Wiederholung",
       "player": "Audioplayer",
       "autoplayBlocked": "Klicken zum Abspielen (Autoplay blockiert)",
       "hlsLoadFailed": "Der Audioplayer konnte nicht geladen werden, bitte die Seite neu laden und erneut versuchen",
@@ -5647,6 +5634,10 @@
       "batUltrasonicFilter": {
         "label": "Post Detection Validation",
         "helpText": "When enabled, bat detections are validated by analyzing ultrasonic energy patterns in the source audio. Detections that lack bat echolocation characteristics are tagged as unlikely."
+      },
+      "batDiscardUnlikely": {
+        "label": "Unwahrscheinliche Erkennungen verwerfen",
+        "helpText": "Wenn aktiviert, werden Fledermauserkennungen, die die nachträgliche Validierung als unwahrscheinlich markiert, verworfen: Sie werden nicht gespeichert, erhalten keinen Audioclip und keine Benachrichtigung und lassen sich nicht wiederherstellen. Wenn deaktiviert (Standard), werden sie gespeichert und als unwahrscheinlich markiert. Bereits gespeicherte Erkennungen werden nicht geändert."
       },
       "batFalsePositiveFilter": {
         "label": "Bat False Positive Filter",
