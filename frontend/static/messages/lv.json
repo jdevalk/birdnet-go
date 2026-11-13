@@ -1240,8 +1240,7 @@
         "uptime": "Darbības laiks",
         "process": "Process"
       },
-      "showAll": "Rādīt visus procesus",
-      "showBirdnetOnly": "Rādīt tikai BirdNET"
+      "showAll": "Rādīt visus procesus"
     },
     "errors": {
       "systemInfo": "Neizdevās ielādēt sistēmas informāciju: {error}",
@@ -6002,6 +6001,7 @@
     },
     "metricFooter": {
       "allPassing": "Viss kārtībā",
+      "healthyOfTotal": "{healthy} no {total}",
       "needsAttention": "Nepieciešama uzmanība",
       "failing": "Neizdodas",
       "allClear": "Bez problēmām",

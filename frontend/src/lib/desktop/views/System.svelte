@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import MetricStrip from '$lib/desktop/features/system/components/MetricStrip.svelte';
   import SystemDetailsCard from '$lib/desktop/features/system/components/SystemDetailsCard.svelte';
   import StorageCard from '$lib/desktop/features/system/components/StorageCard.svelte';
@@ -21,6 +22,7 @@
   import { ReconnectingEventSource } from '$lib/utils/ReconnectingEventSource';
   import { connectionState } from '$lib/stores/connectionState.svelte';
   import type { ModelMetrics } from '$lib/desktop/features/system/types';
+  import { createProcessList } from '$lib/desktop/features/system/processList.svelte';
 
   const logger = loggers.ui;
 
@@ -82,15 +84,6 @@
     celsius?: number;
   }
 
-  interface ProcessInfo {
-    pid: number;
-    name: string;
-    status: string;
-    cpu: number;
-    memory: number;
-    uptime: number;
-  }
-
   interface MetricPoint {
     timestamp: string;
     value: number;
@@ -147,15 +140,12 @@
     usedPercent: 0,
   });
   let systemTemperature = $state<TemperatureInfo>({ is_available: false });
-  let processes = $state<ProcessInfo[]>([]);
+  const processList = createProcessList();
   // Sparkline history arrays
   let cpuHistory = $state<number[]>([]);
   let memoryHistory = $state<number[]>([]);
   let temperatureHistory = $state<number[]>([]);
   let modelMetrics = $state<ModelMetrics[]>([]);
-
-  // Toggle for showing all processes
-  let showAllProcesses = $state(false);
 
   // SSE connection reference
   let metricsSSE: ReconnectingEventSource | null = null;
@@ -426,21 +416,6 @@
     }
   }
 
-  // Load process information
-  async function loadProcesses(): Promise<void> {
-    try {
-      const url = showAllProcesses
-        ? '/api/v2/system/processes?all=true'
-        : '/api/v2/system/processes';
-      processes = await api.get<ProcessInfo[]>(url);
-    } catch (error: unknown) {
-      logger.debug('Failed to load processes', {
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      processes = [];
-    }
-  }
-
   async function loadBirdnetOverlap(): Promise<void> {
     try {
       const data = await api.get<{ overlap?: number }>('/api/v2/settings/birdnet');
@@ -452,6 +427,9 @@
 
   // Refresh slow-changing data not delivered by SSE (system info, disks, processes).
   // Uses recursive setTimeout (like startPollingFallback) to avoid overlapping requests.
+  // Each call is one loop that runs while its own `active` flag is set. A tick still awaiting
+  // its requests when the loop is stopped finds the flag cleared and does not re-arm, so a
+  // stopped loop never leaves a timer behind.
   function startSlowRefresh(active: { current: boolean }): void {
     async function tick(): Promise<void> {
       if (!active.current) return;
@@ -464,7 +442,7 @@
         return;
       }
 
-      await Promise.all([loadSystemInfo(), loadDiskUsage(), loadProcesses()]);
+      await Promise.all([loadSystemInfo(), loadDiskUsage(), processList.load()]);
       if (active.current) {
         slowRefreshTimeout = setTimeout(tick, SLOW_REFRESH_INTERVAL_MS);
       }
@@ -487,7 +465,7 @@
       loadDiskUsage(),
       loadMemoryUsage(),
       loadSystemTemperature(),
-      loadProcesses(),
+      processList.load(),
       loadBirdnetOverlap(),
     ]);
   }
@@ -499,14 +477,18 @@
   $effect(() => {
     componentActive.current = true;
 
-    // Load initial data, fetch active models, then load metrics history
-    loadAllData().then(async () => {
-      if (!componentActive.current) return;
-      await fetchActiveModels();
-      if (componentActive.current) {
-        loadMetricsHistory(componentActive);
-      }
-    });
+    // Load initial data, fetch active models, then load metrics history. Untracked: the
+    // loaders read state before their first await (Show All, the CSRF token), and a change
+    // to it must not rerun the whole initialization.
+    untrack(() =>
+      loadAllData().then(async () => {
+        if (!componentActive.current) return;
+        await fetchActiveModels();
+        if (componentActive.current) {
+          loadMetricsHistory(componentActive);
+        }
+      })
+    );
 
     return () => {
       componentActive.current = false;
@@ -515,15 +497,17 @@
     };
   });
 
-  // Start/stop slow refresh based on active subpage.
-  // The active guard lives inside startSlowRefresh's tick(), so no need to
-  // check componentActive here; this avoids an ordering dependency between effects.
+  // Run one slow-refresh loop while the overview is shown. Each start gets its own flag,
+  // cleared before the timer is: a tick that is mid-request when the subpage changes (its timer
+  // has already fired, so there is nothing to clear) then ends instead of arming a second loop.
   $effect(() => {
-    if (currentSubpage === 'overview') {
-      startSlowRefresh(componentActive);
-    }
+    if (currentSubpage !== 'overview') return;
+
+    const loop = { current: true };
+    startSlowRefresh(loop);
 
     return () => {
+      loop.current = false;
       stopSlowRefresh();
     };
   });
@@ -607,13 +591,13 @@
 
     <!-- Process Table -->
     <SystemProcessTable
-      {processes}
-      {showAllProcesses}
+      processes={processList.processes}
+      loading={!processList.loaded}
+      error={processList.error}
+      showAllProcesses={processList.showAll}
       processName={BIRDNET_PROCESS_NAME}
-      onToggleShowAll={() => {
-        showAllProcesses = !showAllProcesses;
-        loadProcesses();
-      }}
+      onShowAllChange={processList.setShowAll}
+      onRetry={processList.load}
     />
 
     <!-- Restart Controls -->

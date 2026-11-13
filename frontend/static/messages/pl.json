@@ -1240,8 +1240,7 @@
         "uptime": "Czas Pracy",
         "process": "Proces"
       },
-      "showAll": "Pokaż Wszystkie Procesy",
-      "showBirdnetOnly": "Pokaż Tylko BirdNET"
+      "showAll": "Pokaż Wszystkie Procesy"
     },
     "errors": {
       "systemInfo": "Nie udało się załadować informacji systemowych: {error}",
@@ -6001,6 +6000,7 @@
     },
     "metricFooter": {
       "allPassing": "Wszystko w porządku",
+      "healthyOfTotal": "{healthy} z {total}",
       "needsAttention": "Wymaga uwagi",
       "failing": "Niepowodzenie",
       "allClear": "Bez problemów",

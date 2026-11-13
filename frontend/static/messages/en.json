@@ -1240,8 +1240,7 @@
         "uptime": "Uptime",
         "process": "Process"
       },
-      "showAll": "Show All Processes",
-      "showBirdnetOnly": "Show BirdNET Only"
+      "showAll": "Show All Processes"
     },
     "errors": {
       "systemInfo": "Failed to load system information: {error}",
@@ -6002,6 +6001,7 @@
     },
     "metricFooter": {
       "allPassing": "All passing",
+      "healthyOfTotal": "{healthy} of {total}",
       "needsAttention": "Needs attention",
       "failing": "Failing",
       "allClear": "All clear",

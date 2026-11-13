@@ -1240,8 +1240,7 @@
         "uptime": "Werktijd",
         "process": "Proces"
       },
-      "showAll": "Toon alle processen",
-      "showBirdnetOnly": "Toon alleen BirdNET"
+      "showAll": "Toon alle processen"
     },
     "errors": {
       "systemInfo": "Systeem informatie inlezen mislukt: {error}",
@@ -6001,6 +6000,7 @@
     },
     "metricFooter": {
       "allPassing": "Alles in orde",
+      "healthyOfTotal": "{healthy} van {total}",
       "needsAttention": "Vereist aandacht",
       "failing": "Mislukt",
       "allClear": "Geen problemen",

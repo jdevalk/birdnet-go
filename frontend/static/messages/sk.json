@@ -1240,8 +1240,7 @@
         "uptime": "Doba prevádzky",
         "process": "Proces"
       },
-      "showAll": "Zobraziť všetky procesy",
-      "showBirdnetOnly": "Zobraziť iba BirdNET"
+      "showAll": "Zobraziť všetky procesy"
     },
     "errors": {
       "systemInfo": "Nepodarilo sa načítať informácie o systéme: {error}",
@@ -6002,6 +6001,7 @@
     },
     "metricFooter": {
       "allPassing": "Všetko v poriadku",
+      "healthyOfTotal": "{healthy} z {total}",
       "needsAttention": "Vyžaduje pozornosť",
       "failing": "Zlyháva",
       "allClear": "Bez problémov",

@@ -1240,8 +1240,7 @@
         "uptime": "Üzemidő",
         "process": "Folyamat"
       },
-      "showAll": "Összes folyamat megjelenítése",
-      "showBirdnetOnly": "Csak BirdNET megjelenítése"
+      "showAll": "Összes folyamat megjelenítése"
     },
     "errors": {
       "systemInfo": "A rendszer információ betöltése sikertelen: {error}",
@@ -6002,6 +6001,7 @@
     },
     "metricFooter": {
       "allPassing": "Minden rendben",
+      "healthyOfTotal": "{healthy} / {total}",
       "needsAttention": "Figyelmet igényel",
       "failing": "Sikertelen",
       "allClear": "Nincs probléma",

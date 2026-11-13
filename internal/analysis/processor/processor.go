@@ -116,6 +116,10 @@ type Processor struct {
 	// (humanHitMaxPerSource) dropped from humanHits. It is guarded by
 	// detectionMutex and created lazily.
 	humanHitsCapDropped map[string]time.Time
+	// clipMarks writes the clip denoise marker. It is set once before Start
+	// (SetClipDenoiseRecorder) and never written again, so it needs no lock; nil on
+	// the legacy store leaves the marker unwritten.
+	clipMarks clipDenoiseRecorder
 	// privacyRollup receives privacy filter activity for the hourly rollup. It is
 	// set once before Start (SetPrivacyRollup) and never written again, so it needs
 	// no lock; nil leaves every hit site a no-op.
@@ -854,29 +858,62 @@ func (p *Processor) processDetections(item classifier.Results) {
 	p.broadcastPendingSnapshot(snapshot)
 }
 
-// mergeUnlikelyVerdict sets the ultrasonic verdict of a pending detection after a
-// later hit window was merged into it. merged is the pending result (already
-// replaced by hit when that window won on confidence); wasUnlikely, previousCV and
-// previousThreshold are its verdict before the merge. The detection stays unlikely
-// only while every hit window was judged flat, reporting the highest CV among them
-// with the threshold that judged that window; one window that was not judged flat
-// clears the tag and both CV fields. AND and max do not depend on arrival order or
-// on which window had the highest confidence; when two windows have the same CV,
-// the later one's threshold is reported.
-func mergeUnlikelyVerdict(merged *detection.Result, wasUnlikely bool, previousCV, previousThreshold float64, hit *detection.Result) {
-	merged.Unlikely = wasUnlikely && hit.Unlikely
+// unlikelyVerdict is the part of a detection result that records whether and why
+// validators tagged it unlikely: the tag, the validators that judged, and the
+// diagnostics of the CV filter.
+type unlikelyVerdict struct {
+	unlikely    bool
+	sources     detection.UnlikelySource
+	cv          float64
+	cvThreshold float64
+}
+
+// verdictOf reads the unlikely verdict of a result.
+func verdictOf(r *detection.Result) unlikelyVerdict {
+	return unlikelyVerdict{
+		unlikely:    r.Unlikely,
+		sources:     r.UnlikelySources,
+		cv:          r.UltrasonicCV,
+		cvThreshold: r.UltrasonicCVThreshold,
+	}
+}
+
+// mergeUnlikelyVerdict sets the unlikely verdict of a pending detection after a later
+// hit window was merged into it. merged is the pending result (already replaced by
+// the hit when that window won on confidence); prev is its verdict before the merge
+// and hit the verdict of the merged window. The detection stays unlikely only while
+// every hit window was tagged; one window that was not tagged clears the tag, the
+// source bits and the diagnostics. While it stays unlikely, the source bits are the
+// union of both sides, so a bit means that validator judged at least one hit window.
+//
+// The CV and its threshold are merged only between sides that carry the CV bit: when
+// only one side does, that side's values are kept untouched; when both do, the
+// highest CV wins with the threshold that judged it (the later one's on a tie);
+// when neither does, there is none. Apart from the threshold kept on a CV tie, the
+// merge does not depend on arrival order or on which window had the highest confidence.
+func mergeUnlikelyVerdict(merged *detection.Result, prev, hit unlikelyVerdict) {
+	merged.Unlikely = prev.unlikely && hit.unlikely
 	if !merged.Unlikely {
+		merged.UnlikelySources = 0
 		merged.UltrasonicCV = 0
 		merged.UltrasonicCVThreshold = 0
 		return
 	}
-	if previousCV > hit.UltrasonicCV {
-		merged.UltrasonicCV = previousCV
-		merged.UltrasonicCVThreshold = previousThreshold
-		return
+	merged.UnlikelySources = prev.sources | hit.sources
+
+	prevCV := prev.sources.Has(detection.UnlikelySourceUltrasonicCV)
+	hitCV := hit.sources.Has(detection.UnlikelySourceUltrasonicCV)
+	switch {
+	case prevCV && hitCV && prev.cv > hit.cv, prevCV && !hitCV:
+		merged.UltrasonicCV = prev.cv
+		merged.UltrasonicCVThreshold = prev.cvThreshold
+	case hitCV:
+		merged.UltrasonicCV = hit.cv
+		merged.UltrasonicCVThreshold = hit.cvThreshold
+	default:
+		merged.UltrasonicCV = 0
+		merged.UltrasonicCVThreshold = 0
 	}
-	merged.UltrasonicCV = hit.UltrasonicCV
-	merged.UltrasonicCVThreshold = hit.UltrasonicCVThreshold
 }
 
 // mergePendingHit folds one detection of the chunk item into pendingDetections: it
@@ -900,9 +937,7 @@ func (p *Processor) mergePendingHit(item *classifier.Results, det *Detections, h
 	if existing, exists := p.pendingDetections[mapKey]; exists {
 		// Update the existing detection (may be from same or different model)
 		oldConfidence := existing.Confidence
-		wasUnlikely := existing.Detection.Result.Unlikely
-		previousCV := existing.Detection.Result.UltrasonicCV
-		previousThreshold := existing.Detection.Result.UltrasonicCVThreshold
+		previous := verdictOf(&existing.Detection.Result)
 		existing.LastUpdated = now
 		existing.AudioCapturedAt = item.AudioCapturedAt
 		if confidence > existing.Confidence {
@@ -918,7 +953,7 @@ func (p *Processor) mergePendingHit(item *classifier.Results, det *Detections, h
 				logger.Int("count", existing.Count+1),
 				logger.String("operation", "update_pending_detection"))
 		}
-		mergeUnlikelyVerdict(&existing.Detection.Result, wasUnlikely, previousCV, previousThreshold, &det.Result)
+		mergeUnlikelyVerdict(&existing.Detection.Result, previous, verdictOf(&det.Result))
 		existing.Count++
 
 		// Track per-model contribution
@@ -1147,6 +1182,7 @@ func (p *Processor) applyUltrasonicFilter(settings *conf.Settings, item classifi
 		GetLogger().Info("ultrasonic validation: detections tagged unlikely", logFields...)
 		for i := range detections {
 			detections[i].Result.Unlikely = true
+			detections[i].Result.UnlikelySources |= detection.UnlikelySourceUltrasonicCV
 			detections[i].Result.UltrasonicCV = cv
 			detections[i].Result.UltrasonicCVThreshold = filterCfg.CVThreshold
 		}
@@ -1940,6 +1976,7 @@ func (p *Processor) shouldDiscardDetection(item *PendingDetection, settings *con
 			logger.Time("detection_time", item.FirstDetected),
 			logger.Float64("us_frame_cv", item.Detection.Result.UltrasonicCV),
 			logger.Float64("threshold", item.Detection.Result.UltrasonicCVThreshold),
+			logger.String("unlikely_sources", item.Detection.Result.UnlikelySources.String()),
 			logger.String("source", p.getDisplayNameForSource(item.Source)),
 			logger.String("operation", "ultrasonic_filter"))
 		return true, reasonUltrasonicFilter
@@ -2494,6 +2531,7 @@ func (p *Processor) getDefaultActions(det *Detections, settings *conf.Settings) 
 			Results:           det.Results,  // Domain model - all alternates, trimmed at save
 			Ds:                p.Ds,         // Legacy - kept for backward compatibility
 			Repo:              p.Repo,       // New - preferred path for database operations
+			clipMarks:         p.clipMarks,
 			CorrelationID:     det.CorrelationID,
 		}
 	}
@@ -2686,7 +2724,8 @@ func retryConfigFromSettings(rs conf.RetrySettings) jobqueue.RetryConfig {
 // available) and returns an action that will encode and write the audio file
 // when executed by the job queue. This decouples the slower clip encoding
 // from the fast Database -> SSE pipeline. The action carries the planned
-// clip sample rate and, when the datastore can store one, a recorder to correct it.
+// clip sample rate and, when the datastore can store one, a recorder to correct it,
+// and the recorder of the clip denoise marker (nil on the legacy store).
 func (p *Processor) buildSaveAudioAction(det *Detections, detectionCtx *DetectionContext, settings *conf.Settings) *SaveAudioAction {
 	// Derive the capture length and readiness time from the shared conf helper so this
 	// scheduler and the media API (which decides whether a not-yet-written clip is still
@@ -2726,6 +2765,7 @@ func (p *Processor) buildSaveAudioAction(det *Detections, detectionCtx *Detectio
 	base := func() *SaveAudioAction {
 		return &SaveAudioAction{
 			clipRates:        p.Repo,
+			clipMarks:        p.clipMarks,
 			plannedRate:      det.Result.ClipSampleRate,
 			Settings:         settings,
 			ClipName:         det.Result.ClipName,
