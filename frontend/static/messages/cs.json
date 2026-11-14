@@ -141,7 +141,8 @@
       "visitEbirdLink": "Otevřít eBird.org v nové kartě",
       "learnEbirdTaxonomyLink": "Otevřít taxonomii eBird v nové kartě",
       "resizeHandle": "Tažením změníte velikost",
-      "imageCredit": "Autor obrázku: {name}"
+      "imageCredit": "Autor obrázku: {name}",
+      "opensInNewTab": "otevře se na nové kartě"
     },
     "labels": {
       "confidence": "Spolehlivost",
@@ -207,7 +208,6 @@
     "hoursShort": "h"
   },
   "pageTitle": {
-    "settings": "Nastavení - BirdNET-Go",
     "pageNotFound": "404 - Stránka nenalezena",
     "serverError": "500 - Interní chyba serveru",
     "componentError": "Chyba načítání komponenty",
@@ -1964,7 +1964,8 @@
     "detach": "Otevřít v novém okně",
     "detached": "Terminál je odpojen",
     "detachedDescription": "Terminál běží v samostatném okně. Zavřete ho, abyste ho vrátili sem.",
-    "reattach": "Připojit zpět"
+    "reattach": "Připojit zpět",
+    "keyboardExitHint": "Stiskněte Esc a poté Tab pro opuštění terminálu"
   },
   "analytics": {
     "hub": {
@@ -5782,7 +5783,8 @@
       },
       "tabs": {
         "installed": "Nainstalované",
-        "available": "Dostupné"
+        "available": "Dostupné",
+        "navigationAria": "Karty galerie modelů"
       },
       "loading": "Načítání modelů…",
       "retry": "Zkusit znovu",
@@ -5852,6 +5854,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Vývojářský náhled, nejedná se o finální verzi. Jde o rané sestavení pro testování; výsledky se mohou před stabilní verzí změnit.",
         "dialogNotice": "Instalujete vývojářský náhled ({build}). Hodí se k vyzkoušení, ale zatím se nedoporučuje jako váš jediný klasifikátor."
+      },
+      "experimental": {
+        "badge": "Experimentální",
+        "cardNotice": "V BirdNET-Go experimentální. Model je zveřejněn, ale jeho výkon v BirdNET-Go zatím není ověřen, takže výsledky mohou být méně spolehlivé.",
+        "dialogNotice": "Instalujete model, který je v BirdNET-Go experimentální. Jeho výkon zatím není ověřen, proto jeho detekce zkontrolujte, než se na něj spolehnete."
       },
       "entryIncompatible": "Tento model není v tomto systému k dispozici.",
       "regionGlobal": "Globální",

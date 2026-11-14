@@ -141,7 +141,8 @@
       "visitEbirdLink": "Atvērt eBird.org jaunā cilnē",
       "learnEbirdTaxonomyLink": "Atvērt eBird taksonomiju jaunā cilnē",
       "resizeHandle": "Velciet, lai mainītu izmēru",
-      "imageCredit": "Attēla autors: {name}"
+      "imageCredit": "Attēla autors: {name}",
+      "opensInNewTab": "atveras jaunā cilnē"
     },
     "labels": {
       "confidence": "Ticamība",
@@ -207,7 +208,6 @@
     "hoursShort": "st"
   },
   "pageTitle": {
-    "settings": "Iestatījumi - BirdNET-Go",
     "pageNotFound": "404 - Lapa nav atrasta",
     "serverError": "500 - Iekšējā servera kļūda",
     "componentError": "Komponentes ielādes kļūda",
@@ -1964,7 +1964,8 @@
     "detach": "Atvērt jaunā logā",
     "detached": "Terminālis ir atdalīts",
     "detachedDescription": "Terminālis darbojas atsevišķā logā. Aizveriet to logu, lai atgrieztu termināli šeit.",
-    "reattach": "Pievienot atpakaļ"
+    "reattach": "Pievienot atpakaļ",
+    "keyboardExitHint": "Lai atstātu termināli, nospiediet Esc un pēc tam Tab"
   },
   "analytics": {
     "hub": {
@@ -5782,7 +5783,8 @@
       },
       "tabs": {
         "installed": "Instalētie",
-        "available": "Pieejamie"
+        "available": "Pieejamie",
+        "navigationAria": "Modeļu galerijas cilnes"
       },
       "loading": "Ielādē modeļus...",
       "retry": "Mēģināt vēlreiz",
@@ -5852,6 +5854,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Izstrādātāja priekšskatījums, nav galīgais laidiens. Šī ir agrīna versija testēšanai; rezultāti var mainīties pirms stabilās versijas.",
         "dialogNotice": "Jūs instalējat izstrādātāja priekšskatījumu ({build}). Piemērots izmēģināšanai, taču vēl nav ieteicams kā jūsu vienīgais klasifikators."
+      },
+      "experimental": {
+        "badge": "Eksperimentāls",
+        "cardNotice": "Eksperimentāls programmā BirdNET-Go. Modelis ir publicēts, taču tā veiktspēja BirdNET-Go vēl nav pierādīta, tāpēc rezultāti var būt mazāk uzticami.",
+        "dialogNotice": "Jūs instalējat modeli, kas BirdNET-Go ir eksperimentāls. Tā veiktspēja vēl nav pierādīta, tāpēc pārbaudiet tā atpazīšanas rezultātus, pirms uz tiem paļaujaties."
       },
       "entryIncompatible": "Šis modelis nav pieejams šajā sistēmā.",
       "regionGlobal": "Globāls",

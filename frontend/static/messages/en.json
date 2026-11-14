@@ -141,7 +141,8 @@
       "visitEbirdLink": "Open eBird.org in a new tab",
       "learnEbirdTaxonomyLink": "Open eBird Taxonomy in a new tab",
       "resizeHandle": "Drag to resize",
-      "imageCredit": "Image credit: {name}"
+      "imageCredit": "Image credit: {name}",
+      "opensInNewTab": "opens in a new tab"
     },
     "labels": {
       "confidence": "Confidence",
@@ -207,7 +208,6 @@
     "hoursShort": "h"
   },
   "pageTitle": {
-    "settings": "Settings - BirdNET-Go",
     "pageNotFound": "404 - Page Not Found",
     "serverError": "500 - Internal Server Error",
     "componentError": "Component Load Error",
@@ -1964,7 +1964,8 @@
     "detach": "Open in new window",
     "detached": "Terminal is detached",
     "detachedDescription": "The terminal is running in a separate window. Close that window to return it here.",
-    "reattach": "Reattach"
+    "reattach": "Reattach",
+    "keyboardExitHint": "Press Esc, then Tab to leave the terminal"
   },
   "analytics": {
     "hub": {
@@ -5782,7 +5783,8 @@
       },
       "tabs": {
         "installed": "Installed",
-        "available": "Available"
+        "available": "Available",
+        "navigationAria": "Model gallery tabs"
       },
       "loading": "Loading models...",
       "retry": "Retry",
@@ -5852,6 +5854,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Developer preview, not the final release. This is an early build for testing; results may change before the stable version.",
         "dialogNotice": "You are installing a developer preview ({build}). Fine for trying it out, but not recommended as your only classifier yet."
+      },
+      "experimental": {
+        "badge": "Experimental",
+        "cardNotice": "Experimental in BirdNET-Go. The model is published, but its performance in BirdNET-Go is not proven yet, so results may be less reliable.",
+        "dialogNotice": "You are installing a model that is experimental in BirdNET-Go. Its performance is not proven yet, so check its detections before relying on it."
       },
       "entryIncompatible": "This model is not available on this system.",
       "regionGlobal": "Global",

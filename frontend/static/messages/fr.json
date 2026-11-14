@@ -141,7 +141,8 @@
       "visitEbirdLink": "Ouvrir eBird.org dans un nouvel onglet",
       "learnEbirdTaxonomyLink": "Ouvrir la taxonomie eBird dans un nouvel onglet",
       "resizeHandle": "Glisser pour redimensionner",
-      "imageCredit": "Crédit image : {name}"
+      "imageCredit": "Crédit image : {name}",
+      "opensInNewTab": "s'ouvre dans un nouvel onglet"
     },
     "labels": {
       "confidence": "Confiance",
@@ -207,7 +208,6 @@
     "hoursShort": "h"
   },
   "pageTitle": {
-    "settings": "Paramètres - BirdNET-Go",
     "pageNotFound": "404 - Page non trouvée",
     "serverError": "500 - Erreur interne du serveur",
     "componentError": "Erreur de chargement du composant",
@@ -1964,7 +1964,8 @@
     "detach": "Ouvrir dans une nouvelle fenêtre",
     "detached": "Terminal détaché",
     "detachedDescription": "Le terminal fonctionne dans une fenêtre séparée. Fermez cette fenêtre pour le ramener ici.",
-    "reattach": "Rattacher"
+    "reattach": "Rattacher",
+    "keyboardExitHint": "Appuyez sur Échap, puis sur Tab pour quitter le terminal"
   },
   "analytics": {
     "hub": {
@@ -5781,7 +5782,8 @@
       },
       "tabs": {
         "installed": "Installés",
-        "available": "Disponibles"
+        "available": "Disponibles",
+        "navigationAria": "Onglets de la galerie de modèles"
       },
       "loading": "Chargement des modèles...",
       "retry": "Réessayer",
@@ -5851,6 +5853,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Aperçu développeur, pas la version finale. Il s'agit d'une version préliminaire pour les tests; les résultats peuvent changer avant la version stable.",
         "dialogNotice": "Vous installez un aperçu développeur ({build}). Idéal pour tester, mais pas encore recommandé comme classificateur unique."
+      },
+      "experimental": {
+        "badge": "Expérimental",
+        "cardNotice": "Expérimental dans BirdNET-Go. Le modèle est publié, mais ses performances dans BirdNET-Go ne sont pas encore démontrées ; les résultats peuvent donc être moins fiables.",
+        "dialogNotice": "Vous installez un modèle expérimental dans BirdNET-Go. Ses performances ne sont pas encore démontrées ; vérifiez ses détections avant de vous y fier."
       },
       "entryIncompatible": "Ce modèle n'est pas disponible sur ce système.",
       "regionGlobal": "Global",

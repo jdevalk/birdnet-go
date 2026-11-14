@@ -141,7 +141,8 @@
       "visitEbirdLink": "Öppna eBird.org i en ny flik",
       "learnEbirdTaxonomyLink": "Öppna eBird Taxonomy i en ny flik",
       "resizeHandle": "Dra för att ändra storlek",
-      "imageCredit": "Bildrättigheter: {name}"
+      "imageCredit": "Bildrättigheter: {name}",
+      "opensInNewTab": "öppnas i en ny flik"
     },
     "labels": {
       "confidence": "Konfidens",
@@ -207,7 +208,6 @@
     "hoursShort": "h"
   },
   "pageTitle": {
-    "settings": "Inställningar - BirdNET-Go",
     "pageNotFound": "404 - Sidan hittades inte",
     "serverError": "500 - Internt serverfel",
     "componentError": "Komponentladdningsfel",
@@ -1964,7 +1964,8 @@
     "detach": "Öppna i nytt fönster",
     "detached": "Terminalen är frikopplad",
     "detachedDescription": "Terminalen körs i ett separat fönster. Stäng det fönstret för att återställa den här.",
-    "reattach": "Återanslut"
+    "reattach": "Återanslut",
+    "keyboardExitHint": "Tryck på Esc och sedan Tab för att lämna terminalen"
   },
   "analytics": {
     "hub": {
@@ -5782,7 +5783,8 @@
       },
       "tabs": {
         "installed": "Installerade",
-        "available": "Tillgängliga"
+        "available": "Tillgängliga",
+        "navigationAria": "Flikar i modellgalleriet"
       },
       "loading": "Laddar modeller...",
       "retry": "Försök igen",
@@ -5852,6 +5854,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Förhandsvisning för utvecklare, inte den slutgiltiga versionen. Detta är ett tidigt bygge för testning; resultaten kan ändras före den stabila versionen.",
         "dialogNotice": "Du installerar en förhandsvisning för utvecklare ({build}). Fungerar bra för att prova på, men rekommenderas inte som din enda klassificerare ännu."
+      },
+      "experimental": {
+        "badge": "Experimentell",
+        "cardNotice": "Experimentell i BirdNET-Go. Modellen är publicerad, men dess prestanda i BirdNET-Go är ännu inte bevisad, så resultaten kan vara mindre tillförlitliga.",
+        "dialogNotice": "Du installerar en modell som är experimentell i BirdNET-Go. Dess prestanda är ännu inte bevisad, så kontrollera dess detektioner innan du litar på den."
       },
       "entryIncompatible": "Den här modellen är inte tillgänglig på detta system.",
       "regionGlobal": "Global",

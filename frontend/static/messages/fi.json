@@ -141,7 +141,8 @@
       "visitEbirdLink": "Avaa eBird.org uuteen välilehteen",
       "learnEbirdTaxonomyLink": "Avaa eBird-taksonomia uuteen välilehteen",
       "resizeHandle": "Vedä muuttaaksesi kokoa",
-      "imageCredit": "Kuvan luotto: {name}"
+      "imageCredit": "Kuvan luotto: {name}",
+      "opensInNewTab": "avautuu uudelle välilehdelle"
     },
     "labels": {
       "confidence": "Luottamus",
@@ -207,7 +208,6 @@
     "hoursShort": "t"
   },
   "pageTitle": {
-    "settings": "Asetukset - BirdNET-Go",
     "pageNotFound": "404 - Sivua ei löydy",
     "serverError": "500 - Sisäinen palvelinvirhe",
     "componentError": "Komponentin latausvirhe",
@@ -1964,7 +1964,8 @@
     "detach": "Avaa uudessa ikkunassa",
     "detached": "Terminaali on irrotettu",
     "detachedDescription": "Terminaali toimii erillisessä ikkunassa. Sulje se palauttaaksesi sen tänne.",
-    "reattach": "Liitä takaisin"
+    "reattach": "Liitä takaisin",
+    "keyboardExitHint": "Poistu terminaalista painamalla Esc ja sitten Tab"
   },
   "analytics": {
     "hub": {
@@ -5781,7 +5782,8 @@
       },
       "tabs": {
         "installed": "Asennetut",
-        "available": "Saatavilla"
+        "available": "Saatavilla",
+        "navigationAria": "Malligallerian välilehdet"
       },
       "loading": "Ladataan malleja...",
       "retry": "Yritä uudelleen",
@@ -5851,6 +5853,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Kehittäjien esiversio, ei lopullinen julkaisu. Tämä on varhainen versio testausta varten; tulokset voivat muuttua ennen vakaata versiota.",
         "dialogNotice": "Olet asentamassa kehittäjien esiversiota ({build}). Se soveltuu kokeiluun, mutta sitä ei vielä suositella ainoaksi luokittelijaksi."
+      },
+      "experimental": {
+        "badge": "Kokeellinen",
+        "cardNotice": "Kokeellinen BirdNET-Gossa. Malli on julkaistu, mutta sen suorituskykyä BirdNET-Gossa ei ole vielä todistettu, joten tulokset voivat olla epäluotettavampia.",
+        "dialogNotice": "Asennat mallin, joka on BirdNET-Gossa kokeellinen. Sen suorituskykyä ei ole vielä todistettu, joten tarkista sen havainnot ennen kuin luotat niihin."
       },
       "entryIncompatible": "Tämä malli ei ole saatavilla tässä järjestelmässä.",
       "regionGlobal": "Globaali",

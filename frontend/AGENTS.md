@@ -256,9 +256,16 @@ Theme colours are written as CSS variables in arbitrary values
 (`text-[var(--color-base-content)]`), not bare theme class names. Error text
 uses `text-[var(--text-error)]`; `--color-error` is for fills and borders.
 Success, warning and info text use `--text-success`, `--text-warning` and
-`--text-info`. All four text tokens reach 4.5:1 on base-100, base-200, base-300
-and on a 15% tint of their fill over each; `.badge-status-*`, `.alert-*`,
-`.text-error/success/warning/info` and `StatusPill` already use them. Use the
+`--text-info`; text in the primary hue uses
+`--text-primary` (`schemes.css` sets it per colour scheme, and the custom
+scheme maps it to `--color-base-content`). Its consumers are
+`.menu-item-active` and `.menu-subitem-active`; the `.text-primary` utility
+still maps to `var(--color-primary)`, so write `text-[var(--text-primary)]` for
+AA primary-hue text. All four status text tokens reach
+4.5:1 on base-100, base-200, base-300 and on a 15% tint of their fill over each,
+and `--text-primary` does the same for every fixed scheme in both themes;
+`.badge-status-*`, `.alert-*`, `.text-error/success/warning/info` and
+`StatusPill` already use them. Use the
 `--color-*` fills for backgrounds, borders and dots, not for new text.
 
 ### General Rules
@@ -266,6 +273,16 @@ and on a 15% tint of their fill over each; `.badge-status-*`, `.alert-*`,
 - Every state (loading, saving, validating, error, success) has a visible,
   labelled indicator; a bare spinner is not enough. Fetching, saving and
   processing are distinct states with distinct labels.
+- Every page, and every card that loads its own data, shows a skeleton of its
+  final layout while it loads, not a spinner in a corner. The skeleton mirrors
+  the loaded layout (same grid, card chrome and minimum heights) so nothing
+  jumps when the data arrives, keeps one visible labelled `role="status"`
+  indicator, marks each placeholder bar `aria-hidden="true"`, stops pulsing
+  under `motion-reduce`, and lets bars shrink (`min-w-0 max-w-full`) so none
+  overflows a card at tablet and desktop widths. Use
+  `src/lib/desktop/features/system/components/InferenceSkeleton.svelte` as the
+  reference. Many existing pages still show a spinner; give a page a skeleton
+  when you change its loading state.
 - Validation errors appear next to the offending field with the specific
   reason, including a required field left empty. Show the error once the field
   is left or a submit is attempted, clear it when the user edits the field, and

@@ -141,7 +141,8 @@
       "visitEbirdLink": "Open eBird.org in een nieuwe tab",
       "learnEbirdTaxonomyLink": "Open eBird Taxonomy in een nieuwe tab",
       "resizeHandle": "Sleep om te vergroten/verkleinen",
-      "imageCredit": "Foto door: {name}"
+      "imageCredit": "Foto door: {name}",
+      "opensInNewTab": "opent in een nieuw tabblad"
     },
     "labels": {
       "confidence": "Betrouwbaarheid",
@@ -207,7 +208,6 @@
     "hoursShort": "u"
   },
   "pageTitle": {
-    "settings": "Instellingen - BirdNET-Go",
     "pageNotFound": "404 - Pagina niet gevonden",
     "serverError": "500 - Interne serverfout",
     "componentError": "Component laadfout",
@@ -1964,7 +1964,8 @@
     "detach": "Openen in nieuw venster",
     "detached": "Terminal is losgekoppeld",
     "detachedDescription": "De terminal draait in een apart venster. Sluit dat venster om het hier terug te brengen.",
-    "reattach": "Opnieuw koppelen"
+    "reattach": "Opnieuw koppelen",
+    "keyboardExitHint": "Druk op Esc en daarna op Tab om de terminal te verlaten"
   },
   "analytics": {
     "hub": {
@@ -5781,7 +5782,8 @@
       },
       "tabs": {
         "installed": "Geïnstalleerd",
-        "available": "Beschikbaar"
+        "available": "Beschikbaar",
+        "navigationAria": "Tabbladen van de modelgalerij"
       },
       "loading": "Modellen laden...",
       "retry": "Opnieuw proberen",
@@ -5851,6 +5853,11 @@
         "buildLabel": "{version} · {build}",
         "cardNotice": "Voorvertoning voor ontwikkelaars, niet de definitieve versie. Dit is een vroege versie om te testen; resultaten kunnen veranderen voor de stabiele versie.",
         "dialogNotice": "Je installeert een voorvertoning voor ontwikkelaars ({build}). Handig om uit te proberen, maar nog niet aanbevolen als je enige classificator."
+      },
+      "experimental": {
+        "badge": "Experimenteel",
+        "cardNotice": "Experimenteel in BirdNET-Go. Het model is gepubliceerd, maar de prestaties ervan in BirdNET-Go zijn nog niet bewezen, dus de resultaten kunnen minder betrouwbaar zijn.",
+        "dialogNotice": "Je installeert een model dat in BirdNET-Go experimenteel is. De prestaties zijn nog niet bewezen, dus controleer de detecties voordat je erop vertrouwt."
       },
       "entryIncompatible": "Dit model is niet beschikbaar op dit systeem.",
       "regionGlobal": "Globaal",

@@ -139,6 +139,7 @@ export type TranslationKey =
   | 'common.aria.learnEbirdTaxonomyLink'
   | 'common.aria.resizeHandle'
   | 'common.aria.imageCredit' // params: name
+  | 'common.aria.opensInNewTab'
   | 'common.labels.confidence'
   | 'common.labels.github'
   | 'common.values.yes'
@@ -185,7 +186,6 @@ export type TranslationKey =
   | 'common.actionsColumn'
   | 'common.closeModal'
   | 'common.hoursShort'
-  | 'pageTitle.settings'
   | 'pageTitle.pageNotFound'
   | 'pageTitle.serverError'
   | 'pageTitle.componentError'
@@ -1533,6 +1533,7 @@ export type TranslationKey =
   | 'terminal.detached'
   | 'terminal.detachedDescription'
   | 'terminal.reattach'
+  | 'terminal.keyboardExitHint'
   | 'analytics.hub.tabs.patterns'
   | 'analytics.hub.tabs.trends'
   | 'analytics.hub.tabs.biodiversity'
@@ -4239,6 +4240,7 @@ export type TranslationKey =
   | 'analysis.gallery.reasons.backendOnnxUnavailable'
   | 'analysis.gallery.tabs.installed'
   | 'analysis.gallery.tabs.available'
+  | 'analysis.gallery.tabs.navigationAria'
   | 'analysis.gallery.loading'
   | 'analysis.gallery.retry'
   | 'analysis.gallery.builtIn'
@@ -4294,6 +4296,9 @@ export type TranslationKey =
   | 'analysis.gallery.preview.buildLabel' // params: version, build
   | 'analysis.gallery.preview.cardNotice'
   | 'analysis.gallery.preview.dialogNotice' // params: build
+  | 'analysis.gallery.experimental.badge'
+  | 'analysis.gallery.experimental.cardNotice'
+  | 'analysis.gallery.experimental.dialogNotice'
   | 'analysis.gallery.entryIncompatible'
   | 'analysis.gallery.regionGlobal'
   | 'analysis.gallery.hardwareLabel'
